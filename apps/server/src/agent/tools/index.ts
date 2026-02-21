@@ -29,8 +29,6 @@ import { getEntityItemsTool } from "./get-entity-items.js";
 
 // Type / Settings / MCP tools (1C)
 import { createItemTypeTool } from "./create-item-type.js";
-import { confirmPendingTool } from "./confirm-pending.js";
-import { rejectPendingTool } from "./reject-pending.js";
 import { getSettingsTool } from "./get-settings.js";
 import { updateSettingsTool } from "./update-settings.js";
 import { addMcpConnectionTool } from "./add-mcp-connection.js";
@@ -58,8 +56,6 @@ export const eddaTools = [
 
   // Type / Settings / MCP tools (1C)
   createItemTypeTool,
-  confirmPendingTool,
-  rejectPendingTool,
   getSettingsTool,
   updateSettingsTool,
   addMcpConnectionTool,

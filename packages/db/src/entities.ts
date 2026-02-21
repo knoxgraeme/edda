@@ -3,7 +3,12 @@
  */
 
 import { getPool } from "./index.js";
+
 import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
+
+/** All entity columns except embedding */
+export const ENTITY_COLS = `id, name, type, aliases, description, mention_count,
+  last_seen_at, confirmed, pending_action, metadata, created_at, updated_at`;
 
 export async function upsertEntity(input: {
   name: string;
@@ -16,7 +21,15 @@ export async function upsertEntity(input: {
   const { rows } = await pool.query(
     `INSERT INTO entities (name, type, aliases, description, embedding)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
+     ON CONFLICT (name) DO UPDATE SET
+       type = EXCLUDED.type,
+       aliases = EXCLUDED.aliases,
+       description = COALESCE(EXCLUDED.description, entities.description),
+       embedding = COALESCE(EXCLUDED.embedding, entities.embedding),
+       mention_count = entities.mention_count + 1,
+       last_seen_at = now(),
+       updated_at = now()
+     RETURNING ${ENTITY_COLS}`,
     [
       input.name,
       input.type,
@@ -49,7 +62,7 @@ export async function updateEntity(
   );
 
   const { rows } = await pool.query(
-    `UPDATE entities SET ${sets}, updated_at = now() WHERE id = $1 RETURNING *`,
+    `UPDATE entities SET ${sets}, updated_at = now() WHERE id = $1 RETURNING ${ENTITY_COLS}`,
     [id, ...vals],
   );
   return (rows[0] as Entity) ?? null;
@@ -57,14 +70,14 @@ export async function updateEntity(
 
 export async function getEntityById(id: string): Promise<Entity | null> {
   const pool = getPool();
-  const { rows } = await pool.query("SELECT * FROM entities WHERE id = $1", [id]);
+  const { rows } = await pool.query(`SELECT ${ENTITY_COLS} FROM entities WHERE id = $1`, [id]);
   return (rows[0] as Entity) ?? null;
 }
 
 export async function getEntitiesByName(name: string): Promise<Entity[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM entities WHERE name ILIKE $1 OR $1 = ANY(aliases)",
+    `SELECT ${ENTITY_COLS} FROM entities WHERE name ILIKE $1 OR $1 = ANY(aliases)`,
     [`%${name}%`],
   );
   return rows as Entity[];
@@ -87,7 +100,7 @@ export async function searchEntities(
   }
 
   const { rows } = await pool.query(
-    `SELECT *, 1 - (embedding <=> $1::vector) AS similarity
+    `SELECT ${ENTITY_COLS}, 1 - (embedding <=> $1::vector) AS similarity
      FROM entities
      WHERE ${conditions.join(" AND ")}
      ORDER BY similarity DESC
@@ -101,7 +114,7 @@ export async function searchEntities(
 export async function resolveEntity(name: string): Promise<Entity | null> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT * FROM entities
+    `SELECT ${ENTITY_COLS} FROM entities
      WHERE name ILIKE $1 OR $1 ILIKE ANY(aliases)
      ORDER BY mention_count DESC
      LIMIT 1`,
@@ -117,7 +130,10 @@ export async function getEntityItems(
   const pool = getPool();
   const limit = options.limit ?? 20;
   const { rows } = await pool.query(
-    `SELECT i.* FROM items i
+    `SELECT i.id, i.type, i.content, i.summary, i.metadata, i.status, i.source, i.day,
+            i.confirmed, i.parent_id, i.embedding_model, i.superseded_by, i.completed_at,
+            i.pending_action, i.last_reinforced_at, i.created_at, i.updated_at
+     FROM items i
      JOIN item_entities ie ON i.id = ie.item_id
      WHERE ie.entity_id = $1 AND i.confirmed = true
      ORDER BY i.created_at DESC
@@ -141,15 +157,10 @@ export async function linkItemEntity(
   );
 }
 
-export async function rejectEntityConfirmation(id: string): Promise<void> {
-  const pool = getPool();
-  await pool.query("DELETE FROM entities WHERE id = $1 AND confirmed = false", [id]);
-}
-
 export async function getTopEntities(limit: number = 15): Promise<Entity[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    "SELECT * FROM entities ORDER BY mention_count DESC LIMIT $1",
+    `SELECT ${ENTITY_COLS} FROM entities ORDER BY mention_count DESC LIMIT $1`,
     [limit],
   );
   return rows as Entity[];

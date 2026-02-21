@@ -5,9 +5,10 @@
  * Returns null if web search is disabled.
  */
 
+import type { StructuredTool } from "@langchain/core/tools";
 import { getSettingsSync } from "@edda/db";
 
-export function getSearchTool(maxResults?: number): unknown | null {
+export function getSearchTool(maxResults?: number): StructuredTool | null {
   const settings = getSettingsSync();
   if (!settings.web_search_enabled) return null;
 

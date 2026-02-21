@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createItemType, getSettingsSync, confirmItemType } from "@edda/db";
+import { createItemType, confirmPending, getSettingsSync } from "@edda/db";
 
 export const createItemTypeSchema = z.object({
   name: z.string().describe("Unique type name (snake_case)"),
@@ -39,7 +39,7 @@ export const createItemTypeTool = tool(
     });
 
     if (autoConfirm) {
-      await confirmItemType(name);
+      await confirmPending("item_types", name);
     }
 
     return JSON.stringify({

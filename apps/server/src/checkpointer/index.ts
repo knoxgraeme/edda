@@ -4,9 +4,10 @@
  * Precedence: env CHECKPOINTER → settings.checkpointer_backend → "postgres"
  */
 
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { getSettingsSync } from "@edda/db";
 
-export async function getCheckpointer(): Promise<unknown> {
+export async function getCheckpointer(): Promise<BaseCheckpointSaver> {
   const settings = getSettingsSync();
   const backend = process.env.CHECKPOINTER || settings.checkpointer_backend || "postgres";
 

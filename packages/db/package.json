@@ -16,7 +16,8 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
     "migrate": "tsx src/migrate.ts",
-    "seed-settings": "tsx src/seed-settings.ts"
+    "seed-settings": "tsx src/seed-settings.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "pg": "^8.13.0",
@@ -25,6 +26,7 @@
   "devDependencies": {
     "tsx": "^4.19.0",
     "@types/pg": "^8.11.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^2.0.0"
   }
 }

@@ -5,9 +5,6 @@
  * which read from the settings table (with env var override support).
  */
 
-import { getSettingsSync } from "@edda/db";
-import type { StructuredTool } from "@langchain/core/tools";
-import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { createDeepAgent } from "deepagents";
 import { getCheckpointer } from "../checkpointer/index.js";
 import { getChatModel } from "../llm/index.js";
@@ -18,30 +15,36 @@ import { eddaTools } from "./tools/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createEddaAgent(): Promise<any> {
-  const settings = getSettingsSync();
-
-  const model = getChatModel(settings.default_model);
-  const searchTool = getSearchTool(settings.web_search_max_results);
+  const model = getChatModel();
+  const searchTool = getSearchTool();
 
   const [checkpointer, systemPrompt, mcpTools] = await Promise.all([
-    getCheckpointer() as Promise<BaseCheckpointSaver>,
+    getCheckpointer(),
     buildSystemPrompt(),
     loadMCPTools(),
   ]);
 
-  const tools: StructuredTool[] = [
+  const tools = [
     ...eddaTools,
     ...mcpTools,
-    ...(searchTool ? [searchTool as StructuredTool] : []),
+    ...(searchTool ? [searchTool] : []),
   ];
 
-  const agent = createDeepAgent({
+  // P1: Assert no tool name collisions (MCP tools could shadow built-in tools)
+  const toolNames = tools.map((t) => t.name);
+  const seen = new Set<string>();
+  for (const name of toolNames) {
+    if (seen.has(name)) {
+      throw new Error(`Duplicate tool name detected: "${name}". MCP tools must not shadow built-in tools.`);
+    }
+    seen.add(name);
+  }
+
+  return createDeepAgent({
     name: "edda",
     model,
     tools,
     systemPrompt,
     checkpointer,
   });
-
-  return agent;
 }

@@ -13,22 +13,40 @@ import { updateSettings } from "@edda/db";
 const AGENT_MUTABLE_KEYS = new Set([
   "user_display_name",
   "user_timezone",
+  "daily_digest_time",
   "web_search_enabled",
   "web_search_max_results",
   "memory_extraction_enabled",
   "user_crons_enabled",
+  "type_evolution_enabled",
   "approval_new_type",
   "approval_archive_stale",
   "approval_merge_entity",
   "agents_md_token_budget",
-  "agents_md_max_per_category",
   "agents_md_max_versions",
-  "agents_md_max_entities",
-  "system_prompt_override",
 ]);
 
 export const updateSettingsSchema = z.object({
-  updates: z.record(z.unknown()).describe("Key-value pairs to update in settings"),
+  updates: z
+    .object({
+      user_display_name: z.string().optional(),
+      user_timezone: z.string().optional(),
+      daily_digest_time: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/, "HH:MM format")
+        .optional(),
+      web_search_enabled: z.boolean().optional(),
+      web_search_max_results: z.number().int().min(1).max(20).optional(),
+      memory_extraction_enabled: z.boolean().optional(),
+      user_crons_enabled: z.boolean().optional(),
+      type_evolution_enabled: z.boolean().optional(),
+      approval_new_type: z.enum(["auto", "confirm"]).optional(),
+      approval_archive_stale: z.enum(["auto", "confirm"]).optional(),
+      approval_merge_entity: z.enum(["auto", "confirm"]).optional(),
+      agents_md_token_budget: z.number().int().min(100).max(10000).optional(),
+      agents_md_max_versions: z.number().int().min(1).max(50).optional(),
+    })
+    .describe("Settings key-value pairs to update. Only user-facing settings are modifiable."),
 });
 
 export const updateSettingsTool = tool(
