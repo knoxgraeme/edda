@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockGetPool } from "./helpers.js";
 
-vi.mock("../connection.js");
+vi.mock("../index.js");
 
 describe("settings", () => {
   beforeEach(() => {
@@ -31,7 +31,7 @@ describe("settings", () => {
     it("returns cached value after refreshSettings()", async () => {
       vi.resetModules();
       // Re-setup mock after module reset
-      const { getPool } = await import("../connection.js");
+      const { getPool } = await import("../index.js");
       const { createMockPool } = await import("./helpers.js");
       const mock = createMockPool();
       vi.mocked(getPool).mockReturnValue(
@@ -54,7 +54,7 @@ describe("settings", () => {
   describe("refreshSettings", () => {
     it("throws when settings row is missing", async () => {
       vi.resetModules();
-      const { getPool } = await import("../connection.js");
+      const { getPool } = await import("../index.js");
       const { createMockPool } = await import("./helpers.js");
       const mock = createMockPool();
       vi.mocked(getPool).mockReturnValue(
@@ -73,7 +73,7 @@ describe("settings", () => {
   describe("updateSettings", () => {
     it("column whitelist rejects unknown keys", async () => {
       vi.resetModules();
-      const { getPool } = await import("../connection.js");
+      const { getPool } = await import("../index.js");
       const { createMockPool } = await import("./helpers.js");
       const mock = createMockPool();
       vi.mocked(getPool).mockReturnValue(
@@ -100,7 +100,7 @@ describe("settings", () => {
 
     it("calls refreshSettings() after update to invalidate cache", async () => {
       vi.resetModules();
-      const { getPool } = await import("../connection.js");
+      const { getPool } = await import("../index.js");
       const { createMockPool } = await import("./helpers.js");
       const mock = createMockPool();
       vi.mocked(getPool).mockReturnValue(

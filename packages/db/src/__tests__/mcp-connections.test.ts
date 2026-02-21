@@ -11,7 +11,7 @@ import {
   deleteMcpConnection,
 } from "../mcp-connections.js";
 
-vi.mock("../connection.js");
+vi.mock("../index.js");
 
 describe("mcp-connections", () => {
   let query: ReturnType<typeof mockGetPool>["query"];
