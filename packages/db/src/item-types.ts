@@ -23,11 +23,15 @@ export async function createItemType(input: {
   description: string;
   metadata_schema?: Record<string, unknown>;
   classification_hint: string;
+  dashboard_section?: string;
+  completable?: boolean;
+  has_due_date?: boolean;
+  is_list?: boolean;
 }): Promise<ItemType> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO item_types (name, icon, description, metadata_schema, classification_hint, is_user_created)
-     VALUES ($1, $2, $3, $4, $5, true)
+    `INSERT INTO item_types (name, icon, description, metadata_schema, classification_hint, is_user_created, dashboard_section, completable, has_due_date, is_list)
+     VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9)
      RETURNING *`,
     [
       input.name,
@@ -35,6 +39,10 @@ export async function createItemType(input: {
       input.description,
       JSON.stringify(input.metadata_schema ?? {}),
       input.classification_hint,
+      input.dashboard_section ?? "captured",
+      input.completable ?? false,
+      input.has_due_date ?? false,
+      input.is_list ?? false,
     ],
   );
   return rows[0] as ItemType;

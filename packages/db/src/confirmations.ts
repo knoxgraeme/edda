@@ -4,10 +4,19 @@
 
 import { getPool } from "./index.js";
 
+const ALLOWED_TABLES = new Set(["items", "entities", "item_types"]);
+
+function assertValidTable(table: string): asserts table is "items" | "entities" | "item_types" {
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`Invalid table for confirmation: ${table}`);
+  }
+}
+
 export async function confirmPending(
   table: "items" | "entities" | "item_types",
   id: string,
 ): Promise<void> {
+  assertValidTable(table);
   const pool = getPool();
   if (table === "item_types") {
     await pool.query(
@@ -26,6 +35,7 @@ export async function rejectPending(
   table: "items" | "entities" | "item_types",
   id: string,
 ): Promise<void> {
+  assertValidTable(table);
   const pool = getPool();
   if (table === "item_types") {
     await pool.query("DELETE FROM item_types WHERE name = $1 AND confirmed = false", [id]);
