@@ -35,33 +35,7 @@ export function createMockPool() {
   return { pool: mockPool, query: mockQuery, connect: mockConnect, client: mockClient };
 }
 
-/**
- * Mocks `getPool()` to return a fake pool. Call in `beforeEach`.
- *
- * Usage:
- * ```typescript
- * vi.mock("../index.js");
- *
- * let query: ReturnType<typeof mockGetPool>["query"];
- *
- * beforeEach(() => {
- *   vi.clearAllMocks();
- *   ({ query } = mockGetPool());
- *   query.mockResolvedValueOnce({
- *     rows: [{ id: "abc", content: "test" }],
- *     rowCount: 1,
- *   });
- * });
- *
- * it("creates an item", async () => {
- *   const result = await createItem({ type: "note", content: "test" });
- *   expect(query).toHaveBeenCalledWith(
- *     expect.stringContaining("INSERT INTO items"),
- *     expect.any(Array),
- *   );
- * });
- * ```
- */
+/** Mocks `getPool()` to return a fake pool. Call in `beforeEach`. */
 export function mockGetPool() {
   const mock = createMockPool();
   vi.mocked(getPool).mockReturnValue(mock.pool as unknown as ReturnType<typeof getPool>);
