@@ -4,8 +4,12 @@ import {
   confirmPending,
   rejectPending,
   updateItem,
+  updateEntity,
+  getEntityItems,
   updateSettings,
   type Settings,
+  type Entity,
+  type Item,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
 
@@ -91,4 +95,19 @@ export async function saveSettingsAction(updates: Partial<Settings>) {
     console.error("Failed to save settings:", err);
     throw new Error("Failed to save settings. Please try again.");
   }
+}
+
+export async function updateEntityAction(
+  id: string,
+  updates: Partial<Pick<Entity, "name" | "description">>,
+): Promise<Entity | null> {
+  if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  const result = await updateEntity(id, updates);
+  revalidatePath("/entities");
+  return result;
+}
+
+export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
+  if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
+  return getEntityItems(entityId);
 }

@@ -26,9 +26,6 @@ CREATE INDEX IF NOT EXISTS idx_items_list ON items (
   (metadata->>'list_name'), status
 ) WHERE metadata->>'list_name' IS NOT NULL AND confirmed = true;
 
--- Pending confirmations
+-- Pending confirmations (items only; entity indexes in 015)
 CREATE INDEX IF NOT EXISTS idx_items_pending ON items (created_at DESC)
-  WHERE confirmed = false;
-
-CREATE INDEX IF NOT EXISTS idx_entities_pending ON entities (created_at DESC)
   WHERE confirmed = false;

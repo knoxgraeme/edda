@@ -157,6 +157,37 @@ export async function linkItemEntity(
   );
 }
 
+export async function listEntities(
+  options: { type?: EntityType; search?: string; limit?: number } = {},
+): Promise<Entity[]> {
+  const pool = getPool();
+  const conditions: string[] = ["confirmed = true"];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (options.type) {
+    conditions.push(`type = $${idx++}`);
+    params.push(options.type);
+  }
+  if (options.search) {
+    conditions.push(`(name ILIKE $${idx} OR $${idx} ILIKE ANY(aliases))`);
+    params.push(`%${options.search}%`);
+    idx++;
+  }
+
+  const limit = options.limit ?? 100;
+  params.push(limit);
+
+  const { rows } = await pool.query(
+    `SELECT ${ENTITY_COLS} FROM entities
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY mention_count DESC, updated_at DESC
+     LIMIT $${idx}`,
+    params,
+  );
+  return rows as Entity[];
+}
+
 export async function getTopEntities(limit: number = 15): Promise<Entity[]> {
   const pool = getPool();
   const { rows } = await pool.query(

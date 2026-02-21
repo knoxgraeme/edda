@@ -8,7 +8,7 @@
 import { refreshSettings } from "@edda/db";
 import { createEddaAgent } from "./agent/index.js";
 import { createCronRunner } from "./cron/index.js";
-import { startHealthServer } from "./server/health.js";
+import { setAgent, startHealthServer } from "./server/health.js";
 
 async function main() {
   console.log("🧠 Edda starting...");
@@ -18,7 +18,8 @@ async function main() {
   console.log(`  Provider: ${settings.llm_provider} / ${settings.default_model}`);
 
   // 2. Create agent
-  const _agent = await createEddaAgent();
+  const agent = await createEddaAgent();
+  setAgent(agent);
   console.log("  Agent ready");
 
   // 3. Start cron runner

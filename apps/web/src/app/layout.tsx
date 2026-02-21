@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { ClientProvider } from "@/providers/ClientProvider";
 import { ChatProvider } from "@/providers/ChatProvider";
+import { SideNav } from "@/app/components/SideNav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,7 +34,10 @@ export default function RootLayout({
       >
         <ClientProvider>
           <ChatProvider>
-            {children}
+            <div className="flex h-screen">
+              <SideNav />
+              <div className="flex-1 overflow-hidden">{children}</div>
+            </div>
             <Toaster />
           </ChatProvider>
         </ClientProvider>

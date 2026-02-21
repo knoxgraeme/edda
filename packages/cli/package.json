@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "type-check": "tsc --noEmit",
-    "dev": "tsx src/index.ts",
+    "dev": "echo 'CLI has no dev server — use pnpm init to run the wizard'",
     "init": "tsx src/index.ts init"
   },
   "dependencies": {

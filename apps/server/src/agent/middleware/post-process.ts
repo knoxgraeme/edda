@@ -333,7 +333,7 @@ export class EddaPostProcessMiddleware {
     transcript: string,
     settings: Settings,
   ): Promise<ExtractionResult | null> {
-    const model = getChatModel(settings.memory_extraction_model);
+    const model = await getChatModel(settings.memory_extraction_model);
 
     // Use structured output with the Zod schema
     const structuredModel = model.withStructuredOutput(ExtractionResultSchema, {

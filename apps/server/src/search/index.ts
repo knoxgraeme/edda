@@ -8,7 +8,12 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import { getSettingsSync } from "@edda/db";
 
-export function getSearchTool(maxResults?: number): StructuredTool | null {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function lazyImport(specifier: string): Promise<any> {
+  return import(/* @vite-ignore */ specifier);
+}
+
+export async function getSearchTool(maxResults?: number): Promise<StructuredTool | null> {
   const settings = getSettingsSync();
   if (!settings.web_search_enabled) return null;
 
@@ -17,20 +22,20 @@ export function getSearchTool(maxResults?: number): StructuredTool | null {
 
   switch (provider) {
     case "tavily": {
-      const { TavilySearchResults } = require("@langchain/community/tools/tavily_search");
-      return new TavilySearchResults({ maxResults: results });
+      const mod = await lazyImport("@langchain/community/tools/tavily_search");
+      return new mod.TavilySearchResults({ maxResults: results });
     }
     case "brave": {
-      const { BraveSearch } = require("@langchain/community/tools/brave_search");
-      return new BraveSearch({ apiKey: process.env.BRAVE_API_KEY });
+      const mod = await lazyImport("@langchain/community/tools/brave_search");
+      return new mod.BraveSearch({ apiKey: process.env.BRAVE_API_KEY });
     }
     case "serper": {
-      const { Serper } = require("@langchain/community/tools/serper");
-      return new Serper({ apiKey: process.env.SERPER_API_KEY });
+      const mod = await lazyImport("@langchain/community/tools/serper");
+      return new mod.Serper({ apiKey: process.env.SERPER_API_KEY });
     }
     case "serpapi": {
-      const { SerpAPI } = require("@langchain/community/tools/serpapi");
-      return new SerpAPI(process.env.SERPAPI_API_KEY);
+      const mod = await lazyImport("@langchain/community/tools/serpapi");
+      return new mod.SerpAPI(process.env.SERPAPI_API_KEY);
     }
     default:
       throw new Error(`Unknown search provider: ${provider}`);

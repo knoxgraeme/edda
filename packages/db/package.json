@@ -15,8 +15,8 @@
     "dev": "tsc --watch",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
-    "migrate": "tsx src/migrate.ts",
-    "seed-settings": "tsx src/seed-settings.ts",
+    "migrate": "tsx --env-file=../../.env src/migrate.ts",
+    "seed-settings": "tsx --env-file=../../.env src/seed-settings.ts",
     "test": "vitest run"
   },
   "dependencies": {
