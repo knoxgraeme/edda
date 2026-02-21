@@ -1,0 +1,57 @@
+# ─── Render Blueprint ──────────────────────────────────────────────
+# Render auto-detects this file and creates services.
+# Docs: https://render.com/docs/infrastructure-as-code
+
+databases:
+  - name: edda-db
+    plan: starter
+    databaseName: edda
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+services:
+  - type: web
+    name: edda-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerTarget: server
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: edda-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: EMBEDDING_PROVIDER
+        value: voyage
+      - key: CRON_RUNNER
+        value: standalone
+      - key: CHECKPOINTER_BACKEND
+        value: postgres
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8000"
+    healthCheckPath: /health
+
+  - type: web
+    name: edda-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerTarget: web
+    plan: starter
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: edda-server
+          property: hostport
+      - key: PORT
+        value: "3000"

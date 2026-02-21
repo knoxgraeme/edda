@@ -1,0 +1,29 @@
+{
+  "name": "@edda/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./types": "./dist/types.js",
+    "./migrations": "./dist/migrate.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src/",
+    "migrate": "tsx src/migrate.ts",
+    "seed-settings": "tsx src/seed-settings.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "pgvector": "^0.2.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.9.0"
+  }
+}

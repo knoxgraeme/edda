@@ -1,0 +1,25 @@
+# ─── Edda Local Development Stack ────────────────────────────────
+# Usage: docker compose -f docker-compose.dev.yml up
+#
+# Starts Postgres with pgvector. The server and web packages run
+# outside Docker via `pnpm dev` for hot reload.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: edda
+      POSTGRES_USER: edda
+      POSTGRES_PASSWORD: edda
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edda"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:

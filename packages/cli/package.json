@@ -1,0 +1,26 @@
+{
+  "name": "@edda/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "edda": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "init": "tsx src/index.ts init"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "@edda/db": "workspace:*",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
