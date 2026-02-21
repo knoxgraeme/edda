@@ -75,6 +75,9 @@ export async function deleteItem(id: string): Promise<boolean> {
   return (rowCount ?? 0) > 0;
 }
 
+/** Safelist pattern for metadata keys — alphanumeric and underscore only */
+const SAFE_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 export async function searchItems(
   embedding: number[],
   options: {
@@ -83,10 +86,11 @@ export async function searchItems(
     type?: string;
     after?: string;
     agentKnowledgeOnly?: boolean;
+    metadata?: Record<string, string>;
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
-  const { threshold = 0.85, limit = 10, type, after, agentKnowledgeOnly } = options;
+  const { threshold = 0.85, limit = 10, type, after, agentKnowledgeOnly, metadata } = options;
 
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
   const params: unknown[] = [JSON.stringify(embedding), threshold];
@@ -106,6 +110,16 @@ export async function searchItems(
     conditions.push(`type IN ('preference', 'learned_fact', 'pattern')`);
   }
 
+  if (metadata) {
+    for (const [key, value] of Object.entries(metadata)) {
+      if (!SAFE_KEY_RE.test(key)) {
+        throw new Error(`Invalid metadata key: ${key}`);
+      }
+      conditions.push(`metadata->>'${key}' = $${paramIdx++}`);
+      params.push(value);
+    }
+  }
+
   const { rows } = await pool.query(
     `SELECT ${ITEM_COLS}, 1 - (embedding <=> $1::vector) AS similarity
      FROM items
@@ -116,6 +130,21 @@ export async function searchItems(
   );
 
   return rows as SearchResult[];
+}
+
+export async function getMetadataValues(type: string, key: string): Promise<string[]> {
+  if (!SAFE_KEY_RE.test(key)) {
+    throw new Error(`Invalid metadata key: ${key}`);
+  }
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT DISTINCT metadata->>$2 AS val
+     FROM items
+     WHERE type = $1 AND metadata->>$2 IS NOT NULL AND confirmed = true
+     ORDER BY val`,
+    [type, key],
+  );
+  return rows.map((r: { val: string }) => r.val);
 }
 
 export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[]> {

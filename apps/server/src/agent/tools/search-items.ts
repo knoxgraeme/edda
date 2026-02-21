@@ -20,16 +20,21 @@ export const searchItemsSchema = z.object({
     .boolean()
     .optional()
     .describe("Only search agent knowledge types (preference, learned_fact, pattern)"),
+  metadata: z
+    .record(z.string())
+    .optional()
+    .describe("Filter by exact metadata field values, e.g. {category: 'movies'}"),
 });
 
 export const searchItemsTool = tool(
-  async ({ query, type, after, limit, agent_knowledge_only }) => {
+  async ({ query, type, after, limit, agent_knowledge_only, metadata }) => {
     const queryEmbedding = await embed(query);
     const results = await searchItems(queryEmbedding, {
       limit,
       type,
       after,
       agentKnowledgeOnly: agent_knowledge_only,
+      metadata,
     });
 
     return JSON.stringify({
