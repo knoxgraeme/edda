@@ -6,32 +6,42 @@
  */
 
 import { getSettingsSync } from "@edda/db";
+import type { StructuredTool } from "@langchain/core/tools";
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
+import { createDeepAgent } from "deepagents";
+import { getCheckpointer } from "../checkpointer/index.js";
 import { getChatModel } from "../llm/index.js";
 import { getSearchTool } from "../search/index.js";
-import { getCheckpointer } from "../checkpointer/index.js";
-// import { createDeepAgent } from "deepagents";
-// import { EddaPostProcessMiddleware } from "./middleware/post-process.js";
-// import { eddaTools } from "./tools/index.js";
-// import { buildSystemPrompt } from "./prompts/system.js";
+import { loadMCPTools } from "./mcp.js";
+import { buildSystemPrompt } from "./prompts/system.js";
+import { eddaTools } from "./tools/index.js";
 
-export async function createEddaAgent() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function createEddaAgent(): Promise<any> {
   const settings = getSettingsSync();
 
   const model = getChatModel(settings.default_model);
   const searchTool = getSearchTool(settings.web_search_max_results);
-  const checkpointer = await getCheckpointer();
 
-  // TODO: Wire up deep agent creation
-  // const agent = createDeepAgent({
-  //   model,
-  //   checkpointer,
-  //   tools: [...eddaTools, ...(searchTool ? [searchTool] : [])],
-  //   systemPrompt: buildSystemPrompt,
-  //   middleware: [
-  //     new EddaPostProcessMiddleware(),
-  //     toolCallLimitMiddleware({ runLimit: settings.tool_call_limit_global }),
-  //   ],
-  // });
+  const [checkpointer, systemPrompt, mcpTools] = await Promise.all([
+    getCheckpointer() as Promise<BaseCheckpointSaver>,
+    buildSystemPrompt(),
+    loadMCPTools(),
+  ]);
 
-  return { model, searchTool, checkpointer };
+  const tools: StructuredTool[] = [
+    ...eddaTools,
+    ...mcpTools,
+    ...(searchTool ? [searchTool as StructuredTool] : []),
+  ];
+
+  const agent = createDeepAgent({
+    name: "edda",
+    model,
+    tools,
+    systemPrompt,
+    checkpointer,
+  });
+
+  return agent;
 }
