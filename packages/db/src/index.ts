@@ -17,6 +17,8 @@ export * from "./mcp-connections.js";
 export * from "./agent-log.js";
 export * from "./threads.js";
 export * from "./confirmations.js";
+export * from "./migrate.js";
+export * from "./seed-settings.js";
 
 // ──────────────────────────────────────────────
 // Connection
