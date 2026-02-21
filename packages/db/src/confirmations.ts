@@ -2,7 +2,7 @@
  * Unified confirm/reject helpers for pending items, entities, and item types.
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { PendingItem } from "./types.js";
 
 const ALLOWED_TABLES = new Set(["items", "entities", "item_types"]);

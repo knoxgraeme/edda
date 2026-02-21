@@ -2,7 +2,7 @@
  * Entity CRUD + semantic search
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 
 import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
 

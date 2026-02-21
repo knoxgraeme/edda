@@ -2,7 +2,7 @@
  * Item CRUD + semantic search
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { Item, CreateItemInput, SearchResult } from "./types.js";
 
 /** All item columns except embedding — use for queries that don't need the vector */
