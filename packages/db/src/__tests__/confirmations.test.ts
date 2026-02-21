@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockGetPool } from "./helpers.js";
 import { confirmPending, rejectPending } from "../confirmations.js";
 
-vi.mock("../index.js");
+vi.mock("../connection.js");
 
 describe("confirmations", () => {
   let query: ReturnType<typeof mockGetPool>["query"];

@@ -13,7 +13,7 @@ import {
   ENTITY_COLS,
 } from "../entities.js";
 
-vi.mock("../index.js");
+vi.mock("../connection.js");
 
 describe("entities", () => {
   let query: ReturnType<typeof mockGetPool>["query"];

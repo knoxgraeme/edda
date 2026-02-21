@@ -14,10 +14,15 @@ export const updateSettingsSchema = z.object({
     .object({
       user_display_name: z.string().optional(),
       user_timezone: z.string().optional(),
+      daily_digest_time: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/, "HH:MM format")
+        .optional(),
       web_search_enabled: z.boolean().optional(),
       web_search_max_results: z.number().int().min(1).max(20).optional(),
       memory_extraction_enabled: z.boolean().optional(),
       user_crons_enabled: z.boolean().optional(),
+      type_evolution_enabled: z.boolean().optional(),
       approval_new_type: z.enum(["auto", "confirm"]).optional(),
       approval_archive_stale: z.enum(["auto", "confirm"]).optional(),
       approval_merge_entity: z.enum(["auto", "confirm"]).optional(),
@@ -28,9 +33,8 @@ export const updateSettingsSchema = z.object({
 });
 
 /** Settings the agent is allowed to modify — derived from the Zod schema */
-const updatesInner = updateSettingsSchema.shape.updates;
 const AGENT_MUTABLE_KEYS = new Set(
-  Object.keys("shape" in updatesInner ? updatesInner.shape : updatesInner._def.innerType.shape),
+  Object.keys(updateSettingsSchema.shape.updates.shape),
 );
 
 export const updateSettingsTool = tool(

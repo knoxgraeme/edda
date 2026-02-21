@@ -58,7 +58,15 @@ export interface Settings {
   tool_call_limit_delete: number;
   tool_call_limit_archive: number;
 
-  // Crons
+  // System cron schedules
+  daily_digest_cron: string;
+  daily_digest_model: string;
+  weekly_review_cron: string;
+  weekly_review_model: string;
+  type_evolution_cron: string;
+  type_evolution_model: string;
+
+  // User crons
   user_crons_enabled: boolean;
   user_cron_check_interval: string;
   user_cron_model: string;
@@ -244,4 +252,18 @@ export interface SearchResult extends Item {
 
 export interface EntitySearchResult extends Entity {
   similarity: number;
+}
+
+// ──────────────────────────────────────────────
+// Pending Items (inbox)
+// ──────────────────────────────────────────────
+
+export interface PendingItem {
+  id: string;
+  table: "items" | "entities" | "item_types";
+  type: string;
+  label: string;
+  description: string | null;
+  pendingAction: string | null;
+  createdAt: string;
 }

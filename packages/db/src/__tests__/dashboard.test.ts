@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockGetPool } from "./helpers.js";
 import { getDashboard, getPendingConfirmationsCount } from "../dashboard.js";
 
-vi.mock("../index.js");
+vi.mock("../connection.js");
 
 describe("dashboard", () => {
   let query: ReturnType<typeof mockGetPool>["query"];

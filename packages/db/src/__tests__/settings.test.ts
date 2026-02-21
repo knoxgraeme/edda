@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockGetPool } from "./helpers.js";
 
-vi.mock("../index.js");
+vi.mock("../connection.js");
 
 describe("settings", () => {
   beforeEach(() => {

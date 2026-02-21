@@ -2,7 +2,7 @@
  * Dashboard query — assembles the daily overview
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import { ITEM_COLS } from "./items.js";
 import type { DashboardData, Item } from "./types.js";
 

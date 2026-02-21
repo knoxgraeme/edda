@@ -13,18 +13,18 @@ export async function getCheckpointer(): Promise<BaseCheckpointSaver> {
 
   switch (backend) {
     case "postgres": {
-      const { PostgresSaver } = await import("@langchain/langgraph-checkpoint-postgres");
+      const { PostgresSaver } = require("@langchain/langgraph-checkpoint-postgres");
       const saver = PostgresSaver.fromConnString(process.env.DATABASE_URL!);
       await saver.setup();
       return saver;
     }
     case "sqlite": {
-      const { SqliteSaver } = await import("@langchain/langgraph-checkpoint-sqlite");
+      const { SqliteSaver } = require("@langchain/langgraph-checkpoint-sqlite");
       const path = process.env.SQLITE_PATH || "./edda-checkpoints.db";
       return SqliteSaver.fromConnString(path);
     }
     case "memory": {
-      const { MemorySaver } = await import("@langchain/langgraph");
+      const { MemorySaver } = require("@langchain/langgraph");
       return new MemorySaver();
     }
     default:

@@ -8,7 +8,7 @@
  * This avoids coupling to the checkpointer's internal schema.
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 
 export async function upsertThread(threadId: string): Promise<void> {
   const pool = getPool();

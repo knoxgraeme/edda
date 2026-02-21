@@ -133,7 +133,7 @@ function createTransport(connection: McpConnection) {
         );
       }
       return new StdioClientTransport({
-        command,
+        command: parsed.command,
         args: parsed.args,
         env: sanitizeEnv(parsed.env),
       });

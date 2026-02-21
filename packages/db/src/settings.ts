@@ -3,7 +3,7 @@
  * Cached in memory, refreshed on startup and after each conversation.
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { Settings } from "./types.js";
 
 let cachedSettings: Settings | null = null;
@@ -54,6 +54,12 @@ const SETTINGS_UPDATE_COLUMNS = [
   "tool_call_limit_global",
   "tool_call_limit_delete",
   "tool_call_limit_archive",
+  "daily_digest_cron",
+  "daily_digest_model",
+  "weekly_review_cron",
+  "weekly_review_model",
+  "type_evolution_cron",
+  "type_evolution_model",
   "user_crons_enabled",
   "user_cron_check_interval",
   "user_cron_model",

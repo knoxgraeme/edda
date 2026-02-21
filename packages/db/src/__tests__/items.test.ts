@@ -15,7 +15,7 @@ import {
   ITEM_COLS,
 } from "../items.js";
 
-vi.mock("../index.js");
+vi.mock("../connection.js");
 
 describe("items", () => {
   let query: ReturnType<typeof mockGetPool>["query"];
