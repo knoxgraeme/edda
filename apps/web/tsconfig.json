@@ -19,8 +19,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"],
-      "@edda/db": ["../../packages/db/src"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
