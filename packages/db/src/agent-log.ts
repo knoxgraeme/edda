@@ -2,7 +2,7 @@
  * Agent log — tracks skill executions, errors, and agent activity
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { AgentLog, CreateAgentLogInput } from "./types.js";
 
 export async function createAgentLog(input: CreateAgentLogInput): Promise<AgentLog> {

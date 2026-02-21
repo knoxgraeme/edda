@@ -5,7 +5,7 @@
  */
 
 import { vi } from "vitest";
-import { getPool } from "../index.js";
+import { getPool } from "../connection.js";
 
 /**
  * Creates a mock pg Pool with query and connect methods.

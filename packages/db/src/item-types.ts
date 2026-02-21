@@ -2,7 +2,7 @@
  * Item types — dynamic type registry
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { ItemType } from "./types.js";
 
 export async function getItemTypes(): Promise<ItemType[]> {
