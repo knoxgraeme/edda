@@ -14,9 +14,7 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
     pool.query(
       `SELECT ${ITEM_COLS} FROM items
        WHERE confirmed = true AND status = 'active'
-         AND metadata->>'due_date' IS NOT NULL
-         AND metadata->>'due_date' ~ '^\\d{4}-\\d{2}-\\d{2}$'
-         AND (metadata->>'due_date')::date = $1::date
+         AND safe_date(metadata->>'due_date') = $1::date
        ORDER BY created_at
        LIMIT 100`,
       [today],
@@ -34,8 +32,7 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
        WHERE confirmed = true AND status = 'active'
          AND type IN ('task', 'reminder')
          AND (metadata->>'due_date' IS NULL
-              OR (metadata->>'due_date' ~ '^\\d{4}-\\d{2}-\\d{2}$'
-                  AND (metadata->>'due_date')::date < $1::date))
+              OR safe_date(metadata->>'due_date') < $1::date)
        ORDER BY created_at
        LIMIT 100`,
       [today],

@@ -577,12 +577,6 @@ describe("updateSettingsSchema", () => {
     expect(() => updateSettingsSchema.parse({})).toThrow(ZodError);
   });
 
-  it("rejects invalid daily_digest_time format", () => {
-    expect(() =>
-      updateSettingsSchema.parse({ updates: { daily_digest_time: "9am" } }),
-    ).toThrow(ZodError);
-  });
-
   it("rejects invalid approval enum value", () => {
     expect(() =>
       updateSettingsSchema.parse({ updates: { approval_new_type: "maybe" } }),

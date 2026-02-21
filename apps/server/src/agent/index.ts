@@ -16,9 +16,9 @@ import { eddaTools } from "./tools/index.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createEddaAgent(): Promise<any> {
   const model = getChatModel();
-  const searchTool = getSearchTool();
 
-  const [checkpointer, systemPrompt, mcpTools] = await Promise.all([
+  const [searchTool, checkpointer, systemPrompt, mcpTools] = await Promise.all([
+    getSearchTool(),
     getCheckpointer(),
     buildSystemPrompt(),
     loadMCPTools(),

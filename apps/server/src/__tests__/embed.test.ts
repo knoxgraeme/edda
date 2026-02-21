@@ -77,6 +77,32 @@ describe("embed factory", () => {
     expect(MockOpenAIEmbeddings).toHaveBeenCalledTimes(1);
   });
 
+  it("embedBatch chunks >96 items into multiple calls", async () => {
+    // Create 100 items — should be chunked into 96 + 4
+    const items = Array.from({ length: 100 }, (_, i) => `text-${i}`);
+
+    // Make embedDocuments return unique vectors per call so we can verify ordering
+    let callCount = 0;
+    mockEmbedDocuments.mockImplementation((texts: string[]) => {
+      callCount++;
+      return Promise.resolve(texts.map((_: string, j: number) => [callCount, j]));
+    });
+
+    const { embedBatch } = await importEmbed();
+    const results = await embedBatch(items);
+
+    expect(results).toHaveLength(100);
+    // Should have been called twice: once with 96, once with 4
+    expect(mockEmbedDocuments).toHaveBeenCalledTimes(2);
+    expect(mockEmbedDocuments.mock.calls[0][0]).toHaveLength(96);
+    expect(mockEmbedDocuments.mock.calls[1][0]).toHaveLength(4);
+    // Verify ordering: first 96 from call 1, last 4 from call 2
+    expect(results[0]).toEqual([1, 0]);
+    expect(results[95]).toEqual([1, 95]);
+    expect(results[96]).toEqual([2, 0]);
+    expect(results[99]).toEqual([2, 3]);
+  });
+
   it("correct embedding dimensions passed from settings", async () => {
     settingsValue = {
       ...DEFAULT_TEST_SETTINGS,
