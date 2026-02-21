@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockGetPool } from "./helpers.js";
 import { createItem, batchCreateItems } from "../items.js";
 
-vi.mock("../index.js");
+vi.mock("../connection.js");
 
 describe("test infrastructure", () => {
   let query: ReturnType<typeof mockGetPool>["query"];
