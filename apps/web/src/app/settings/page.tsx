@@ -25,5 +25,6 @@ export default async function SettingsPage() {
     );
   }
 
-  return <SettingsClient initial={settings} />;
+  const authEnabled = !!process.env.EDDA_PASSWORD;
+  return <SettingsClient initial={settings} authEnabled={authEnabled} />;
 }

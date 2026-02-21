@@ -38,6 +38,9 @@ const envSchema = z.object({
   LANGSMITH_API_KEY: z.string().optional(),
   LANGSMITH_PROJECT: z.string().optional(),
 
+  // Auth
+  EDDA_PASSWORD: z.string().optional(),
+
   // Server
   PORT: z.coerce.number().int().positive().default(8000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
