@@ -39,3 +39,19 @@ export async function createItemType(input: {
   );
   return rows[0] as ItemType;
 }
+
+export async function confirmItemType(name: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    "UPDATE item_types SET confirmed = true, pending_action = NULL WHERE name = $1",
+    [name],
+  );
+}
+
+export async function deleteItemType(name: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    "DELETE FROM item_types WHERE name = $1 AND built_in = false",
+    [name],
+  );
+}

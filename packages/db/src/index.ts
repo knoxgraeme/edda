@@ -14,6 +14,9 @@ export * from "./settings.js";
 export * from "./item-types.js";
 export * from "./dashboard.js";
 export * from "./mcp-connections.js";
+export * from "./agent-log.js";
+export * from "./threads.js";
+export * from "./confirmations.js";
 
 // ──────────────────────────────────────────────
 // Connection

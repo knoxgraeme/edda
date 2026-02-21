@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "type-check": "tsc --noEmit",
     "dev": "tsx src/index.ts",
     "init": "tsx src/index.ts init"
   },

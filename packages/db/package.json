@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
     "lint": "eslint src/",
     "migrate": "tsx src/migrate.ts",
     "seed-settings": "tsx src/seed-settings.ts"

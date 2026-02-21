@@ -1,0 +1,172 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/scripts/block-env-writes.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/scripts/block-destructive-bash.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/scripts/block-destructive-ddl.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/scripts/post-edit-checks.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay /System/Library/Sounds/Ping.aiff",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay /System/Library/Sounds/Hero.aiff &",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/scripts/typecheck-stop.sh",
+            "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd $CLAUDE_PROJECT_DIR && OUTPUT=$(pnpm lint 2>&1); EXIT=$?; echo \"$OUTPUT\" | tail -40; if [ $EXIT -ne 0 ]; then echo \"\\nLint failed. Fix before finishing.\" >&2; exit 2; fi'",
+            "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd $CLAUDE_PROJECT_DIR && OUTPUT=$(pnpm test 2>&1); EXIT=$?; echo \"$OUTPUT\" | tail -40; if [ $EXIT -ne 0 ]; then echo \"\\nTests failed. Fix before finishing.\" >&2; exit 2; fi'",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "The conversation is about to be compressed to save context space. CLAUDE.md already covers project structure, API patterns, and coding conventions — do NOT repeat those. Instead, identify and emit a systemMessage preserving SESSION-SPECIFIC context that would be lost: (1) The user's current goal/task and progress so far, (2) Key decisions or requirements discussed, (3) Specific files being worked on and their current state, (4) Any errors being debugged and root causes identified, (5) Pending work or next steps agreed upon. Be concise — bullet points, not prose. Only include what's actually relevant from this session.",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/scripts/session-context.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+      "Bash(pnpm dev*)",
+      "Bash(pnpm build*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm type-check*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm add*)",
+      "Bash(pnpm migrate*)",
+      "Bash(pnpm eval*)",
+      "Bash(pnpm format*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git branch*)",
+      "Bash(git switch*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git stash*)",
+      "Bash(git fetch*)",
+      "Bash(git remote*)",
+      "Bash(git show*)",
+      "Bash(git rev-parse*)",
+      "Bash(git rev-list*)",
+      "Bash(gh *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(which *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(jq *)",
+      "Bash(chmod +x *)",
+      "Bash(docker compose*)",
+      "Bash(docker ps*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -r -f *)",
+      "Bash(rm --recursive *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)",
+      "Bash(git checkout .)",
+      "Bash(git restore .)",
+      "Bash(git branch -D*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git pull*)",
+      "Bash(pnpm db:seed-settings*)"
+    ]
+  }
+}

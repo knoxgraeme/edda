@@ -14,6 +14,13 @@
     "lint": {
       "dependsOn": ["^build"]
     },
+    "type-check": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "eval": {
       "dependsOn": ["^build"],
       "cache": false

@@ -26,3 +26,33 @@ export async function createMcpConnection(input: {
   );
   return rows[0] as McpConnection;
 }
+
+const MCP_UPDATE_COLUMNS = ['name', 'transport', 'config', 'enabled'] as const;
+
+export async function updateMcpConnection(
+  id: string,
+  updates: Partial<McpConnection>,
+): Promise<McpConnection | null> {
+  const pool = getPool();
+  const entries = Object.entries(updates).filter(
+    ([k]) => MCP_UPDATE_COLUMNS.includes(k as typeof MCP_UPDATE_COLUMNS[number])
+  );
+  if (entries.length === 0) {
+    const { rows } = await pool.query("SELECT * FROM mcp_connections WHERE id = $1", [id]);
+    return (rows[0] as McpConnection) ?? null;
+  }
+
+  const sets = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(", ");
+  const vals = entries.map(([, v]) => (typeof v === "object" && v !== null ? JSON.stringify(v) : v));
+
+  const { rows } = await pool.query(
+    `UPDATE mcp_connections SET ${sets} WHERE id = $1 RETURNING *`,
+    [id, ...vals],
+  );
+  return (rows[0] as McpConnection) ?? null;
+}
+
+export async function deleteMcpConnection(id: string): Promise<void> {
+  const pool = getPool();
+  await pool.query("DELETE FROM mcp_connections WHERE id = $1", [id]);
+}

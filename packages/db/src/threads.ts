@@ -1,0 +1,48 @@
+/**
+ * Thread metadata — tracks processing state for post-processing hooks.
+ *
+ * Works with the LangGraph checkpointer's `checkpoints` table.
+ * The checkpointer stores a `metadata` JSONB column per checkpoint;
+ * we use a lightweight `thread_metadata` approach: our own small table
+ * that the afterAgent hook writes to and the daily cron reads from.
+ * This avoids coupling to the checkpointer's internal schema.
+ */
+
+import { getPool } from "./index.js";
+
+export async function upsertThread(threadId: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO thread_metadata (thread_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+    [threadId],
+  );
+}
+
+export async function setThreadMetadata(
+  threadId: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO thread_metadata (thread_id, metadata)
+     VALUES ($1, $2)
+     ON CONFLICT (thread_id) DO UPDATE SET
+       metadata = thread_metadata.metadata || $2,
+       updated_at = now()`,
+    [threadId, JSON.stringify(metadata)],
+  );
+}
+
+export async function getUnprocessedThreads(limit: number = 100): Promise<
+  { thread_id: string; metadata: Record<string, unknown> }[]
+> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT thread_id, metadata FROM thread_metadata
+     WHERE (metadata->>'processed_by_hook')::boolean IS NOT TRUE
+     ORDER BY updated_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+  return rows as { thread_id: string; metadata: Record<string, unknown> }[];
+}

@@ -3,7 +3,7 @@
  */
 
 import { getPool } from "./index.js";
-import type { Entity, EntitySearchResult, EntityType } from "./types.js";
+import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
 
 export async function upsertEntity(input: {
   name: string;
@@ -28,17 +28,24 @@ export async function upsertEntity(input: {
   return rows[0] as Entity;
 }
 
+const ENTITY_UPDATE_COLUMNS = [
+  'name', 'type', 'aliases', 'description', 'mention_count',
+  'last_seen_at', 'embedding', 'confirmed', 'pending_action', 'metadata',
+] as const;
+
 export async function updateEntity(
   id: string,
   updates: Partial<Entity>,
 ): Promise<Entity | null> {
   const pool = getPool();
-  const entries = Object.entries(updates).filter(([k]) => k !== "id");
+  const entries = Object.entries(updates).filter(
+    ([k]) => ENTITY_UPDATE_COLUMNS.includes(k as typeof ENTITY_UPDATE_COLUMNS[number])
+  );
   if (entries.length === 0) return getEntityById(id);
 
-  const sets = entries.map(([k], i) => `${k} = $${i + 2}`).join(", ");
+  const sets = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(", ");
   const vals = entries.map(([, v]) =>
-    Array.isArray(v) ? v : typeof v === "object" ? JSON.stringify(v) : v,
+    Array.isArray(v) ? v : typeof v === "object" && v !== null ? JSON.stringify(v) : v,
   );
 
   const { rows } = await pool.query(
@@ -89,6 +96,54 @@ export async function searchEntities(
   );
 
   return rows as EntitySearchResult[];
+}
+
+export async function resolveEntity(name: string): Promise<Entity | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM entities
+     WHERE name ILIKE $1 OR $1 ILIKE ANY(aliases)
+     ORDER BY mention_count DESC
+     LIMIT 1`,
+    [name],
+  );
+  return (rows[0] as Entity) ?? null;
+}
+
+export async function getEntityItems(
+  entityId: string,
+  options: { limit?: number } = {},
+): Promise<Item[]> {
+  const pool = getPool();
+  const limit = options.limit ?? 20;
+  const { rows } = await pool.query(
+    `SELECT i.* FROM items i
+     JOIN item_entities ie ON i.id = ie.item_id
+     WHERE ie.entity_id = $1 AND i.confirmed = true
+     ORDER BY i.created_at DESC
+     LIMIT $2`,
+    [entityId, limit],
+  );
+  return rows as Item[];
+}
+
+export async function linkItemEntity(
+  itemId: string,
+  entityId: string,
+  relationship: string = "mentioned",
+): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO item_entities (item_id, entity_id, relationship)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (item_id, entity_id) DO UPDATE SET relationship = $3`,
+    [itemId, entityId, relationship],
+  );
+}
+
+export async function rejectEntityConfirmation(id: string): Promise<void> {
+  const pool = getPool();
+  await pool.query("DELETE FROM entities WHERE id = $1 AND confirmed = false", [id]);
 }
 
 export async function getTopEntities(limit: number = 15): Promise<Entity[]> {

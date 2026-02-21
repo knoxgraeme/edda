@@ -18,7 +18,7 @@ async function main() {
   console.log(`  Provider: ${settings.llm_provider} / ${settings.default_model}`);
 
   // 2. Create agent
-  const agent = await createEddaAgent();
+  const _agent = await createEddaAgent();
   console.log("  Agent ready");
 
   // 3. Start cron runner
@@ -27,7 +27,7 @@ async function main() {
   console.log(`  Cron runner: ${settings.cron_runner}`);
 
   // 4. Health endpoint
-  const port = parseInt(process.env.PORT ?? "3001", 10);
+  const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
   console.log(`  Health: http://localhost:${port}/api/health`);
 

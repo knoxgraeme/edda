@@ -3,14 +3,20 @@
   "private": true,
   "description": "AI personal assistant — your second brain",
   "license": "MIT",
+  "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "turbo": "^2.8.1"
   },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "test": "turbo test",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
     "migrate": "pnpm --filter @edda/db migrate",

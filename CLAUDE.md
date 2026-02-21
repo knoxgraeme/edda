@@ -99,3 +99,34 @@ Critical env vars (see `.env.example`):
 - TypeScript strict mode, ES2022, ESM modules throughout
 - Prettier: 2-space indent, trailing commas, 100-char line width (see `.prettierrc`)
 - Node version: 20 (see `.nvmrc`)
+
+## Architecture Rules
+
+These rules are enforced by the post-edit hook (`.claude/hooks/scripts/post-edit-checks.sh`):
+
+1. **Server tools must use `@edda/db` query functions** — Files in `apps/server/src/agent/tools/` must import and use query functions from `@edda/db` (in `packages/db/src/queries/`). Never use raw SQL (`pool.query`, `client.query`) in tool files.
+
+2. **Client components must not import server packages** — Files with `'use client'` must not import from `@edda/db` or `@edda/server`. Database access from client components must go through API routes or server components.
+
+3. **Tool files must export a Zod schema** — Every tool file in `apps/server/src/agent/tools/` must export a Zod schema for input validation.
+
+4. **Migrations are append-only** — Never modify an existing migration file in `packages/db/migrations/`. Always create a new migration with the next sequence number.
+
+## Testing Conventions
+
+```bash
+pnpm test                         # Run all tests (via Turbo)
+pnpm type-check                   # TypeScript type check across all packages
+pnpm eval                         # Run eval suite (server only)
+```
+
+- Tests use Vitest
+- Type checking runs `tsc --noEmit` in each package
+- The Stop hook automatically runs type-check, lint, and test before session end
+- CI runs: install -> type-check -> lint -> test -> build
+
+## Error Handling Conventions
+
+- Use `loadConfig()` from `apps/server/src/config.ts` for environment validation at startup — it uses Zod and throws descriptive errors for missing/invalid env vars
+- Prefer early returns with descriptive error messages over nested try/catch
+- Let LangGraph handle agent-level error recovery; tools should throw on failure rather than returning error strings

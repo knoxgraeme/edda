@@ -58,3 +58,15 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
     pending_confirmations: pending.rows as Item[],
   };
 }
+
+export async function getPendingConfirmationsCount(): Promise<number> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT
+       (SELECT count(*) FROM items WHERE confirmed = false) +
+       (SELECT count(*) FROM item_types WHERE confirmed = false) +
+       (SELECT count(*) FROM entities WHERE confirmed = false)
+     AS total`,
+  );
+  return Number(rows[0]?.total) || 0;
+}

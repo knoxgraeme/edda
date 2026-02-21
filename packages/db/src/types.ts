@@ -102,6 +102,10 @@ export interface Item {
   confirmed: boolean;
   parent_id: string | null;
   embedding: number[] | null;
+  embedding_model: string | null;
+  superseded_by: string | null;
+  completed_at: string | null;
+  pending_action: string | null;
   last_reinforced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -118,13 +122,15 @@ export interface CreateItemInput {
   confirmed?: boolean;
   parent_id?: string;
   embedding?: number[];
+  embedding_model?: string;
+  pending_action?: string;
 }
 
 // ──────────────────────────────────────────────
 // Entities
 // ──────────────────────────────────────────────
 
-export type EntityType = "person" | "project" | "company" | "topic" | "place";
+export type EntityType = "person" | "project" | "company" | "topic" | "place" | "tool" | "concept";
 
 export interface Entity {
   id: string;
@@ -135,6 +141,9 @@ export interface Entity {
   mention_count: number;
   last_seen_at: string;
   embedding: number[] | null;
+  confirmed: boolean;
+  pending_action: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -149,7 +158,20 @@ export interface ItemType {
   description: string;
   metadata_schema: Record<string, unknown>;
   classification_hint: string;
+  extraction_hint: string;
+  dashboard_section: string;
+  dashboard_priority: number;
+  completable: boolean;
+  has_due_date: boolean;
+  is_list: boolean;
+  include_in_recall: boolean;
+  private: boolean;
+  agent_internal: boolean;
+  built_in: boolean;
   is_user_created: boolean;
+  created_by: string;
+  confirmed: boolean;
+  pending_action: string | null;
   created_at: string;
 }
 
@@ -176,6 +198,40 @@ export interface DashboardData {
   open_items: Item[];
   lists: Record<string, Item[]>;
   pending_confirmations: Item[];
+}
+
+// ──────────────────────────────────────────────
+// Agent Log
+// ──────────────────────────────────────────────
+
+export interface AgentLog {
+  id: string;
+  skill: string;
+  trigger: string;
+  input_summary: string | null;
+  output_summary: string | null;
+  items_created: string[];
+  items_retrieved: string[];
+  entities_created: string[];
+  model: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface CreateAgentLogInput {
+  skill: string;
+  trigger: string;
+  input_summary?: string;
+  output_summary?: string;
+  items_created?: string[];
+  items_retrieved?: string[];
+  entities_created?: string[];
+  model?: string;
+  tokens_in?: number;
+  tokens_out?: number;
+  duration_ms?: number;
 }
 
 // ──────────────────────────────────────────────
