@@ -7,14 +7,21 @@ import { z } from "zod";
 import { getTimeline } from "@edda/db";
 
 export const getTimelineSchema = z.object({
-  start: z.string().describe("Start date (YYYY-MM-DD)"),
-  end: z.string().describe("End date (YYYY-MM-DD)"),
+  start: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+    .describe("Start date (YYYY-MM-DD)"),
+  end: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+    .describe("End date (YYYY-MM-DD)"),
   types: z.array(z.string()).optional().describe("Filter by item types"),
+  limit: z.number().int().min(1).max(100).optional().describe("Max items to return"),
 });
 
 export const getTimelineTool = tool(
-  async ({ start, end, types }) => {
-    const items = await getTimeline(start, end, types);
+  async ({ start, end, types, limit }) => {
+    const items = await getTimeline(start, end, types, limit);
     return JSON.stringify({
       start,
       end,

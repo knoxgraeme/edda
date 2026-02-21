@@ -12,10 +12,17 @@ export const createItemTypeSchema = z.object({
   extraction_hint: z.string().describe("Hint for the classifier to identify this type"),
   metadata_schema: z.record(z.unknown()).optional().describe("JSON schema for metadata fields"),
   icon: z.string().optional().describe("Emoji icon for the type"),
+  dashboard_section: z
+    .string()
+    .optional()
+    .describe("Dashboard section to display this type in (e.g. 'actionable', 'captured', 'lists')"),
+  completable: z.boolean().optional().describe("Whether items of this type can be marked done"),
+  has_due_date: z.boolean().optional().describe("Whether items of this type have a due date"),
+  is_list: z.boolean().optional().describe("Whether this type represents a list"),
 });
 
 export const createItemTypeTool = tool(
-  async ({ name, description, extraction_hint, metadata_schema, icon }) => {
+  async ({ name, description, extraction_hint, metadata_schema, icon, dashboard_section, completable, has_due_date, is_list }) => {
     const settings = getSettingsSync();
     const autoConfirm = settings.approval_new_type === "auto";
 
@@ -25,6 +32,10 @@ export const createItemTypeTool = tool(
       classification_hint: extraction_hint,
       metadata_schema,
       icon: icon ?? "📦",
+      dashboard_section,
+      completable,
+      has_due_date,
+      is_list,
     });
 
     if (autoConfirm) {

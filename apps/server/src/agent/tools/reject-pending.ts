@@ -28,10 +28,13 @@ export const rejectPendingTool = tool(
 
     const isReclassification =
       item.pending_action === "reclassify" &&
-      item.metadata?.previous_type !== undefined;
+      typeof item.metadata === "object" &&
+      item.metadata !== null &&
+      "previous_type" in item.metadata &&
+      item.metadata.previous_type !== undefined;
 
     if (isReclassification) {
-      const previousType = item.metadata.previous_type;
+      const previousType = item.metadata["previous_type"];
       if (typeof previousType !== "string") {
         return JSON.stringify({ status: "error", message: "previous_type metadata is not a string", id });
       }

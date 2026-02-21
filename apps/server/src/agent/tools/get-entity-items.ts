@@ -8,14 +8,14 @@ import { resolveEntity, getEntityItems } from "@edda/db";
 
 export const getEntityItemsSchema = z.object({
   name: z.string().describe("Entity name or alias to look up"),
-  limit: z.number().optional().describe("Max items to return, defaults to 20"),
+  limit: z.number().int().min(1).max(100).default(20).describe("Max items to return"),
 });
 
 export const getEntityItemsTool = tool(
   async ({ name, limit }) => {
     const entity = await resolveEntity(name);
     if (!entity) return JSON.stringify({ found: false, items: [] });
-    const items = await getEntityItems(entity.id, { limit: limit || 20 });
+    const items = await getEntityItems(entity.id, { limit });
     return JSON.stringify({ entity, items });
   },
   {

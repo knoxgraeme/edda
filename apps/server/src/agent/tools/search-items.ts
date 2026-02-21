@@ -10,8 +10,12 @@ import { embed } from "../../embed/index.js";
 export const searchItemsSchema = z.object({
   query: z.string().describe("Natural language search query"),
   type: z.string().optional().describe("Filter by item type"),
-  after: z.string().optional().describe("Only include items with day >= this date (YYYY-MM-DD)"),
-  limit: z.number().optional().describe("Max results to return (default 10)"),
+  after: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+    .optional()
+    .describe("Only include items with day >= this date (YYYY-MM-DD)"),
+  limit: z.number().int().min(1).max(100).default(20).describe("Max results to return"),
   agent_knowledge_only: z
     .boolean()
     .optional()
@@ -22,7 +26,7 @@ export const searchItemsTool = tool(
   async ({ query, type, after, limit, agent_knowledge_only }) => {
     const queryEmbedding = await embed(query);
     const results = await searchItems(queryEmbedding, {
-      limit: limit ?? 10,
+      limit,
       type,
       after,
       agentKnowledgeOnly: agent_knowledge_only,

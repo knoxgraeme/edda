@@ -10,14 +10,19 @@ export const addMcpConnectionSchema = z.object({
   name: z.string().describe("User-facing label"),
   url: z.string().url().describe("MCP SSE endpoint URL"),
   description: z.string().optional().describe("Description of what this MCP server provides"),
-  auth_header: z.string().optional().describe("Authorization header value if required"),
+  auth_env_var: z
+    .string()
+    .optional()
+    .describe(
+      "Name of the env var holding the Bearer token (e.g. MCP_MYSERVICE_TOKEN). Set the actual secret in Railway secrets or .env — never pass the token value directly.",
+    ),
 });
 
 export const addMcpConnectionTool = tool(
-  async ({ name, url, description, auth_header }) => {
+  async ({ name, url, description, auth_env_var }) => {
     const config: Record<string, unknown> = { url };
     if (description) config.description = description;
-    if (auth_header) config.auth_header = auth_header;
+    if (auth_env_var) config.auth_env_var = auth_env_var;
 
     const connection = await createMcpConnection({
       name,
