@@ -245,3 +245,17 @@ export interface SearchResult extends Item {
 export interface EntitySearchResult extends Entity {
   similarity: number;
 }
+
+// ──────────────────────────────────────────────
+// Pending Items (inbox)
+// ──────────────────────────────────────────────
+
+export interface PendingItem {
+  id: string;
+  table: "items" | "entities" | "item_types";
+  type: string;
+  label: string;
+  description: string | null;
+  pendingAction: string | null;
+  createdAt: string;
+}
