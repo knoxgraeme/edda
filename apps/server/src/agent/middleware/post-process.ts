@@ -22,14 +22,8 @@ import {
   createAgentLog,
   getSettingsSync,
 } from "@edda/db";
-import type {
-  Settings,
-  EntityType,
-  CreateItemInput,
-  SearchResult,
-  EntitySearchResult,
-} from "@edda/db";
-import { embed } from "../../embed/index.js";
+import type { Settings, SearchResult, EntitySearchResult } from "@edda/db";
+import { embedBatch } from "../../embed/index.js";
 import { getChatModel } from "../../llm/index.js";
 import { generateAgentsMd } from "../generate-agents-md.js";
 
@@ -57,6 +51,10 @@ const ExtractionResultSchema = z.object({
 type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
 type ExtractedMemory = z.infer<typeof MemorySchema>;
 type ExtractedEntity = z.infer<typeof ExtractedEntitySchema>;
+
+const VALID_ENTITY_TYPES = new Set<string>(
+  ExtractedEntitySchema.shape.type.options,
+);
 
 // ── Extraction prompt ───────────────────────────────────────────
 
@@ -149,14 +147,26 @@ function buildTranscript(messages: MessageLike[]): string {
  * Scans the message history for tool call results that contain item IDs
  * (from create_item, batch_create_items, update_item tool calls).
  */
-export function extractCreatedItemIds(messages: MessageLike[]): string[] {
+function isConversationState(value: unknown): value is ConversationState {
+  if (typeof value !== "object" || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  if (obj.messages !== undefined && !Array.isArray(obj.messages)) return false;
+  return true;
+}
+
+const ITEM_CREATION_TOOLS = new Set(["create_item", "batch_create_items", "update_item"]);
+
+function extractCreatedItemIds(messages: MessageLike[]): string[] {
   const ids: string[] = [];
-  const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
   for (const msg of messages) {
     const role = getMessageRole(msg);
     // Tool results come back as "tool" type messages
     if (role !== "tool") continue;
+
+    // Only process results from item-creation tools
+    if (!msg.name || !ITEM_CREATION_TOOLS.has(msg.name)) continue;
 
     const text = getMessageText(msg);
     if (!text) continue;
@@ -210,9 +220,14 @@ export class EddaPostProcessMiddleware {
    */
   async afterAgent(state: unknown): Promise<unknown> {
     const startTime = Date.now();
-    const typedState = state as ConversationState;
-    const messages = typedState?.messages;
-    const threadId = typedState?.configurable?.thread_id;
+
+    // Validate state shape at runtime instead of blind cast
+    if (!isConversationState(state)) {
+      return state;
+    }
+
+    const messages = state.messages;
+    const threadId = state.configurable?.thread_id;
 
     // Skip if no messages or too few to extract from
     if (!messages || messages.length < 2) {
@@ -260,12 +275,11 @@ export class EddaPostProcessMiddleware {
       const createdItemIds = extractCreatedItemIds(messages);
 
       // 4. Process memories with semantic dedup
-      const { itemIds: memoryItemIds, entityIds: memoryEntityIds } =
+      const { itemIds: memoryItemIds } =
         await this.processMemories(extraction.memories, settings);
 
       // 5. Process entities with semantic dedup
-      const newEntityIds = await this.processEntities(extraction.entities, settings);
-      const allEntityIds = [...memoryEntityIds, ...newEntityIds];
+      const allEntityIds = await this.processEntities(extraction.entities, settings);
 
       // 6. Link entities to items created during the conversation
       await this.linkEntitiesToItems(allEntityIds, createdItemIds);
@@ -337,14 +351,8 @@ export class EddaPostProcessMiddleware {
       },
     ]);
 
-    // Validate the result shape
-    const parsed = ExtractionResultSchema.safeParse(result);
-    if (!parsed.success) {
-      console.error("[post-process] LLM output failed validation:", parsed.error);
-      return null;
-    }
-
-    return parsed.data;
+    // withStructuredOutput validates against ExtractionResultSchema at runtime
+    return (result as ExtractionResult) ?? null;
   }
 
   // ── Private: Memory semantic dedup ──────────────────────────
@@ -360,18 +368,20 @@ export class EddaPostProcessMiddleware {
   private async processMemories(
     memories: ExtractedMemory[],
     settings: Settings,
-  ): Promise<{ itemIds: string[]; entityIds: string[] }> {
+  ): Promise<{ itemIds: string[] }> {
     const itemIds: string[] = [];
-    const entityIds: string[] = [];
     const reinforceThreshold = settings.memory_reinforce_threshold;
     const updateThreshold = settings.memory_update_threshold;
 
-    for (const memory of memories) {
-      try {
-        // 1. Embed the memory
-        const vector = await embed(memory.content);
+    // Batch-embed all memory texts
+    const texts = memories.map((m) => m.content);
+    const vectors = texts.length > 0 ? await embedBatch(texts) : [];
 
-        // 2. Search for similar existing memories
+    for (let i = 0; i < memories.length; i++) {
+      const memory = memories[i];
+      const vector = vectors[i];
+      try {
+        // Search for similar existing memories
         const similar: SearchResult[] = await searchItems(vector, {
           threshold: updateThreshold,
           limit: 3,
@@ -379,13 +389,13 @@ export class EddaPostProcessMiddleware {
         });
 
         if (similar.length > 0 && similar[0].similarity >= reinforceThreshold) {
-          // 3a. Reinforce — near-exact match, just bump timestamp
+          // Reinforce — near-exact match, just bump timestamp
           await updateItem(similar[0].id, {
             last_reinforced_at: new Date().toISOString(),
           });
           itemIds.push(similar[0].id);
         } else if (similar.length > 0 && similar[0].similarity >= updateThreshold) {
-          // 3b. Update — similar but not exact, supersede the old item
+          // Update — similar but not exact, supersede the old item
           const newItem = await createItem({
             type: memory.type,
             content: memory.content,
@@ -401,7 +411,7 @@ export class EddaPostProcessMiddleware {
           });
           itemIds.push(newItem.id);
         } else {
-          // 3c. Insert — no close match, create new memory
+          // Insert — no close match, create new memory
           const newItem = await createItem({
             type: memory.type,
             content: memory.content,
@@ -409,7 +419,7 @@ export class EddaPostProcessMiddleware {
             confirmed: true,
             embedding: vector,
             embedding_model: settings.embedding_model,
-          } as CreateItemInput);
+          });
           itemIds.push(newItem.id);
         }
       } catch (err) {
@@ -417,7 +427,7 @@ export class EddaPostProcessMiddleware {
       }
     }
 
-    return { itemIds, entityIds };
+    return { itemIds };
   }
 
   // ── Private: Entity semantic dedup ──────────────────────────
@@ -438,14 +448,19 @@ export class EddaPostProcessMiddleware {
     const exactThreshold = settings.entity_exact_threshold;
     const fuzzyThreshold = settings.entity_fuzzy_threshold;
 
-    for (const entity of entities) {
-      try {
-        // 1. Build embedding text: name + description for richer embedding
-        const embedText = entity.description
-          ? `${entity.name}: ${entity.description}`
-          : entity.name;
-        const vector = await embed(embedText);
+    // Filter to entities with valid types
+    const validEntities = entities.filter((e) => VALID_ENTITY_TYPES.has(e.type));
 
+    // 1. Batch-embed all entity texts
+    const embedTexts = validEntities.map((entity) =>
+      entity.description ? `${entity.name}: ${entity.description}` : entity.name,
+    );
+    const vectors = embedTexts.length > 0 ? await embedBatch(embedTexts) : [];
+
+    for (let i = 0; i < validEntities.length; i++) {
+      const entity = validEntities[i];
+      const vector = vectors[i];
+      try {
         // 2. Search for similar existing entities
         const similar: EntitySearchResult[] = await searchEntities(vector, {
           threshold: fuzzyThreshold,
@@ -490,7 +505,7 @@ export class EddaPostProcessMiddleware {
             // Confirm mode: create unconfirmed entity with pending_action
             const newEntity = await upsertEntity({
               name: entity.name,
-              type: entity.type as EntityType,
+              type: entity.type,
               aliases: entity.aliases ?? [],
               description: entity.description,
               embedding: vector,
@@ -505,7 +520,7 @@ export class EddaPostProcessMiddleware {
           // 3c. New entity — no close match
           const newEntity = await upsertEntity({
             name: entity.name,
-            type: entity.type as EntityType,
+            type: entity.type,
             aliases: entity.aliases ?? [],
             description: entity.description,
             embedding: vector,
