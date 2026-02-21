@@ -8,7 +8,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import { getSettingsSync } from "@edda/db";
 
-export function getSearchTool(maxResults?: number): StructuredTool | null {
+export async function getSearchTool(maxResults?: number): Promise<StructuredTool | null> {
   const settings = getSettingsSync();
   if (!settings.web_search_enabled) return null;
 
@@ -17,19 +17,19 @@ export function getSearchTool(maxResults?: number): StructuredTool | null {
 
   switch (provider) {
     case "tavily": {
-      const { TavilySearchResults } = require("@langchain/community/tools/tavily_search");
+      const { TavilySearchResults } = await import("@langchain/community/tools/tavily_search");
       return new TavilySearchResults({ maxResults: results });
     }
     case "brave": {
-      const { BraveSearch } = require("@langchain/community/tools/brave_search");
+      const { BraveSearch } = await import("@langchain/community/tools/brave_search");
       return new BraveSearch({ apiKey: process.env.BRAVE_API_KEY });
     }
     case "serper": {
-      const { Serper } = require("@langchain/community/tools/serper");
+      const { Serper } = await import("@langchain/community/tools/serper");
       return new Serper({ apiKey: process.env.SERPER_API_KEY });
     }
     case "serpapi": {
-      const { SerpAPI } = require("@langchain/community/tools/serpapi");
+      const { SerpAPI } = await import("@langchain/community/tools/serpapi");
       return new SerpAPI(process.env.SERPAPI_API_KEY);
     }
     default:
