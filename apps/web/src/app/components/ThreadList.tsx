@@ -143,11 +143,11 @@ export function ThreadList({ currentThreadId, onThreadSelect, onClose }: ThreadL
                   </h4>
                   <div className="flex flex-col gap-1">
                     {groupThreads.map((thread) => (
-                      <div
+                      <button
                         key={thread.id}
-                        title="Thread history coming soon"
+                        onClick={() => onThreadSelect(thread.id)}
                         className={cn(
-                          "grid w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-3 text-left opacity-60 transition-colors duration-200",
+                          "grid w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors duration-200 hover:bg-accent/50",
                           currentThreadId === thread.id
                             ? "border border-primary bg-accent"
                             : "border border-transparent bg-transparent"
@@ -170,12 +170,8 @@ export function ThreadList({ currentThreadId, onThreadSelect, onClose }: ThreadL
                               </p>
                             </div>
                           )}
-                          {/* Coming soon indicator */}
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Thread switching coming soon
-                          </p>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>

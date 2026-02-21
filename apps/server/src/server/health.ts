@@ -2,11 +2,13 @@
  * HTTP server — health check + streaming chat endpoint
  */
 
+import { randomUUID } from "crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { getPool } from "@edda/db";
+import { getPool, listThreads, upsertThread, setThreadTitle } from "@edda/db";
 import { HumanMessage } from "@langchain/core/messages";
 import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod";
+import { getSharedCheckpointer } from "../checkpointer/index.js";
 
 let agent: Runnable | null = null;
 
@@ -64,6 +66,14 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
 
     const { messages, thread_id } = parsed.data;
     const userContent = messages[messages.length - 1].content;
+
+    // Ensure thread exists and set title from first message
+    upsertThread(thread_id)
+      .then(() => {
+        const title = userContent.length > 80 ? userContent.slice(0, 77) + "..." : userContent;
+        return setThreadTitle(thread_id, title);
+      })
+      .catch((err) => console.error("[stream] Failed to set thread title:", err));
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -139,6 +149,74 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+async function handleThreadList(res: ServerResponse) {
+  try {
+    const rows = await listThreads(50);
+    const threads = rows.map((r) => ({
+      id: r.thread_id,
+      title: r.title || "Untitled",
+      updatedAt: r.updated_at,
+      status: "idle",
+    }));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(threads));
+  } catch (err) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: String(err) }));
+  }
+}
+
+async function handleThreadDetail(threadId: string, res: ServerResponse) {
+  try {
+    const checkpointer = getSharedCheckpointer();
+    if (!checkpointer) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Checkpointer not ready" }));
+      return;
+    }
+
+    const tuple = await checkpointer.getTuple({ configurable: { thread_id: threadId } });
+    if (!tuple) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify([]));
+      return;
+    }
+
+    const rawMessages = tuple.checkpoint?.channel_values?.messages ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messages = (rawMessages as any[]).map((m: any) => {
+      const msgType = String(
+        typeof m._getType === "function" ? m._getType() : (m.type ?? "ai"),
+      );
+      let type: string;
+      if (msgType === "human" || msgType === "HumanMessage") type = "human";
+      else if (msgType === "tool" || msgType === "ToolMessage") type = "tool";
+      else if (msgType === "system" || msgType === "SystemMessage") type = "system";
+      else type = "ai";
+
+      let content = m.content ?? "";
+      if (typeof content !== "string" && !Array.isArray(content)) {
+        content = String(content);
+      }
+
+      return {
+        id: m.id ?? m.lc_id ?? randomUUID(),
+        type,
+        content,
+        tool_calls: m.tool_calls,
+        tool_call_id: m.tool_call_id,
+        name: m.name,
+      };
+    });
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(messages));
+  } catch (err) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: String(err) }));
+  }
+}
+
 export async function startHealthServer(port: number): Promise<void> {
   const server = createServer(async (req, res) => {
     setCors(res);
@@ -149,10 +227,17 @@ export async function startHealthServer(port: number): Promise<void> {
       return;
     }
 
-    if (req.url === "/api/health" && req.method === "GET") {
+    const url = req.url ?? "";
+    const threadDetailMatch = url.match(/^\/api\/threads\/([^/]+)$/);
+
+    if (url === "/api/health" && req.method === "GET") {
       await handleHealth(res);
-    } else if (req.url === "/api/stream" && req.method === "POST") {
+    } else if (url === "/api/stream" && req.method === "POST") {
       await handleStream(req, res);
+    } else if (url === "/api/threads" && req.method === "GET") {
+      await handleThreadList(res);
+    } else if (threadDetailMatch && req.method === "GET") {
+      await handleThreadDetail(threadDetailMatch[1], res);
     } else {
       res.writeHead(404);
       res.end();

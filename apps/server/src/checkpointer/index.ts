@@ -7,28 +7,45 @@
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { getSettingsSync } from "@edda/db";
 
+let _checkpointer: BaseCheckpointSaver | null = null;
+
+/** Returns the cached checkpointer instance (available after agent init). */
+export function getSharedCheckpointer(): BaseCheckpointSaver | null {
+  return _checkpointer;
+}
+
 export async function getCheckpointer(): Promise<BaseCheckpointSaver> {
+  if (_checkpointer) return _checkpointer;
+
   const settings = getSettingsSync();
   const backend = process.env.CHECKPOINTER || settings.checkpointer_backend || "postgres";
+
+  let saver: BaseCheckpointSaver;
 
   switch (backend) {
     case "postgres": {
       const { PostgresSaver } = await import("@langchain/langgraph-checkpoint-postgres");
-      const saver = PostgresSaver.fromConnString(process.env.DATABASE_URL!);
-      await saver.setup();
-      return saver;
+      const pgSaver = PostgresSaver.fromConnString(process.env.DATABASE_URL!);
+      await pgSaver.setup();
+      saver = pgSaver;
+      break;
     }
     case "sqlite": {
       // @ts-expect-error — optional dependency, only needed when CHECKPOINTER=sqlite
       const { SqliteSaver } = await import("@langchain/langgraph-checkpoint-sqlite");
       const path = process.env.SQLITE_PATH || "./edda-checkpoints.db";
-      return SqliteSaver.fromConnString(path);
+      saver = SqliteSaver.fromConnString(path);
+      break;
     }
     case "memory": {
       const { MemorySaver } = await import("@langchain/langgraph");
-      return new MemorySaver();
+      saver = new MemorySaver();
+      break;
     }
     default:
       throw new Error(`Unknown checkpointer backend: ${backend}`);
   }
+
+  _checkpointer = saver;
+  return saver;
 }

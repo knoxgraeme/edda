@@ -172,9 +172,23 @@ export function useEdda() {
     setMessages([]);
   }, []);
 
-  const loadThread = useCallback(async (threadId: string) => {
-    // TODO: implement when /api/threads/:id endpoint exists (todo 026)
-    console.warn("loadThread not yet implemented", threadId);
+  const loadThread = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`${SERVER_URL}/api/threads/${id}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load thread: ${response.status}`);
+      }
+      const loaded = (await response.json()) as Message[];
+      setThreadId(id);
+      setMessages(loaded);
+    } catch (err) {
+      const errorMsg: Message = {
+        id: crypto.randomUUID(),
+        type: "system",
+        content: `Error loading thread: ${(err as Error).message}`,
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    }
   }, []);
 
   return { messages, isLoading, threadId, submit, stop, newThread, loadThread };

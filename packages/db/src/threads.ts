@@ -33,6 +33,33 @@ export async function setThreadMetadata(
   );
 }
 
+export async function listThreads(limit: number = 50): Promise<
+  { thread_id: string; title: string | null; metadata: Record<string, unknown>; updated_at: Date }[]
+> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT thread_id, title, metadata, updated_at FROM thread_metadata
+     ORDER BY updated_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+  return rows as {
+    thread_id: string;
+    title: string | null;
+    metadata: Record<string, unknown>;
+    updated_at: Date;
+  }[];
+}
+
+export async function setThreadTitle(threadId: string, title: string): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `UPDATE thread_metadata SET title = $2, updated_at = now()
+     WHERE thread_id = $1 AND title IS NULL`,
+    [threadId, title],
+  );
+}
+
 export async function getUnprocessedThreads(limit: number = 100): Promise<
   { thread_id: string; metadata: Record<string, unknown> }[]
 > {

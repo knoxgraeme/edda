@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   User,
@@ -93,10 +93,9 @@ function EntityDetail({
     setEditing(false);
   };
 
-  // Load items on mount
-  if (items === null && !loadingItems) {
+  useEffect(() => {
     loadItems();
-  }
+  }, [entity.id]);
 
   return (
     <div className="px-4 pb-4 space-y-3">
