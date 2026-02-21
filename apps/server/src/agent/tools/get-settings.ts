@@ -9,13 +9,21 @@ import { z } from "zod";
 import { getSettingsSync } from "@edda/db";
 import type { Settings } from "@edda/db";
 
-const REDACTED_KEYS: (keyof Settings)[] = [
-  "id",
-  "checkpointer_backend",
-  "cron_runner",
-  "langgraph_platform_url",
-  "created_at",
-  "updated_at",
+/** Fields the agent legitimately needs to read. Explicit allowlist — secure by default. */
+const AGENT_VISIBLE_KEYS: (keyof Settings)[] = [
+  "user_display_name",
+  "user_timezone",
+  "web_search_enabled",
+  "web_search_max_results",
+  "memory_extraction_enabled",
+  "user_crons_enabled",
+  "approval_new_type",
+  "approval_archive_stale",
+  "approval_merge_entity",
+  "agents_md_token_budget",
+  "agents_md_max_per_category",
+  "agents_md_max_versions",
+  "agents_md_max_entities",
 ];
 
 export const getSettingsSchema = z.object({});
@@ -24,7 +32,7 @@ export const getSettingsTool = tool(
   async () => {
     const settings = getSettingsSync();
     const filtered = Object.fromEntries(
-      Object.entries(settings).filter(([k]) => !REDACTED_KEYS.includes(k as keyof Settings)),
+      AGENT_VISIBLE_KEYS.map((k) => [k, settings[k]]),
     );
     return JSON.stringify(filtered);
   },

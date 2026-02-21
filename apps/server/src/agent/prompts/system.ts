@@ -7,8 +7,13 @@
  */
 
 import { readFile } from "fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getItemTypes, getSettingsSync, getMcpConnections } from "@edda/db";
 import type { ItemType, McpConnection, Settings } from "@edda/db";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const AGENTS_MD_PATH = join(__dirname, "../../AGENTS.md");
 
 function formatItemTypes(types: ItemType[]): string {
   return types
@@ -31,14 +36,8 @@ function formatMcpConnections(connections: McpConnection[]): string {
 }
 
 export async function buildSystemPrompt(): Promise<string> {
-  let agentsMd = "";
-  try {
-    agentsMd = await readFile("./AGENTS.md", "utf-8");
-  } catch {
-    // First run — AGENTS.md doesn't exist yet
-  }
-
-  const [itemTypes, connections] = await Promise.all([
+  const [agentsMd, itemTypes, connections] = await Promise.all([
+    readFile(AGENTS_MD_PATH, "utf-8").catch(() => ""),
     getItemTypes(),
     getMcpConnections(),
   ]);
