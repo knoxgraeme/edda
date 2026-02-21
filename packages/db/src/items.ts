@@ -2,7 +2,7 @@
  * Item CRUD + semantic search
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { Item, CreateItemInput, SearchResult } from "./types.js";
 
 export async function createItem(input: CreateItemInput): Promise<Item> {

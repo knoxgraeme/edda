@@ -3,7 +3,7 @@
  * Cached in memory, refreshed on startup and after each conversation.
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { Settings } from "./types.js";
 
 let cachedSettings: Settings | null = null;

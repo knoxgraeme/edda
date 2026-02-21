@@ -2,7 +2,7 @@
  * MCP connection management
  */
 
-import { getPool } from "./index.js";
+import { getPool } from "./connection.js";
 import type { McpConnection } from "./types.js";
 
 export async function getMcpConnections(): Promise<McpConnection[]> {
