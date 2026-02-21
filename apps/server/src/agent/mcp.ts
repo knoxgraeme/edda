@@ -48,6 +48,19 @@ const BLOCKED_ENV_KEYS = new Set([
   "DYLD_INSERT_LIBRARIES",
   "HOME",
   "SHELL",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "RUBYOPT",
+  "PERL5OPT",
+  "BASH_ENV",
+  "ENV",
+  "LD_AUDIT",
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FRAMEWORK_PATH",
+  "DYLD_FALLBACK_LIBRARY_PATH",
+  "ELECTRON_RUN_AS_NODE",
 ]);
 
 function sanitizeEnv(env?: Record<string, string>): Record<string, string> | undefined {
@@ -239,10 +252,14 @@ async function loadToolsFromConnection(
         ? jsonSchemaToZod(tool.inputSchema as Record<string, unknown>)
         : z.record(z.unknown()),
       func: async (input) => {
-        const result = await client.callTool({
-          name: tool.name,
-          arguments: input,
-        });
+        const result = await withTimeout(
+          client.callTool({
+            name: tool.name,
+            arguments: input,
+          }),
+          MCP_TIMEOUT_MS * 3,
+          `${connection.name}/${tool.name}`,
+        );
         return JSON.stringify(result.content);
       },
     });

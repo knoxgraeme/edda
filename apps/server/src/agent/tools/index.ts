@@ -36,6 +36,10 @@ import { listMcpConnectionsTool } from "./list-mcp-connections.js";
 import { updateMcpConnectionTool } from "./update-mcp-connection.js";
 import { removeMcpConnectionTool } from "./remove-mcp-connection.js";
 
+// Confirmation tools (1D)
+import { confirmPendingTool } from "./confirm-pending.js";
+import { rejectPendingTool } from "./reject-pending.js";
+
 export const eddaTools = [
   // Item tools (1A)
   createItemTool,
@@ -62,4 +66,8 @@ export const eddaTools = [
   listMcpConnectionsTool,
   updateMcpConnectionTool,
   removeMcpConnectionTool,
+
+  // Confirmation tools (1D)
+  confirmPendingTool,
+  rejectPendingTool,
 ];
