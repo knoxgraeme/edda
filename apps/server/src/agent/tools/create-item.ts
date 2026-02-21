@@ -8,45 +8,47 @@ import { createItem, getSettingsSync } from "@edda/db";
 import { embed } from "../../embed/index.js";
 
 export const createItemSchema = z.object({
-  content: z.string().describe("The item content text"),
-  summary: z.string().optional().describe("Short summary of the item"),
-  type: z.string().describe("Item type (must exist in item_types)"),
-  day: z.string().optional().describe("YYYY-MM-DD, defaults to today"),
-  metadata: z.record(z.any()).optional().describe("Arbitrary metadata for the item"),
-  parent_id: z.string().optional().describe("Parent item ID for hierarchical items"),
-  confirmed: z
-    .boolean()
+  type: z.string().describe("The item type (e.g. note, task, event, preference)"),
+  content: z.string().describe("The main content text"),
+  summary: z.string().optional().describe("A short summary of the content"),
+  metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
+  day: z.string().optional().describe("Date for the item (YYYY-MM-DD). Defaults to today."),
+  status: z
+    .enum(["active", "done", "archived", "snoozed"])
     .optional()
-    .describe("Default true. Set false when approval is needed."),
+    .describe("Item status (default: active)"),
+  parent_id: z.string().optional().describe("Parent item ID for hierarchical items"),
 });
 
 export const createItemTool = tool(
-  async ({ content, summary, type, day, metadata, parent_id, confirmed }) => {
+  async ({ type, content, summary, metadata, day, status, parent_id }) => {
     const settings = getSettingsSync();
     const embedding = await embed(content);
+
     const item = await createItem({
+      type,
       content,
       summary,
-      type,
+      metadata,
+      day,
+      status,
+      parent_id,
       embedding,
       embedding_model: settings.embedding_model,
-      day: day || new Date().toISOString().split("T")[0],
-      metadata: metadata || {},
-      parent_id,
-      confirmed: confirmed ?? true,
       source: "chat",
     });
+
     return JSON.stringify({
-      item_id: item.id,
-      status: "created",
-      type,
-      confirmed: item.confirmed,
+      id: item.id,
+      type: item.type,
+      status: item.status,
+      day: item.day,
     });
   },
   {
     name: "create_item",
     description:
-      "Create a single item. Type must exist in item_types. Set confirmed=false if approval is required.",
+      "Create a new item in the knowledge base. Automatically generates an embedding for semantic search.",
     schema: createItemSchema,
   },
 );

@@ -5,14 +5,14 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { batchCreateItems, getSettingsSync } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { embedBatch } from "../../embed/index.js";
 
 const batchItemSchema = z.object({
   content: z.string().describe("The item content text"),
   summary: z.string().optional().describe("Short summary of the item"),
   type: z.string().describe("Item type (must exist in item_types)"),
   day: z.string().optional().describe("YYYY-MM-DD, defaults to today"),
-  metadata: z.record(z.any()).optional().describe("Arbitrary metadata for the item"),
+  metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
   parent_id: z.string().optional().describe("Parent item ID"),
   confirmed: z.boolean().optional().describe("Default true. Set false when approval is needed."),
 });
@@ -26,7 +26,7 @@ export const batchCreateItemsTool = tool(
     const settings = getSettingsSync();
     const today = new Date().toISOString().split("T")[0];
 
-    const embeddings = await Promise.all(items.map((item) => embed(item.content)));
+    const embeddings = await embedBatch(items.map((item) => item.content));
 
     const inputs = items.map((item, i) => ({
       content: item.content,

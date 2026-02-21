@@ -1,67 +1,61 @@
 /**
- * Tool: reject_pending — Reject a pending item, entity, or item type.
- *
- * For items: if the pending_action indicates a reclassification, reverts to
- * the previous type instead of deleting.
+ * Tool: reject_pending — Reject a pending confirmation or reclassification.
  */
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import {
-  getItemById,
-  updateItem,
-  rejectPending,
-  deleteItemType,
-} from "@edda/db";
+import { getItemById, updateItem, rejectItemConfirmation } from "@edda/db";
 
 export const rejectPendingSchema = z.object({
-  table: z.enum(["items", "item_types", "entities"]).describe("Which table the row belongs to"),
-  id: z.string().describe("Row ID (uuid for items/entities, name for item_types)"),
+  id: z.string().describe("The ID of the pending item to reject"),
+  table: z.enum(["items", "entities", "item_types"]).optional().describe("Table to operate on"),
 });
 
 export const rejectPendingTool = tool(
-  async ({ table, id }) => {
-    if (table === "items") {
-      const item = await getItemById(id);
-      if (!item) {
-        return JSON.stringify({ status: "not_found", table, id });
-      }
-
-      const isReclassification =
-        item.pending_action?.startsWith("Reclassified") &&
-        item.metadata?.previous_type;
-
-      if (isReclassification) {
-        await updateItem(id, {
-          type: item.metadata.previous_type as string,
-          confirmed: true,
-          pending_action: null,
-        });
-        return JSON.stringify({
-          status: "reverted",
-          table,
-          id,
-          reverted_to_type: item.metadata.previous_type,
-        });
-      }
-
-      await rejectPending("items", id);
-      return JSON.stringify({ status: "rejected", table, id });
+  async ({ id, table = "items" }) => {
+    if (table !== "items") {
+      return JSON.stringify({ status: "error", message: `reject for ${table} not yet supported` });
     }
 
-    if (table === "item_types") {
-      await deleteItemType(id);
-      return JSON.stringify({ status: "rejected", table, id });
+    const item = await getItemById(id);
+    if (!item) {
+      return JSON.stringify({ status: "not_found", id });
     }
 
-    // entities
-    await rejectPending("entities", id);
+    if (!item.pending_action) {
+      return JSON.stringify({ status: "no_pending_action", id });
+    }
+
+    const isReclassification =
+      item.pending_action === "reclassify" &&
+      item.metadata?.previous_type !== undefined;
+
+    if (isReclassification) {
+      const previousType = item.metadata.previous_type;
+      if (typeof previousType !== "string") {
+        return JSON.stringify({ status: "error", message: "previous_type metadata is not a string", id });
+      }
+      await updateItem(id, {
+        type: previousType,
+        confirmed: true,
+        pending_action: null,
+      });
+      return JSON.stringify({
+        status: "reverted",
+        table,
+        id,
+        reverted_to_type: previousType,
+      });
+    }
+
+    // Not a reclassification — just delete the unconfirmed item
+    await rejectItemConfirmation(id);
     return JSON.stringify({ status: "rejected", table, id });
   },
   {
     name: "reject_pending",
     description:
-      "Reject a pending item, entity, or item type. For reclassified items, reverts to the previous type.",
+      "Reject a pending item confirmation or reclassification. Reverts reclassifications to previous type; deletes new unconfirmed items.",
     schema: rejectPendingSchema,
   },
 );

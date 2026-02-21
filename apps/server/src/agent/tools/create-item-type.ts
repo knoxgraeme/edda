@@ -10,15 +10,8 @@ export const createItemTypeSchema = z.object({
   name: z.string().describe("Unique type name (snake_case)"),
   description: z.string().describe("What this type represents"),
   extraction_hint: z.string().describe("Hint for the classifier to identify this type"),
-  metadata_schema: z.record(z.any()).optional().describe("JSON schema for metadata fields"),
-  dashboard_section: z
-    .enum(["actionable", "captured", "lists", "hidden"])
-    .optional()
-    .describe("Where to show on the dashboard"),
+  metadata_schema: z.record(z.unknown()).optional().describe("JSON schema for metadata fields"),
   icon: z.string().optional().describe("Emoji icon for the type"),
-  completable: z.boolean().optional().describe("Can items of this type be completed?"),
-  has_due_date: z.boolean().optional().describe("Do items of this type have due dates?"),
-  is_list: z.boolean().optional().describe("Is this a list-style type?"),
 });
 
 export const createItemTypeTool = tool(

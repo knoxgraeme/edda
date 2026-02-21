@@ -74,11 +74,12 @@ export async function searchItems(
     threshold?: number;
     limit?: number;
     type?: string;
+    after?: string;
     agentKnowledgeOnly?: boolean;
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
-  const { threshold = 0.85, limit = 10, type, agentKnowledgeOnly } = options;
+  const { threshold = 0.85, limit = 10, type, after, agentKnowledgeOnly } = options;
 
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
   const params: unknown[] = [JSON.stringify(embedding), threshold];
@@ -87,6 +88,11 @@ export async function searchItems(
   if (type) {
     conditions.push(`type = $${paramIdx++}`);
     params.push(type);
+  }
+
+  if (after) {
+    conditions.push(`day >= $${paramIdx++}::date`);
+    params.push(after);
   }
 
   if (agentKnowledgeOnly) {

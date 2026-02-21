@@ -24,16 +24,13 @@ export const searchItemsTool = tool(
     const results = await searchItems(queryEmbedding, {
       limit: limit ?? 10,
       type,
+      after,
       agentKnowledgeOnly: agent_knowledge_only,
     });
 
-    const filtered = after
-      ? results.filter((r) => r.day >= after)
-      : results;
-
     return JSON.stringify({
-      count: filtered.length,
-      results: filtered.map((r) => ({
+      count: results.length,
+      results: results.map((r) => ({
         id: r.id,
         type: r.type,
         content: r.content,

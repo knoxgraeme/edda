@@ -5,6 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { updateMcpConnection } from "@edda/db";
+import type { McpConnection } from "@edda/db";
 
 export const updateMcpConnectionSchema = z.object({
   id: z.string().describe("MCP connection ID"),
@@ -14,7 +15,7 @@ export const updateMcpConnectionSchema = z.object({
 
 export const updateMcpConnectionTool = tool(
   async ({ id, enabled, name }) => {
-    const updates: Record<string, unknown> = {};
+    const updates: Partial<Pick<McpConnection, "enabled" | "name">> = {};
     if (enabled !== undefined) updates.enabled = enabled;
     if (name !== undefined) updates.name = name;
 
