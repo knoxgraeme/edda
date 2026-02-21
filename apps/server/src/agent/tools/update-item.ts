@@ -15,12 +15,10 @@ export const updateItemSchema = z.object({
     .describe("New status for the item"),
   content: z.string().optional().describe("Updated content text"),
   metadata: z.record(z.unknown()).optional().describe("Metadata fields to merge/replace"),
-  confirmed: z.boolean().optional().describe("Set confirmation status"),
-  pending_action: z.string().nullable().optional().describe("Pending action label or null to clear"),
 });
 
 export const updateItemTool = tool(
-  async ({ item_id, status, content, metadata, confirmed, pending_action }) => {
+  async ({ item_id, status, content, metadata }) => {
     const updates: Parameters<typeof updateItem>[1] = {};
 
     if (status !== undefined) {
@@ -38,8 +36,6 @@ export const updateItemTool = tool(
     }
 
     if (metadata !== undefined) updates.metadata = metadata;
-    if (confirmed !== undefined) updates.confirmed = confirmed;
-    if (pending_action !== undefined) updates.pending_action = pending_action;
 
     const item = await updateItem(item_id, updates);
 
@@ -56,7 +52,7 @@ export const updateItemTool = tool(
   {
     name: "update_item",
     description:
-      "Update an existing item. Can change status, content, metadata, or confirmation. Re-embeds if content changes.",
+      "Update an existing item. Can change status, content, or metadata. Re-embeds if content changes.",
     schema: updateItemSchema,
   },
 );

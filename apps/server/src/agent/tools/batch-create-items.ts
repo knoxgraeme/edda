@@ -18,7 +18,7 @@ const batchItemSchema = z.object({
 });
 
 export const batchCreateItemsSchema = z.object({
-  items: z.array(batchItemSchema).min(1).describe("Array of items to create"),
+  items: z.array(batchItemSchema).min(1).max(50).describe("Array of items to create"),
 });
 
 export const batchCreateItemsTool = tool(
@@ -34,8 +34,8 @@ export const batchCreateItemsTool = tool(
       type: item.type,
       embedding: embeddings[i],
       embedding_model: settings.embedding_model,
-      day: item.day || today,
-      metadata: item.metadata || {},
+      day: item.day ?? today,
+      metadata: item.metadata ?? {},
       parent_id: item.parent_id,
       confirmed: item.confirmed ?? true,
       source: "chat" as const,

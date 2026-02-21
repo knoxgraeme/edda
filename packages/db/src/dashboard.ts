@@ -3,6 +3,7 @@
  */
 
 import { getPool } from "./index.js";
+import { ITEM_COLS } from "./items.js";
 import type { DashboardData, Item } from "./types.js";
 
 export async function getDashboard(day?: string): Promise<DashboardData> {
@@ -11,34 +12,43 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
 
   const [dueToday, capturedToday, openItems, lists, pending] = await Promise.all([
     pool.query(
-      `SELECT * FROM items
+      `SELECT ${ITEM_COLS} FROM items
        WHERE confirmed = true AND status = 'active'
+         AND metadata->>'due_date' IS NOT NULL
+         AND metadata->>'due_date' ~ '^\\d{4}-\\d{2}-\\d{2}$'
          AND (metadata->>'due_date')::date = $1::date
-       ORDER BY created_at`,
+       ORDER BY created_at
+       LIMIT 100`,
       [today],
     ),
     pool.query(
-      `SELECT * FROM items
+      `SELECT ${ITEM_COLS} FROM items
        WHERE confirmed = true AND day = $1
          AND type NOT IN ('preference', 'learned_fact', 'pattern')
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC
+       LIMIT 100`,
       [today],
     ),
     pool.query(
-      `SELECT * FROM items
+      `SELECT ${ITEM_COLS} FROM items
        WHERE confirmed = true AND status = 'active'
          AND type IN ('task', 'reminder')
-         AND (metadata->>'due_date' IS NULL OR (metadata->>'due_date')::date < $1::date)
-       ORDER BY created_at`,
+         AND (metadata->>'due_date' IS NULL
+              OR (metadata->>'due_date' ~ '^\\d{4}-\\d{2}-\\d{2}$'
+                  AND (metadata->>'due_date')::date < $1::date))
+       ORDER BY created_at
+       LIMIT 100`,
       [today],
     ),
     pool.query(
-      `SELECT * FROM items
+      `SELECT ${ITEM_COLS} FROM items
        WHERE confirmed = true AND status = 'active' AND type = 'list_item'
-       ORDER BY metadata->>'list_name', created_at`,
+       ORDER BY metadata->>'list_name', created_at
+       LIMIT 100`,
     ),
     pool.query(
-      `SELECT * FROM items WHERE confirmed = false ORDER BY created_at DESC`,
+      `SELECT ${ITEM_COLS} FROM items WHERE confirmed = false ORDER BY created_at DESC
+       LIMIT 100`,
     ),
   ]);
 

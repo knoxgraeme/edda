@@ -5,12 +5,17 @@
 import { getPool } from "./index.js";
 import type { Item, CreateItemInput, SearchResult } from "./types.js";
 
+/** All item columns except embedding — use for queries that don't need the vector */
+export const ITEM_COLS = `id, type, content, summary, metadata, status, source, day, confirmed,
+  parent_id, embedding_model, superseded_by, completed_at, pending_action,
+  last_reinforced_at, created_at, updated_at`;
+
 export async function createItem(input: CreateItemInput): Promise<Item> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING *`,
+    `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding, embedding_model, pending_action)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING ${ITEM_COLS}`,
     [
       input.type,
       input.content,
@@ -22,6 +27,8 @@ export async function createItem(input: CreateItemInput): Promise<Item> {
       input.confirmed ?? true,
       input.parent_id ?? null,
       input.embedding ? JSON.stringify(input.embedding) : null,
+      input.embedding_model ?? null,
+      input.pending_action ?? null,
     ],
   );
   return rows[0] as Item;
@@ -29,7 +36,7 @@ export async function createItem(input: CreateItemInput): Promise<Item> {
 
 export async function getItemById(id: string): Promise<Item | null> {
   const pool = getPool();
-  const { rows } = await pool.query("SELECT * FROM items WHERE id = $1", [id]);
+  const { rows } = await pool.query(`SELECT ${ITEM_COLS} FROM items WHERE id = $1`, [id]);
   return (rows[0] as Item) ?? null;
 }
 
@@ -53,7 +60,7 @@ export async function updateItem(
   const vals = entries.map(([, v]) => (typeof v === "object" && v !== null ? JSON.stringify(v) : v));
 
   const { rows } = await pool.query(
-    `UPDATE items SET ${sets}, updated_at = now() WHERE id = $1 RETURNING *`,
+    `UPDATE items SET ${sets}, updated_at = now() WHERE id = $1 RETURNING ${ITEM_COLS}`,
     [id, ...vals],
   );
   return (rows[0] as Item) ?? null;
@@ -100,7 +107,7 @@ export async function searchItems(
   }
 
   const { rows } = await pool.query(
-    `SELECT *, 1 - (embedding <=> $1::vector) AS similarity
+    `SELECT ${ITEM_COLS}, 1 - (embedding <=> $1::vector) AS similarity
      FROM items
      WHERE ${conditions.join(" AND ")}
      ORDER BY similarity DESC
@@ -121,7 +128,7 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
       const { rows } = await client.query(
         `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding, embedding_model, pending_action)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING *`,
+         RETURNING ${ITEM_COLS}`,
         [
           input.type,
           input.content,
@@ -149,17 +156,16 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
   }
 }
 
-export async function getListItems(listName: string): Promise<Item[]> {
+export async function getListItems(listName: string, limit: number = 200): Promise<Item[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT id, type, content, summary, metadata, status, source, day, confirmed,
-            parent_id, embedding_model, superseded_by, completed_at, pending_action,
-            last_reinforced_at, created_at, updated_at
+    `SELECT ${ITEM_COLS}
      FROM items
      WHERE confirmed = true AND status = 'active' AND type = 'list_item'
        AND metadata->>'list_name' = $1
-     ORDER BY created_at`,
-    [listName],
+     ORDER BY created_at
+     LIMIT $2`,
+    [listName, limit],
   );
   return rows as Item[];
 }
@@ -181,9 +187,7 @@ export async function getTimeline(
   }
 
   const { rows } = await pool.query(
-    `SELECT id, type, content, summary, metadata, status, source, day, confirmed,
-            parent_id, embedding_model, superseded_by, completed_at, pending_action,
-            last_reinforced_at, created_at, updated_at
+    `SELECT ${ITEM_COLS}
      FROM items
      WHERE ${conditions.join(" AND ")}
      ORDER BY day, created_at
@@ -217,36 +221,33 @@ export async function getAgentKnowledge(
   const limit = options.limit ?? 100;
 
   const { rows } = await pool.query(
-    `SELECT id, type, content, summary, metadata, status, source, day, confirmed,
-            parent_id, embedding_model, superseded_by, completed_at, pending_action,
-            last_reinforced_at, created_at, updated_at
+    `SELECT ${ITEM_COLS}
      FROM items WHERE ${conditions.join(" AND ")} ORDER BY ${orderBy} LIMIT $1`,
     [limit],
   );
   return rows as Item[];
 }
 
-export async function rejectItemConfirmation(id: string): Promise<void> {
-  const pool = getPool();
-  await pool.query("DELETE FROM items WHERE id = $1 AND confirmed = false", [id]);
-}
-
-export async function getItemsByType(type: string, status?: string): Promise<Item[]> {
+export async function getItemsByType(
+  type: string,
+  status?: string,
+  limit: number = 100,
+): Promise<Item[]> {
   const pool = getPool();
   const conditions = ["type = $1", "confirmed = true"];
   const params: unknown[] = [type];
+  let paramIdx = 2;
 
   if (status) {
-    conditions.push("status = $2");
+    conditions.push(`status = $${paramIdx++}`);
     params.push(status);
   }
 
   const { rows } = await pool.query(
-    `SELECT id, type, content, summary, metadata, status, source, day, confirmed,
-            parent_id, embedding_model, superseded_by, completed_at, pending_action,
-            last_reinforced_at, created_at, updated_at
-     FROM items WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC`,
-    params,
+    `SELECT ${ITEM_COLS}
+     FROM items WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC
+     LIMIT $${paramIdx}`,
+    [...params, limit],
   );
   return rows as Item[];
 }
