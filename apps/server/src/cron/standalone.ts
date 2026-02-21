@@ -9,7 +9,6 @@
  */
 
 import cron from "node-cron";
-import { z } from "zod";
 
 import {
   getItemsByType,
@@ -22,48 +21,21 @@ import { createEddaAgent } from "../agent/index.js";
 import type { CronRunner } from "./index.js";
 
 // ---------------------------------------------------------------------------
-// Structured output schemas for cron results
-// ---------------------------------------------------------------------------
-
-export const dailyDigestResultSchema = z.object({
-  summary: z.string().describe("A concise summary of yesterday's activity and today's plan"),
-  items_due_today: z.number().describe("Count of items due today"),
-  items_captured_yesterday: z.number().describe("Count of items captured yesterday"),
-  stale_items_count: z.number().describe("Count of stale open items"),
-});
-
-export const memoryExtractionResultSchema = z.object({
-  threads_processed: z.number().describe("Number of unprocessed threads reviewed"),
-  memories_created: z.number().describe("Number of new memory items created"),
-  entities_created: z.number().describe("Number of new entities created or updated"),
-});
-
-export const weeklyReflectResultSchema = z.object({
-  summary: z.string().describe("Weekly reflection summary including activity analysis"),
-  items_this_week: z.number().describe("Total items created this week"),
-  completion_rate: z.number().describe("Percentage of completable items completed"),
-  duplicates_merged: z.number().describe("Number of duplicate memories merged"),
-  stale_archived: z.number().describe("Number of stale memories archived"),
-  contradictions_resolved: z.number().describe("Number of contradictions resolved"),
-});
-
-export const typeEvolutionResultSchema = z.object({
-  clusters_found: z.number().describe("Number of note clusters identified"),
-  types_proposed: z.number().describe("Number of new types proposed"),
-  items_reclassified: z.number().describe("Number of items reclassified"),
-});
-
-// ---------------------------------------------------------------------------
 // System cron definitions
 // ---------------------------------------------------------------------------
+
+/** Narrow `keyof Settings` to only keys whose value type is `string`. */
+type StringSettingsKey = {
+  [K in keyof Settings]: Settings[K] extends string ? K : never;
+}[keyof Settings];
 
 interface SystemCronConfig {
   /** Skill name — matches SKILL.md directory name */
   name: string;
   /** Settings key for the cron expression */
-  cronKey: keyof Settings;
+  cronKey: StringSettingsKey;
   /** Settings key for the model to use */
-  modelKey: keyof Settings;
+  modelKey: StringSettingsKey;
   /** Whether this cron requires memory_extraction_enabled */
   requiresMemoryExtraction?: boolean;
   /** System prompt for the disposable agent */
@@ -246,235 +218,6 @@ function partMatches(part: string, value: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Cron execution
-// ---------------------------------------------------------------------------
-
-/** Track last run time per cron name */
-const lastRunTimes = new Map<string, Date>();
-
-/**
- * Execute a system cron job. Spawns a disposable agent via createEddaAgent(),
- * invokes it with the cron-specific prompt, and logs the result to agent_log.
- */
-async function executeCron(cronConfig: SystemCronConfig, settings: Settings): Promise<void> {
-  const startTime = Date.now();
-  const cronName = cronConfig.name;
-
-  console.log(`  [cron] Executing system cron: ${cronName}`);
-
-  try {
-    const modelName = settings[cronConfig.modelKey] as string;
-    const systemPrompt = cronConfig.buildPrompt(settings);
-
-    // Spawn a disposable agent with full Edda tools
-    const agent = await createEddaAgent();
-
-    // Invoke the agent with the cron's system prompt as a human message.
-    // Each cron gets a unique thread_id per day to avoid state collisions.
-    const result = await agent.invoke(
-      {
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content:
-              `Execute the ${cronName} cron job now. Use the available tools to complete the task.`,
-          },
-        ],
-      },
-      {
-        configurable: {
-          thread_id: `system-cron-${cronName}-${new Date().toISOString().split("T")[0]}`,
-          model: modelName,
-        },
-      },
-    );
-
-    const durationMs = Date.now() - startTime;
-
-    // Extract summary from the last assistant message
-    const messages = (result?.messages ?? []) as Array<{
-      role?: string;
-      content?: string;
-      _getType?: () => string;
-    }>;
-    const lastAssistantMsg = [...messages]
-      .reverse()
-      .find((m) => m.role === "assistant" || m._getType?.() === "ai");
-    const outputSummary =
-      typeof lastAssistantMsg?.content === "string"
-        ? lastAssistantMsg.content.slice(0, 500)
-        : `${cronName} completed`;
-
-    // Log to agent_log
-    const logInput: CreateAgentLogInput = {
-      skill: cronName,
-      trigger: "system_cron",
-      input_summary: `System cron: ${cronName}`,
-      output_summary: outputSummary,
-      model: modelName,
-      duration_ms: durationMs,
-    };
-
-    await createAgentLog(logInput);
-    lastRunTimes.set(cronName, new Date());
-
-    console.log(`  [cron] ${cronName} completed in ${durationMs}ms`);
-  } catch (err) {
-    const durationMs = Date.now() - startTime;
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error(`  [cron] ${cronName} failed: ${errorMsg}`);
-
-    // Log the error to agent_log
-    await createAgentLog({
-      skill: cronName,
-      trigger: "system_cron",
-      input_summary: `System cron: ${cronName}`,
-      output_summary: `ERROR: ${errorMsg.slice(0, 500)}`,
-      duration_ms: durationMs,
-    }).catch((logErr) => {
-      console.error(`  [cron] Failed to log error for ${cronName}:`, logErr);
-    });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// User cron handling
-// ---------------------------------------------------------------------------
-
-/** Track last run time per user cron (scheduled_task item ID) */
-const userCronLastRuns = new Map<string, Date>();
-
-/**
- * Poll scheduled_task items and execute any that are due.
- */
-async function checkUserCrons(settings: Settings): Promise<void> {
-  if (!settings.user_crons_enabled) return;
-
-  try {
-    const tasks = await getItemsByType("scheduled_task", "active");
-    const now = new Date();
-
-    for (const task of tasks) {
-      const metadata = task.metadata as {
-        cron?: string;
-        enabled?: boolean;
-        action?: string;
-        cron_human?: string;
-      };
-
-      // Skip disabled tasks
-      if (metadata.enabled === false) continue;
-
-      // Skip tasks without a cron expression
-      if (!metadata.cron) {
-        console.warn(`  [cron] scheduled_task ${task.id} has no cron expression`);
-        continue;
-      }
-
-      const lastRun = userCronLastRuns.get(task.id) ?? null;
-
-      if (shouldFire(metadata.cron, lastRun, now)) {
-        await executeUserCron(task, settings);
-      }
-    }
-  } catch (err) {
-    console.error("  [cron] Error checking user crons:", err);
-  }
-}
-
-/**
- * Execute a user-defined scheduled task by spawning a disposable agent.
- */
-async function executeUserCron(task: Item, settings: Settings): Promise<void> {
-  const startTime = Date.now();
-  const taskId = task.id;
-  const metadata = task.metadata as {
-    cron?: string;
-    action?: string;
-    cron_human?: string;
-  };
-
-  console.log(`  [cron] Executing user cron: ${taskId} — ${metadata.action ?? task.content}`);
-
-  try {
-    const modelName = settings.user_cron_model;
-
-    const systemPrompt =
-      `You are Edda, executing a user-scheduled recurring task.` +
-      ` Today is ${new Date().toISOString().split("T")[0]}.` +
-      ` The user's timezone is ${settings.user_timezone}.` +
-      (settings.user_display_name ? ` The user's name is ${settings.user_display_name}.` : "") +
-      `\n\nScheduled task: ${task.content}` +
-      `\nSchedule: ${metadata.cron_human ?? metadata.cron}` +
-      `\nAction: ${metadata.action ?? task.content}` +
-      `\n\nExecute this action using the available tools. Be concise and effective.`;
-
-    const agent = await createEddaAgent();
-
-    const result = await agent.invoke(
-      {
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Execute the scheduled task now: ${metadata.action ?? task.content}`,
-          },
-        ],
-      },
-      {
-        configurable: {
-          thread_id: `user-cron-${taskId}-${new Date().toISOString().split("T")[0]}`,
-          model: modelName,
-        },
-      },
-    );
-
-    const durationMs = Date.now() - startTime;
-
-    const messages = (result?.messages ?? []) as Array<{
-      role?: string;
-      content?: string;
-      _getType?: () => string;
-    }>;
-    const lastAssistantMsg = [...messages]
-      .reverse()
-      .find((m) => m.role === "assistant" || m._getType?.() === "ai");
-    const outputSummary =
-      typeof lastAssistantMsg?.content === "string"
-        ? lastAssistantMsg.content.slice(0, 500)
-        : `User cron ${taskId} completed`;
-
-    await createAgentLog({
-      skill: "user_cron",
-      trigger: "user_cron",
-      input_summary: `Scheduled task: ${task.content}`,
-      output_summary: outputSummary,
-      model: modelName,
-      duration_ms: durationMs,
-    });
-
-    userCronLastRuns.set(taskId, new Date());
-
-    console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
-  } catch (err) {
-    const durationMs = Date.now() - startTime;
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error(`  [cron] User cron ${taskId} failed: ${errorMsg}`);
-
-    await createAgentLog({
-      skill: "user_cron",
-      trigger: "user_cron",
-      input_summary: `Scheduled task: ${task.content}`,
-      output_summary: `ERROR: ${errorMsg.slice(0, 500)}`,
-      duration_ms: durationMs,
-    }).catch((logErr) => {
-      console.error(`  [cron] Failed to log error for user cron ${taskId}:`, logErr);
-    });
-  }
-}
-
-// ---------------------------------------------------------------------------
 // StandaloneCronRunner class
 // ---------------------------------------------------------------------------
 
@@ -482,6 +225,12 @@ export class StandaloneCronRunner implements CronRunner {
   private scheduledTasks: cron.ScheduledTask[] = [];
   private userCronInterval: ReturnType<typeof setInterval> | null = null;
   private running = false;
+
+  /** Track last run time per system cron name */
+  private lastRunTimes = new Map<string, Date>();
+
+  /** Track last run time per user cron (scheduled_task item ID) */
+  private userCronLastRuns = new Map<string, Date>();
 
   async start(): Promise<void> {
     if (this.running) {
@@ -495,7 +244,7 @@ export class StandaloneCronRunner implements CronRunner {
 
     // Register system crons via node-cron
     for (const cronConfig of SYSTEM_CRONS) {
-      const cronExpr = settings[cronConfig.cronKey] as string | undefined;
+      const cronExpr = settings[cronConfig.cronKey];
       if (!cronExpr) {
         console.log(`  [cron] Skipping ${cronConfig.name} — no cron expression configured`);
         continue;
@@ -515,7 +264,7 @@ export class StandaloneCronRunner implements CronRunner {
       const task = cron.schedule(cronExpr, async () => {
         // Re-read settings each invocation so schedule/model changes take effect
         const freshSettings = await refreshSettings();
-        await executeCron(cronConfig, freshSettings);
+        await this.executeCron(cronConfig, freshSettings);
       });
 
       this.scheduledTasks.push(task);
@@ -528,7 +277,7 @@ export class StandaloneCronRunner implements CronRunner {
 
       this.userCronInterval = setInterval(async () => {
         const freshSettings = await refreshSettings();
-        await checkUserCrons(freshSettings);
+        await this.checkUserCrons(freshSettings);
       }, checkIntervalMs);
 
       console.log(
@@ -559,10 +308,225 @@ export class StandaloneCronRunner implements CronRunner {
     }
 
     this.running = false;
-    lastRunTimes.clear();
-    userCronLastRuns.clear();
+    this.lastRunTimes.clear();
+    this.userCronLastRuns.clear();
 
     console.log("  Standalone cron runner stopped");
+  }
+
+  /**
+   * Execute a system cron job. Spawns a disposable agent via createEddaAgent(),
+   * invokes it with the cron-specific prompt, and logs the result to agent_log.
+   */
+  private async executeCron(cronConfig: SystemCronConfig, settings: Settings): Promise<void> {
+    const startTime = Date.now();
+    const cronName = cronConfig.name;
+
+    console.log(`  [cron] Executing system cron: ${cronName}`);
+
+    try {
+      const modelName = settings[cronConfig.modelKey];
+      const systemPrompt = cronConfig.buildPrompt(settings);
+
+      // Spawn a disposable agent with full Edda tools
+      const agent = await createEddaAgent();
+
+      // Invoke the agent with the cron's system prompt as a human message.
+      // Each cron gets a unique thread_id per day to avoid state collisions.
+      const result = await agent.invoke(
+        {
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content:
+                `Execute the ${cronName} cron job now. Use the available tools to complete the task.`,
+            },
+          ],
+        },
+        {
+          configurable: {
+            thread_id: `system-cron-${cronName}-${new Date().toISOString().split("T")[0]}`,
+            model: modelName,
+          },
+        },
+      );
+
+      const durationMs = Date.now() - startTime;
+
+      // Extract summary from the last assistant message
+      const messages = (result?.messages ?? []) as Array<{
+        role?: string;
+        content?: string;
+        _getType?: () => string;
+      }>;
+      const lastAssistantMsg = [...messages]
+        .reverse()
+        .find((m) => m.role === "assistant" || m._getType?.() === "ai");
+      const outputSummary =
+        typeof lastAssistantMsg?.content === "string"
+          ? lastAssistantMsg.content.slice(0, 500)
+          : `${cronName} completed`;
+
+      // Log to agent_log
+      const logInput: CreateAgentLogInput = {
+        skill: cronName,
+        trigger: "system_cron",
+        input_summary: `System cron: ${cronName}`,
+        output_summary: outputSummary,
+        model: modelName,
+        duration_ms: durationMs,
+      };
+
+      await createAgentLog(logInput);
+      this.lastRunTimes.set(cronName, new Date());
+
+      console.log(`  [cron] ${cronName} completed in ${durationMs}ms`);
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`  [cron] ${cronName} failed: ${errorMsg}`);
+
+      // Log the error to agent_log
+      await createAgentLog({
+        skill: cronName,
+        trigger: "system_cron",
+        input_summary: `System cron: ${cronName}`,
+        output_summary: `ERROR: ${errorMsg.slice(0, 500)}`,
+        duration_ms: durationMs,
+      }).catch((logErr) => {
+        console.error(`  [cron] Failed to log error for ${cronName}:`, logErr);
+      });
+    }
+  }
+
+  /**
+   * Poll scheduled_task items and execute any that are due.
+   */
+  private async checkUserCrons(settings: Settings): Promise<void> {
+    if (!settings.user_crons_enabled) return;
+
+    try {
+      const tasks = await getItemsByType("scheduled_task", "active");
+      const now = new Date();
+
+      for (const task of tasks) {
+        const metadata = task.metadata as {
+          cron?: string;
+          enabled?: boolean;
+          action?: string;
+          cron_human?: string;
+        };
+
+        // Skip disabled tasks
+        if (metadata.enabled === false) continue;
+
+        // Skip tasks without a cron expression
+        if (!metadata.cron) {
+          console.warn(`  [cron] scheduled_task ${task.id} has no cron expression`);
+          continue;
+        }
+
+        const lastRun = this.userCronLastRuns.get(task.id) ?? null;
+
+        if (shouldFire(metadata.cron, lastRun, now)) {
+          await this.executeUserCron(task, settings);
+        }
+      }
+    } catch (err) {
+      console.error("  [cron] Error checking user crons:", err);
+    }
+  }
+
+  /**
+   * Execute a user-defined scheduled task by spawning a disposable agent.
+   */
+  private async executeUserCron(task: Item, settings: Settings): Promise<void> {
+    const startTime = Date.now();
+    const taskId = task.id;
+    const metadata = task.metadata as {
+      cron?: string;
+      action?: string;
+      cron_human?: string;
+    };
+
+    console.log(`  [cron] Executing user cron: ${taskId} — ${metadata.action ?? task.content}`);
+
+    try {
+      const modelName = settings.user_cron_model;
+
+      const systemPrompt =
+        `You are Edda, executing a user-scheduled recurring task.` +
+        ` Today is ${new Date().toISOString().split("T")[0]}.` +
+        ` The user's timezone is ${settings.user_timezone}.` +
+        (settings.user_display_name ? ` The user's name is ${settings.user_display_name}.` : "") +
+        `\n\nScheduled task: ${task.content}` +
+        `\nSchedule: ${metadata.cron_human ?? metadata.cron}` +
+        `\nAction: ${metadata.action ?? task.content}` +
+        `\n\nExecute this action using the available tools. Be concise and effective.`;
+
+      const agent = await createEddaAgent();
+
+      const result = await agent.invoke(
+        {
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: `Execute the scheduled task now: ${metadata.action ?? task.content}`,
+            },
+          ],
+        },
+        {
+          configurable: {
+            thread_id: `user-cron-${taskId}-${new Date().toISOString().split("T")[0]}`,
+            model: modelName,
+          },
+        },
+      );
+
+      const durationMs = Date.now() - startTime;
+
+      const messages = (result?.messages ?? []) as Array<{
+        role?: string;
+        content?: string;
+        _getType?: () => string;
+      }>;
+      const lastAssistantMsg = [...messages]
+        .reverse()
+        .find((m) => m.role === "assistant" || m._getType?.() === "ai");
+      const outputSummary =
+        typeof lastAssistantMsg?.content === "string"
+          ? lastAssistantMsg.content.slice(0, 500)
+          : `User cron ${taskId} completed`;
+
+      await createAgentLog({
+        skill: "user_cron",
+        trigger: "user_cron",
+        input_summary: `Scheduled task: ${task.content}`,
+        output_summary: outputSummary,
+        model: modelName,
+        duration_ms: durationMs,
+      });
+
+      this.userCronLastRuns.set(taskId, new Date());
+
+      console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`  [cron] User cron ${taskId} failed: ${errorMsg}`);
+
+      await createAgentLog({
+        skill: "user_cron",
+        trigger: "user_cron",
+        input_summary: `Scheduled task: ${task.content}`,
+        output_summary: `ERROR: ${errorMsg.slice(0, 500)}`,
+        duration_ms: durationMs,
+      }).catch((logErr) => {
+        console.error(`  [cron] Failed to log error for user cron ${taskId}:`, logErr);
+      });
+    }
   }
 
   /**
