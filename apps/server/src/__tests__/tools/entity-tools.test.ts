@@ -72,22 +72,22 @@ describe("linkItemEntityTool", () => {
     vi.mocked(linkItemEntity).mockResolvedValueOnce(undefined as never);
 
     const result = await linkItemEntityTool.invoke({
-      item_id: "item-1",
-      entity_id: "ent-1",
+      item_id: "00000000-0000-4000-8000-000000000001",
+      entity_id: "00000000-0000-4000-8000-000000000010",
       relationship: "about",
     });
     const parsed = JSON.parse(result);
 
-    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith("item-1", "ent-1", "about");
+    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000010", "about");
     expect(parsed.status).toBe("linked");
   });
 
   it("defaults relationship to mentioned", async () => {
     vi.mocked(linkItemEntity).mockResolvedValueOnce(undefined as never);
 
-    await linkItemEntityTool.invoke({ item_id: "item-2", entity_id: "ent-2" });
+    await linkItemEntityTool.invoke({ item_id: "00000000-0000-4000-8000-000000000002", entity_id: "00000000-0000-4000-8000-000000000020" });
 
-    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith("item-2", "ent-2", "mentioned");
+    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000020", "mentioned");
   });
 });
 

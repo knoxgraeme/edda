@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { batchCreateItems, getSettingsSync } from "@edda/db";
-import { embedBatch } from "../../embed/index.js";
+import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
 
 const batchItemSchema = z.object({
   content: z.string().describe("The item content text"),
@@ -26,7 +26,7 @@ export const batchCreateItemsTool = tool(
     const settings = getSettingsSync();
     const today = new Date().toISOString().split("T")[0];
 
-    const embeddings = await embedBatch(items.map((item) => item.content));
+    const embeddings = await embedBatch(items.map((item) => buildEmbeddingText(item.type, item.content, item.summary)));
 
     const inputs = items.map((item, i) => ({
       content: item.content,

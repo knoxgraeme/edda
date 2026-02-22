@@ -78,6 +78,15 @@ export async function deleteItem(id: string): Promise<boolean> {
 /** Safelist pattern for metadata keys — alphanumeric and underscore only */
 const SAFE_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+/**
+ * Semantic search over items using pgvector cosine similarity.
+ *
+ * **Vector space note:** The quality of results depends on the query embedding
+ * being generated with the same text format as the stored embeddings. Use
+ * `buildEmbeddingText()` from the embed module for consistent formatting.
+ * Mismatched text formats between query and stored embeddings will degrade
+ * similarity scores.
+ */
 export async function searchItems(
   embedding: number[],
   options: {
@@ -86,13 +95,21 @@ export async function searchItems(
     type?: string;
     after?: string;
     agentKnowledgeOnly?: boolean;
+    confirmedOnly?: boolean;
+    excludeSuperseded?: boolean;
     metadata?: Record<string, string>;
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
-  const { threshold = 0.85, limit = 10, type, after, agentKnowledgeOnly, metadata } = options;
+  const { threshold = 0.85, limit = 10, type, after, agentKnowledgeOnly, confirmedOnly, excludeSuperseded, metadata } = options;
 
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
+  if (excludeSuperseded !== false) {
+    conditions.push("superseded_by IS NULL");
+  }
+  if (confirmedOnly !== false) {
+    conditions.push("confirmed = true");
+  }
   const params: unknown[] = [JSON.stringify(embedding), threshold];
   let paramIdx = 3;
 

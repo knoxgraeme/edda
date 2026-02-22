@@ -7,7 +7,7 @@ import { z } from "zod";
 import { deleteItem } from "@edda/db";
 
 export const deleteItemSchema = z.object({
-  item_id: z.string().describe("The ID of the item to delete"),
+  item_id: z.string().uuid().describe("The ID of the item to delete"),
 });
 
 export const deleteItemTool = tool(

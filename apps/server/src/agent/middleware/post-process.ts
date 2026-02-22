@@ -23,7 +23,7 @@ import {
   getSettingsSync,
 } from "@edda/db";
 import type { Settings, SearchResult, EntitySearchResult } from "@edda/db";
-import { embedBatch } from "../../embed/index.js";
+import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
 import { getChatModel } from "../../llm/index.js";
 import { generateAgentsMd } from "../generate-agents-md.js";
 
@@ -32,6 +32,9 @@ import { generateAgentsMd } from "../generate-agents-md.js";
 const MemorySchema = z.object({
   type: z.enum(["preference", "learned_fact", "pattern"]),
   content: z.string().describe("The memory to store, written as a concise statement"),
+  confidence: z.enum(["high", "medium", "low"]).describe(
+    "How confident: high = explicitly stated or clearly implied, medium = reasonably inferred, low = loosely inferred or ambiguous"
+  ),
 });
 
 const ExtractedEntitySchema = z.object({
@@ -41,11 +44,18 @@ const ExtractedEntitySchema = z.object({
   aliases: z.array(z.string()).optional().describe("Alternative names used in conversation"),
 });
 
+const EntityLinkSchema = z.object({
+  entity_name: z.string().describe("The entity name this link is for"),
+  relationship: z.enum(["mentioned", "about", "assigned_to", "decided_by"]).describe("How the entity relates to the conversation items"),
+});
+
 const ExtractionResultSchema = z.object({
   memories: z.array(MemorySchema).describe("Implicit knowledge extracted from the conversation"),
   entities: z
     .array(ExtractedEntitySchema)
     .describe("Named entities mentioned in the conversation"),
+  entity_links: z.array(EntityLinkSchema).optional()
+    .describe("Relationship types for extracted entities. If omitted, defaults to 'mentioned' for all."),
 });
 
 type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
@@ -80,10 +90,22 @@ For each memory, choose the most appropriate type:
 - **learned_fact**: Personal details, relationships, work info, biographical facts
 - **pattern**: Recurring behaviors, schedules, routines
 
+For each memory, also rate your confidence:
+- **high**: The user explicitly stated this or it's clearly implied (e.g., "I work at Acme Corp")
+- **medium**: Reasonably inferred from context (e.g., user discusses React a lot → "frequently works with React")
+- **low**: Loosely inferred or ambiguous (e.g., user mentioned hiking once → "may enjoy hiking")
+
 ## 2. Entities
 Extract named entities: people, projects, companies, topics, places, tools, or concepts.
 Use the canonical/full form of the name (e.g. "Sarah Chen" not just "Sarah").
 Include aliases if the conversation used shorthand (e.g. aliases: ["k8s"] for "Kubernetes").
+
+## 3. Entity Relationships
+For each entity, specify the relationship to items in this conversation:
+- **mentioned**: Entity was referenced in passing
+- **about**: An item is primarily about this entity
+- **assigned_to**: An item (task, action) was assigned to this entity
+- **decided_by**: A decision item was made by this entity
 
 ## Rules
 - Be conservative. Only extract things with high confidence.
@@ -279,10 +301,16 @@ export class EddaPostProcessMiddleware {
         await this.processMemories(extraction.memories, settings);
 
       // 5. Process entities with semantic dedup
-      const allEntityIds = await this.processEntities(extraction.entities, settings);
+      const { entityIds: allEntityIds, entityNameToId } =
+        await this.processEntities(extraction.entities, settings);
 
       // 6. Link entities to items created during the conversation
-      await this.linkEntitiesToItems(allEntityIds, createdItemIds);
+      await this.linkEntitiesToItems(
+        allEntityIds,
+        createdItemIds,
+        extraction.entity_links,
+        entityNameToId,
+      );
 
       // 7. Mark thread as processed
       if (threadId) {
@@ -374,7 +402,7 @@ export class EddaPostProcessMiddleware {
     const updateThreshold = settings.memory_update_threshold;
 
     // Batch-embed all memory texts
-    const texts = memories.map((m) => m.content);
+    const texts = memories.map((m) => buildEmbeddingText(m.type, m.content));
     const vectors = texts.length > 0 ? await embedBatch(texts) : [];
 
     for (let i = 0; i < memories.length; i++) {
@@ -386,6 +414,7 @@ export class EddaPostProcessMiddleware {
           threshold: updateThreshold,
           limit: 3,
           agentKnowledgeOnly: true,
+          confirmedOnly: false,
         });
 
         if (similar.length > 0 && similar[0].similarity >= reinforceThreshold) {
@@ -396,11 +425,13 @@ export class EddaPostProcessMiddleware {
           itemIds.push(similar[0].id);
         } else if (similar.length > 0 && similar[0].similarity >= updateThreshold) {
           // Update — similar but not exact, supersede the old item
+          const isConfirmed = memory.confidence === 'high';
           const newItem = await createItem({
             type: memory.type,
             content: memory.content,
             source: "posthook",
-            confirmed: true,
+            confirmed: isConfirmed,
+            pending_action: isConfirmed ? undefined : `Auto-extracted with ${memory.confidence} confidence. Review and confirm or reject.`,
             embedding: vector,
             embedding_model: settings.embedding_model,
           });
@@ -412,11 +443,13 @@ export class EddaPostProcessMiddleware {
           itemIds.push(newItem.id);
         } else {
           // Insert — no close match, create new memory
+          const isConfirmed = memory.confidence === 'high';
           const newItem = await createItem({
             type: memory.type,
             content: memory.content,
             source: "posthook",
-            confirmed: true,
+            confirmed: isConfirmed,
+            pending_action: isConfirmed ? undefined : `Auto-extracted with ${memory.confidence} confidence. Review and confirm or reject.`,
             embedding: vector,
             embedding_model: settings.embedding_model,
           });
@@ -443,8 +476,9 @@ export class EddaPostProcessMiddleware {
   private async processEntities(
     entities: ExtractedEntity[],
     settings: Settings,
-  ): Promise<string[]> {
+  ): Promise<{ entityIds: string[]; entityNameToId: Map<string, string> }> {
     const entityIds: string[] = [];
+    const entityNameToId = new Map<string, string>();
     const exactThreshold = settings.entity_exact_threshold;
     const fuzzyThreshold = settings.entity_fuzzy_threshold;
 
@@ -483,6 +517,7 @@ export class EddaPostProcessMiddleware {
             description: entity.description ?? existing.description,
           });
           entityIds.push(existing.id);
+          entityNameToId.set(entity.name.toLowerCase(), existing.id);
         } else if (similar.length > 0 && similar[0].similarity >= fuzzyThreshold) {
           // 3b. Fuzzy match — may be the same entity, depends on approval mode
           const existing = similar[0];
@@ -501,6 +536,7 @@ export class EddaPostProcessMiddleware {
               description: entity.description ?? existing.description,
             });
             entityIds.push(existing.id);
+            entityNameToId.set(entity.name.toLowerCase(), existing.id);
           } else {
             // Confirm mode: create unconfirmed entity with pending_action
             const newEntity = await upsertEntity({
@@ -515,6 +551,7 @@ export class EddaPostProcessMiddleware {
               pending_action: `Possible duplicate of "${existing.name}" (${(similar[0].similarity * 100).toFixed(0)}% similar). Approve to keep as separate, or merge.`,
             });
             entityIds.push(newEntity.id);
+            entityNameToId.set(entity.name.toLowerCase(), newEntity.id);
           }
         } else {
           // 3c. New entity — no close match
@@ -526,27 +563,46 @@ export class EddaPostProcessMiddleware {
             embedding: vector,
           });
           entityIds.push(newEntity.id);
+          entityNameToId.set(entity.name.toLowerCase(), newEntity.id);
         }
       } catch (err) {
         console.error(`[post-process] Failed to process entity "${entity.name}":`, err);
       }
     }
 
-    return entityIds;
+    return { entityIds, entityNameToId };
   }
 
   // ── Private: Entity-item linking ──────────────────────────────
 
   /**
    * Link all extracted entities to all items created during the conversation.
+   * Uses relationship types from entity_links when available, falls back to "mentioned".
    */
-  private async linkEntitiesToItems(entityIds: string[], itemIds: string[]): Promise<void> {
+  private async linkEntitiesToItems(
+    entityIds: string[],
+    itemIds: string[],
+    entityLinks?: Array<{ entity_name: string; relationship: string }>,
+    entityNameToId?: Map<string, string>,
+  ): Promise<void> {
     if (entityIds.length === 0 || itemIds.length === 0) return;
 
+    // Build a reverse map: entityId -> relationship
+    const idToRelationship = new Map<string, string>();
+    if (entityLinks && entityNameToId) {
+      for (const link of entityLinks) {
+        const entityId = entityNameToId.get(link.entity_name.toLowerCase());
+        if (entityId) {
+          idToRelationship.set(entityId, link.relationship);
+        }
+      }
+    }
+
     for (const entityId of entityIds) {
+      const relationship = idToRelationship.get(entityId) ?? "mentioned";
       for (const itemId of itemIds) {
         try {
-          await linkItemEntity(itemId, entityId, "mentioned");
+          await linkItemEntity(itemId, entityId, relationship);
         } catch (err) {
           // Swallow — link may already exist or item/entity may have been deleted
           console.error(

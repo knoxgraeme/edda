@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getItemById } from "@edda/db";
 
 export const getItemByIdSchema = z.object({
-  item_id: z.string().describe("The item ID to look up"),
+  item_id: z.string().uuid().describe("The item ID to look up"),
 });
 
 export const getItemByIdTool = tool(

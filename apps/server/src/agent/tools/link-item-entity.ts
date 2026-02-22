@@ -7,8 +7,8 @@ import { z } from "zod";
 import { linkItemEntity } from "@edda/db";
 
 export const linkItemEntitySchema = z.object({
-  item_id: z.string().describe("The item ID to link"),
-  entity_id: z.string().describe("The entity ID to link"),
+  item_id: z.string().uuid().describe("The item ID to link"),
+  entity_id: z.string().uuid().describe("The entity ID to link"),
   relationship: z
     .enum(["mentioned", "about", "assigned_to", "decided_by"])
     .optional()

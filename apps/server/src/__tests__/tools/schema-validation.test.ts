@@ -11,6 +11,7 @@ import { ZodError } from "zod";
 import { addMcpConnectionSchema } from "../../agent/tools/add-mcp-connection.js";
 import { batchCreateItemsSchema } from "../../agent/tools/batch-create-items.js";
 import { confirmPendingSchema } from "../../agent/tools/confirm-pending.js";
+import { getPendingItemsSchema } from "../../agent/tools/get-pending-items.js";
 import { createItemTypeSchema } from "../../agent/tools/create-item-type.js";
 import { createItemSchema } from "../../agent/tools/create-item.js";
 import { deleteItemSchema } from "../../agent/tools/delete-item.js";
@@ -195,8 +196,8 @@ describe("createItemSchema", () => {
 // ---------------------------------------------------------------------------
 describe("deleteItemSchema", () => {
   it("accepts valid input", () => {
-    const result = deleteItemSchema.parse({ item_id: "abc-123" });
-    expect(result.item_id).toBe("abc-123");
+    const result = deleteItemSchema.parse({ item_id: "00000000-0000-4000-8000-000000000001" });
+    expect(result.item_id).toBe("00000000-0000-4000-8000-000000000001");
   });
 
   it("rejects missing item_id", () => {
@@ -205,6 +206,10 @@ describe("deleteItemSchema", () => {
 
   it("rejects wrong type", () => {
     expect(() => deleteItemSchema.parse({ item_id: 123 })).toThrow(ZodError);
+  });
+
+  it("rejects non-UUID string", () => {
+    expect(() => deleteItemSchema.parse({ item_id: "not-a-uuid" })).toThrow(ZodError);
   });
 });
 
@@ -281,8 +286,8 @@ describe("getEntityItemsSchema", () => {
 // ---------------------------------------------------------------------------
 describe("getItemByIdSchema", () => {
   it("accepts valid input", () => {
-    const result = getItemByIdSchema.parse({ item_id: "uuid-here" });
-    expect(result.item_id).toBe("uuid-here");
+    const result = getItemByIdSchema.parse({ item_id: "00000000-0000-4000-8000-000000000002" });
+    expect(result.item_id).toBe("00000000-0000-4000-8000-000000000002");
   });
 
   it("rejects missing item_id", () => {
@@ -291,6 +296,31 @@ describe("getItemByIdSchema", () => {
 
   it("rejects wrong type", () => {
     expect(() => getItemByIdSchema.parse({ item_id: 42 })).toThrow(ZodError);
+  });
+
+  it("rejects non-UUID string", () => {
+    expect(() => getItemByIdSchema.parse({ item_id: "short-id" })).toThrow(ZodError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// get-pending-items
+// ---------------------------------------------------------------------------
+describe("getPendingItemsSchema", () => {
+  it("accepts empty input (defaults to all)", () => {
+    const result = getPendingItemsSchema.parse({});
+    expect(result.table).toBe("all");
+  });
+
+  it("accepts valid table values", () => {
+    expect(getPendingItemsSchema.parse({ table: "items" }).table).toBe("items");
+    expect(getPendingItemsSchema.parse({ table: "entities" }).table).toBe("entities");
+    expect(getPendingItemsSchema.parse({ table: "item_types" }).table).toBe("item_types");
+    expect(getPendingItemsSchema.parse({ table: "all" }).table).toBe("all");
+  });
+
+  it("rejects invalid table enum", () => {
+    expect(() => getPendingItemsSchema.parse({ table: "users" })).toThrow(ZodError);
   });
 });
 
@@ -368,16 +398,16 @@ describe("getTimelineSchema", () => {
 describe("linkItemEntitySchema", () => {
   it("accepts valid input", () => {
     const result = linkItemEntitySchema.parse({
-      item_id: "item-1",
-      entity_id: "entity-1",
+      item_id: "00000000-0000-4000-8000-000000000001",
+      entity_id: "00000000-0000-4000-8000-000000000010",
     });
-    expect(result.item_id).toBe("item-1");
+    expect(result.item_id).toBe("00000000-0000-4000-8000-000000000001");
   });
 
   it("accepts optional relationship", () => {
     const result = linkItemEntitySchema.parse({
-      item_id: "item-1",
-      entity_id: "entity-1",
+      item_id: "00000000-0000-4000-8000-000000000001",
+      entity_id: "00000000-0000-4000-8000-000000000010",
       relationship: "about",
     });
     expect(result.relationship).toBe("about");
@@ -385,16 +415,25 @@ describe("linkItemEntitySchema", () => {
 
   it("rejects missing required fields", () => {
     expect(() => linkItemEntitySchema.parse({})).toThrow(ZodError);
-    expect(() => linkItemEntitySchema.parse({ item_id: "item-1" })).toThrow(ZodError);
+    expect(() => linkItemEntitySchema.parse({ item_id: "00000000-0000-4000-8000-000000000001" })).toThrow(ZodError);
   });
 
   it("rejects invalid relationship enum", () => {
     expect(() =>
       linkItemEntitySchema.parse({
-        item_id: "item-1",
-        entity_id: "entity-1",
+        item_id: "00000000-0000-4000-8000-000000000001",
+        entity_id: "00000000-0000-4000-8000-000000000010",
         relationship: "friend_of",
       }),
+    ).toThrow(ZodError);
+  });
+
+  it("rejects non-UUID item_id and entity_id", () => {
+    expect(() =>
+      linkItemEntitySchema.parse({ item_id: "short", entity_id: "00000000-0000-4000-8000-000000000010" }),
+    ).toThrow(ZodError);
+    expect(() =>
+      linkItemEntitySchema.parse({ item_id: "00000000-0000-4000-8000-000000000001", entity_id: "short" }),
     ).toThrow(ZodError);
   });
 });
@@ -499,14 +538,14 @@ describe("searchItemsSchema", () => {
 // ---------------------------------------------------------------------------
 describe("updateItemSchema", () => {
   it("accepts valid input", () => {
-    const result = updateItemSchema.parse({ item_id: "item-1", status: "done" });
-    expect(result.item_id).toBe("item-1");
+    const result = updateItemSchema.parse({ item_id: "00000000-0000-4000-8000-000000000001", status: "done" });
+    expect(result.item_id).toBe("00000000-0000-4000-8000-000000000001");
     expect(result.status).toBe("done");
   });
 
   it("accepts content and metadata updates", () => {
     const result = updateItemSchema.parse({
-      item_id: "item-1",
+      item_id: "00000000-0000-4000-8000-000000000001",
       content: "updated text",
       metadata: { key: "value" },
     });
@@ -519,7 +558,13 @@ describe("updateItemSchema", () => {
 
   it("rejects invalid status enum", () => {
     expect(() =>
-      updateItemSchema.parse({ item_id: "item-1", status: "deleted" }),
+      updateItemSchema.parse({ item_id: "00000000-0000-4000-8000-000000000001", status: "deleted" }),
+    ).toThrow(ZodError);
+  });
+
+  it("rejects non-UUID item_id", () => {
+    expect(() =>
+      updateItemSchema.parse({ item_id: "not-a-uuid", status: "done" }),
     ).toThrow(ZodError);
   });
 });

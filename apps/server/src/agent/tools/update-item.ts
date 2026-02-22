@@ -4,11 +4,11 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { updateItem, getSettingsSync } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { updateItem, getItemById, getSettingsSync } from "@edda/db";
+import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const updateItemSchema = z.object({
-  item_id: z.string().describe("The ID of the item to update"),
+  item_id: z.string().uuid().describe("The ID of the item to update"),
   status: z
     .enum(["active", "done", "archived", "snoozed"])
     .optional()
@@ -29,9 +29,13 @@ export const updateItemTool = tool(
     }
 
     if (content !== undefined) {
+      const existing = await getItemById(item_id);
+      if (!existing) {
+        return JSON.stringify({ error: "Item not found", item_id });
+      }
       const settings = getSettingsSync();
       updates.content = content;
-      updates.embedding = await embed(content);
+      updates.embedding = await embed(buildEmbeddingText(existing.type, content, existing.summary));
       updates.embedding_model = settings.embedding_model;
     }
 

@@ -39,6 +39,7 @@ import { removeMcpConnectionTool } from "./remove-mcp-connection.js";
 // Confirmation tools (1D)
 import { confirmPendingTool } from "./confirm-pending.js";
 import { rejectPendingTool } from "./reject-pending.js";
+import { getPendingItemsTool } from "./get-pending-items.js";
 
 export const eddaTools = [
   // Item tools (1A)
@@ -70,4 +71,5 @@ export const eddaTools = [
   // Confirmation tools (1D)
   confirmPendingTool,
   rejectPendingTool,
+  getPendingItemsTool,
 ];

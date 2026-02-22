@@ -4,8 +4,8 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createItem, getSettingsSync } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { createItem, getSettingsSync, searchItems, updateItem } from "@edda/db";
+import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const createItemSchema = z.object({
   type: z.string().describe("The item type (e.g. note, task, event, preference)"),
@@ -20,10 +20,35 @@ export const createItemSchema = z.object({
   parent_id: z.string().optional().describe("Parent item ID for hierarchical items"),
 });
 
+const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);
+
 export const createItemTool = tool(
   async ({ type, content, summary, metadata, day, status, parent_id }) => {
     const settings = getSettingsSync();
-    const embedding = await embed(content);
+    const embedding = await embed(buildEmbeddingText(type, content, summary));
+
+    // Dedup check — only for knowledge types (preference, learned_fact, pattern)
+    if (DEDUP_TYPES.has(type)) {
+      const similar = await searchItems(embedding, {
+        threshold: settings.memory_reinforce_threshold,
+        limit: 1,
+        type,
+        confirmedOnly: false,
+      });
+
+      if (similar.length > 0 && !['done', 'archived'].includes(similar[0].status)) {
+        await updateItem(similar[0].id, {
+          last_reinforced_at: new Date().toISOString(),
+        });
+        return JSON.stringify({
+          id: similar[0].id,
+          type: similar[0].type,
+          status: similar[0].status,
+          day: similar[0].day,
+          reinforced: true,
+        });
+      }
+    }
 
     const item = await createItem({
       type,
@@ -48,7 +73,7 @@ export const createItemTool = tool(
   {
     name: "create_item",
     description:
-      "Create a new item in the knowledge base. Automatically generates an embedding for semantic search.",
+      "Create a new item in the knowledge base. Automatically generates an embedding for semantic search. Knowledge types (preference, learned_fact, pattern) are deduplicated — near-duplicates are reinforced instead of creating new items.",
     schema: createItemSchema,
   },
 );
