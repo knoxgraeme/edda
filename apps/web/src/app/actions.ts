@@ -1,5 +1,6 @@
 "use server";
 
+import { timingSafeEqual } from "crypto";
 import {
   confirmPending,
   rejectPending,
@@ -12,6 +13,9 @@ import {
   type Item,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { computeSessionToken, COOKIE_NAME, THIRTY_DAYS } from "@/lib/auth";
 
 const VALID_TABLES = new Set(["items", "entities", "item_types"] as const);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -110,4 +114,55 @@ export async function updateEntityAction(
 export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
   if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
   return getEntityItems(entityId);
+}
+
+// ─── Auth ───────────────────────────────────────────────────────────
+
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+export async function loginAction(password: string): Promise<{ error?: string }> {
+  const expected = process.env.EDDA_PASSWORD;
+  if (!expected) return { error: "Authentication is not configured." };
+
+  const hdrs = await headers();
+  const ip = hdrs.get("x-forwarded-for") ?? "unknown";
+
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (entry && now < entry.resetAt && entry.count >= MAX_ATTEMPTS) {
+    return { error: "Too many attempts. Try again later." };
+  }
+
+  const passwordBuf = Buffer.from(password);
+  const expectedBuf = Buffer.from(expected);
+  if (passwordBuf.length !== expectedBuf.length || !timingSafeEqual(passwordBuf, expectedBuf)) {
+    if (!entry || now >= entry.resetAt) {
+      loginAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    } else {
+      entry.count++;
+    }
+    return { error: "Invalid password." };
+  }
+
+  loginAttempts.delete(ip);
+
+  const token = computeSessionToken(expected);
+  const jar = await cookies();
+  jar.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: THIRTY_DAYS,
+  });
+
+  redirect("/");
+}
+
+export async function logoutAction(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(COOKIE_NAME);
+  redirect("/login");
 }

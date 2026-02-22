@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Save, AlertTriangle, RefreshCw } from "lucide-react";
+import { Save, AlertTriangle, RefreshCw, LogOut } from "lucide-react";
 import type { Settings } from "../types/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { saveSettingsAction } from "../actions";
+import { saveSettingsAction, logoutAction } from "../actions";
 
 type SettingsForm = Omit<Settings, "id" | "created_at" | "updated_at">;
 
@@ -38,7 +38,7 @@ function FieldGroup({
   );
 }
 
-export function SettingsClient({ initial }: { initial: Settings }) {
+export function SettingsClient({ initial, authEnabled }: { initial: Settings; authEnabled: boolean }) {
   const [form, setForm] = useState<SettingsForm>(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, created_at, updated_at, ...rest } = initial;
@@ -544,6 +544,19 @@ export function SettingsClient({ initial }: { initial: Settings }) {
             </FieldGroup>
           </CardContent>
         </Card>
+        {/* Logout */}
+        {authEnabled && (
+          <Card>
+            <CardContent className="pt-6">
+              <form action={logoutAction}>
+                <Button variant="outline" className="gap-2 w-full">
+                  <LogOut className="h-4 w-4" />
+                  Log out
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </main>
   );

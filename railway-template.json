@@ -41,6 +41,7 @@
       },
       "variables": {
         "NEXT_PUBLIC_API_URL": { "reference": "edda-server.RAILWAY_PUBLIC_DOMAIN" },
+        "EDDA_PASSWORD": { "description": "Password to protect the web UI", "required": true },
         "PORT": { "default": "3000" }
       }
     },
