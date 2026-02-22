@@ -1,0 +1,61 @@
+/**
+ * Seed system skills from SKILL.md files on disk.
+ *
+ * Reads each skills/{name}/SKILL.md, parses YAML frontmatter,
+ * and upserts into the skills table. Idempotent — only bumps
+ * version when content actually changes.
+ */
+
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { upsertSkill } from "@edda/db";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SKILLS_DIR = join(__dirname, "../../skills");
+
+function parseFrontmatter(raw: string): { name: string; description: string } {
+  const parts = raw.split("---");
+  if (parts.length < 3) {
+    throw new Error("SKILL.md missing YAML frontmatter");
+  }
+  const yaml = parts[1];
+  const nameMatch = yaml.match(/^name:\s*(.+)$/m);
+  const descMatch = yaml.match(/description:\s*>\s*\n([\s\S]*?)(?=\n\w|\n---)/);
+  const descInline = yaml.match(/^description:\s*(?!>)(.+)$/m);
+
+  const name = nameMatch?.[1]?.trim() ?? "";
+  let description = "";
+  if (descMatch) {
+    description = descMatch[1].replace(/\n\s*/g, " ").trim();
+  } else if (descInline) {
+    description = descInline[1].trim();
+  }
+
+  return { name, description };
+}
+
+export async function seedSkills(): Promise<void> {
+  const entries = await readdir(SKILLS_DIR, { withFileTypes: true });
+  const dirs = entries.filter((e) => e.isDirectory() && !e.isSymbolicLink());
+
+  await Promise.allSettled(
+    dirs.map(async (dir) => {
+      const skillPath = join(SKILLS_DIR, dir.name, "SKILL.md");
+      let raw: string;
+      try {
+        raw = await readFile(skillPath, "utf-8");
+      } catch {
+        return; // skip directories without SKILL.md
+      }
+
+      const { name, description } = parseFrontmatter(raw);
+      if (!name) {
+        console.warn(`  [seed-skills] Skipping ${dir.name} — no name in frontmatter`);
+        return;
+      }
+
+      await upsertSkill({ name, description, content: raw, is_system: true, created_by: "seed" });
+    }),
+  );
+}

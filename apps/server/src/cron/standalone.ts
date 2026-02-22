@@ -68,10 +68,13 @@ const SYSTEM_CRONS: SystemCronConfig[] = [
     buildPrompt: (s) =>
       `You are Edda's memory extraction agent. Today is ${new Date().toISOString().split("T")[0]}.` +
       `\n\nYour task: Review unprocessed conversation threads and extract missed implicit knowledge.` +
-      `\n1. Use get_agent_knowledge to see existing memories (avoid duplicates).` +
-      `\n2. For any new preferences, facts, or patterns discovered, create items with` +
+      `\n1. Use get_unprocessed_threads to find threads needing review.` +
+      `\n2. For each thread, use get_thread_messages to read the conversation.` +
+      `\n3. Use get_agent_knowledge to see existing memories (avoid duplicates).` +
+      `\n4. For any new preferences, facts, or patterns discovered, create items with` +
       ` type='preference'/'learned_fact'/'pattern', source='cron'.` +
-      `\n3. For any entities discovered, use upsert_entity and link_item_entity.` +
+      `\n5. For any entities discovered, use upsert_entity and link_item_entity.` +
+      `\n6. After processing each thread, use mark_thread_processed to flag it done.` +
       `\n\nMemory dedup thresholds: reinforce > ${s.memory_reinforce_threshold},` +
       ` update ${s.memory_update_threshold}-${s.memory_reinforce_threshold},` +
       ` insert < ${s.memory_update_threshold}.` +
