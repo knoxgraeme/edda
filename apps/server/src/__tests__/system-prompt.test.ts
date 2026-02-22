@@ -1,7 +1,7 @@
 /**
- * System prompt builder tests — item types, AGENTS.md, graceful fallback.
+ * System prompt builder tests — AGENTS.md from DB, approval settings, MCP connections.
  *
- * Mocks @edda/db for settings/item types/connections and fs/promises for AGENTS.md.
+ * Mocks @edda/db for settings, connections, and AGENTS.md content.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -10,26 +10,20 @@ import { DEFAULT_TEST_SETTINGS } from "./helpers.js";
 // Use vi.hoisted() so these mocks are available inside vi.mock() factories
 const {
   mockGetSettingsSync,
-  mockGetItemTypes,
+  mockGetAgentsMdContent,
   mockGetMcpConnections,
-  mockReadFile,
 } = vi.hoisted(() => {
   return {
     mockGetSettingsSync: vi.fn(),
-    mockGetItemTypes: vi.fn().mockResolvedValue([]),
+    mockGetAgentsMdContent: vi.fn().mockResolvedValue(""),
     mockGetMcpConnections: vi.fn().mockResolvedValue([]),
-    mockReadFile: vi.fn(),
   };
 });
 
 vi.mock("@edda/db", () => ({
   getSettingsSync: mockGetSettingsSync,
-  getItemTypes: mockGetItemTypes,
+  getAgentsMdContent: mockGetAgentsMdContent,
   getMcpConnections: mockGetMcpConnections,
-}));
-
-vi.mock("fs/promises", () => ({
-  readFile: mockReadFile,
 }));
 
 import { buildSystemPrompt } from "../agent/prompts/system.js";
@@ -40,53 +34,29 @@ describe("buildSystemPrompt", () => {
 
     // Default mocks
     mockGetSettingsSync.mockReturnValue(DEFAULT_TEST_SETTINGS);
-    mockGetItemTypes.mockResolvedValue([
-      {
-        name: "note",
-        icon: "\u{1F4DD}",
-        classification_hint: "General notes",
-        fields: {},
-        agent_internal: false,
-        confirmed: true,
-        created_at: "2026-01-01",
-        updated_at: "2026-01-01",
-      },
-      {
-        name: "task",
-        icon: "\u2705",
-        classification_hint: "Action items",
-        fields: {},
-        agent_internal: false,
-        confirmed: true,
-        created_at: "2026-01-01",
-        updated_at: "2026-01-01",
-      },
-    ]);
     mockGetMcpConnections.mockResolvedValue([]);
-    mockReadFile.mockRejectedValue(new Error("ENOENT")); // default: no AGENTS.md
+    mockGetAgentsMdContent.mockResolvedValue(""); // default: no AGENTS.md content
   });
 
-  it("output includes item type names from DB", async () => {
-    const prompt = await buildSystemPrompt();
-    expect(prompt).toContain("**note**");
-    expect(prompt).toContain("**task**");
-    expect(prompt).toContain("General notes");
-    expect(prompt).toContain("Action items");
-  });
-
-  it("output includes AGENTS.md content when file exists", async () => {
-    mockReadFile.mockResolvedValue("The user prefers bullet points.");
+  it("output includes AGENTS.md content when available", async () => {
+    mockGetAgentsMdContent.mockResolvedValue("The user prefers bullet points.");
     const prompt = await buildSystemPrompt();
     expect(prompt).toContain("About This User");
     expect(prompt).toContain("The user prefers bullet points.");
   });
 
-  it("handles missing AGENTS.md gracefully", async () => {
-    mockReadFile.mockRejectedValue(new Error("ENOENT: no such file"));
+  it("handles empty AGENTS.md gracefully", async () => {
+    mockGetAgentsMdContent.mockResolvedValue("");
     const prompt = await buildSystemPrompt();
     // Should not throw and should not contain the "About This User" section
     expect(prompt).not.toContain("About This User");
     // But should still have the core prompt
     expect(prompt).toContain("You are Edda");
+  });
+
+  it("includes approval settings", async () => {
+    const prompt = await buildSystemPrompt();
+    expect(prompt).toContain("Approval Settings");
+    expect(prompt).toContain(DEFAULT_TEST_SETTINGS.approval_new_type);
   });
 });

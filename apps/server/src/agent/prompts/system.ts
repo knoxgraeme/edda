@@ -1,26 +1,13 @@
 /**
  * Dynamic system prompt builder
  *
- * Reads AGENTS.md (user context) and combines with
+ * Reads AGENTS.md content from the database and combines with
  * base behavior instructions and runtime context
- * (item types, approval settings, MCP connections).
+ * (approval settings, MCP connections).
  */
 
-import { readFile } from "fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { getItemTypes, getSettingsSync, getMcpConnections } from "@edda/db";
-import type { ItemType, McpConnection, Settings } from "@edda/db";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const AGENTS_MD_PATH = join(__dirname, "../../AGENTS.md");
-
-function formatItemTypes(types: ItemType[]): string {
-  return types
-    .filter((t) => !t.agent_internal)
-    .map((t) => `- ${t.icon} **${t.name}**: ${t.classification_hint}`)
-    .join("\n");
-}
+import { getAgentsMdContent, getSettingsSync, getMcpConnections } from "@edda/db";
+import type { McpConnection, Settings } from "@edda/db";
 
 function formatApprovalSettings(settings: Settings): string {
   return [
@@ -36,9 +23,8 @@ function formatMcpConnections(connections: McpConnection[]): string {
 }
 
 export async function buildSystemPrompt(): Promise<string> {
-  const [agentsMd, itemTypes, connections] = await Promise.all([
-    readFile(AGENTS_MD_PATH, "utf-8").catch(() => ""),
-    getItemTypes(),
+  const [agentsMd, connections] = await Promise.all([
+    getAgentsMdContent(),
     getMcpConnections(),
   ]);
   const settings = getSettingsSync();
@@ -65,9 +51,6 @@ You never ask the user to organize anything — you handle taxonomy.
 - Use get_agent_knowledge to review learned preferences and facts when relevant
 - Prefer entity lookups over semantic search when you know the specific entity name
 - When the user asks about pending items or approvals, use get_pending_items
-
-## Available Item Types
-${formatItemTypes(itemTypes)}
 
 ## Approval Settings
 ${formatApprovalSettings(settings)}

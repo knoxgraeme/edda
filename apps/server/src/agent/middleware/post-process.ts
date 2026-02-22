@@ -25,7 +25,7 @@ import {
 import type { Settings, SearchResult, EntitySearchResult } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
 import { getChatModel } from "../../llm/index.js";
-import { generateAgentsMd } from "../generate-agents-md.js";
+import { maybeRefreshAgentsMd } from "../generate-agents-md.js";
 
 // ── Zod schemas for structured LLM output ──────────────────────
 
@@ -318,8 +318,8 @@ export class EddaPostProcessMiddleware {
       }
 
       // 8. Regenerate AGENTS.md
-      await generateAgentsMd().catch((err: unknown) => {
-        console.error("[post-process] Failed to regenerate AGENTS.md:", err);
+      await maybeRefreshAgentsMd().catch((err: unknown) => {
+        console.error("[post-process] Failed to refresh AGENTS.md:", err);
       });
 
       // 9. Log to agent_log

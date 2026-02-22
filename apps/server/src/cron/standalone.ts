@@ -18,6 +18,7 @@ import {
 import type { Settings, Item, CreateAgentLogInput } from "@edda/db";
 
 import { createEddaAgent } from "../agent/index.js";
+import { runContextRefreshAgent } from "../agent/generate-agents-md.js";
 import type { CronRunner } from "./index.js";
 
 // ---------------------------------------------------------------------------
@@ -272,6 +273,21 @@ export class StandaloneCronRunner implements CronRunner {
 
       this.scheduledTasks.push(task);
       console.log(`  [cron] Registered system cron: ${cronConfig.name} (${cronExpr})`);
+    }
+
+    // Context refresh cron — runs its own subagent directly (not via generic agent)
+    const contextRefreshCron = settings.context_refresh_cron;
+    if (contextRefreshCron && cron.validate(contextRefreshCron)) {
+      const task = cron.schedule(contextRefreshCron, async () => {
+        try {
+          await runContextRefreshAgent();
+          console.log("  [cron] context_refresh completed");
+        } catch (err) {
+          console.error("  [cron] context_refresh failed:", err);
+        }
+      });
+      this.scheduledTasks.push(task);
+      console.log(`  [cron] Registered: context_refresh (${contextRefreshCron})`);
     }
 
     // Register user cron poller via setInterval

@@ -46,6 +46,8 @@ export const DEFAULT_TEST_SETTINGS: Settings = {
   setup_completed: false,
   user_display_name: null,
   user_timezone: "America/New_York",
+  context_refresh_cron: "0 5 * * *",
+  context_refresh_model: "claude-sonnet-4-20250514",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -111,6 +113,12 @@ export function mockDbModule() {
     // agent-log.ts
     createAgentLog: vi.fn(),
     getRecentAgentLogs: vi.fn().mockResolvedValue([]),
+
+    // agents-md.ts
+    getLatestAgentsMd: vi.fn().mockResolvedValue(null),
+    saveAgentsMdVersion: vi.fn(),
+    pruneAgentsMdVersions: vi.fn(),
+    getAgentsMdContent: vi.fn().mockResolvedValue(""),
 
     // threads.ts
     upsertThread: vi.fn(),
