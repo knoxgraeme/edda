@@ -100,6 +100,9 @@ const SYSTEM_CRONS: SystemCronConfig[] = [
       `\n8. Archive stale memories (not reinforced in 90+ days).` +
       `\n9. Resolve contradictions in learned_facts — keep most recent, archive older.` +
       `\n10. For entities with many links, regenerate descriptions.` +
+      `\n11. Entity-link backfill: For entities created or updated in the last week, use search_items` +
+      `    to find items with high similarity (>0.85) that are NOT already linked. Create links using` +
+      `    link_item_entity with appropriate relationship types.` +
       `\n\n## Output` +
       `\nCreate item: type='insight', source='cron' with the full weekly summary` +
       ` including a memory maintenance section.`,
