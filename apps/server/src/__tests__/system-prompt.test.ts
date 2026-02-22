@@ -12,12 +12,14 @@ const {
   mockGetSettingsSync,
   mockGetItemTypes,
   mockGetMcpConnections,
+  mockGetSkillSummaries,
   mockReadFile,
 } = vi.hoisted(() => {
   return {
     mockGetSettingsSync: vi.fn(),
     mockGetItemTypes: vi.fn().mockResolvedValue([]),
     mockGetMcpConnections: vi.fn().mockResolvedValue([]),
+    mockGetSkillSummaries: vi.fn().mockResolvedValue([]),
     mockReadFile: vi.fn(),
   };
 });
@@ -26,6 +28,7 @@ vi.mock("@edda/db", () => ({
   getSettingsSync: mockGetSettingsSync,
   getItemTypes: mockGetItemTypes,
   getMcpConnections: mockGetMcpConnections,
+  getSkillSummaries: mockGetSkillSummaries,
 }));
 
 vi.mock("fs/promises", () => ({
@@ -88,5 +91,15 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("About This User");
     // But should still have the core prompt
     expect(prompt).toContain("You are Edda");
+  });
+
+  it("output includes skills section when skills exist", async () => {
+    mockGetSkillSummaries.mockResolvedValue([
+      { name: "capture", description: "Captures user input" },
+    ]);
+    const prompt = await buildSystemPrompt();
+    expect(prompt).toContain("## Skills");
+    expect(prompt).toContain("**capture**");
+    expect(prompt).toContain("Captures user input");
   });
 });

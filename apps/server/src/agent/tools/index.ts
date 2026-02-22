@@ -41,6 +41,12 @@ import { confirmPendingTool } from "./confirm-pending.js";
 import { rejectPendingTool } from "./reject-pending.js";
 import { getPendingItemsTool } from "./get-pending-items.js";
 
+// Thread tools
+import { getUnprocessedThreadsTool } from "./get-unprocessed-threads.js";
+import { getThreadMessagesTool } from "./get-thread-messages.js";
+import { markThreadProcessedTool } from "./mark-thread-processed.js";
+import { listThreadsTool } from "./list-threads.js";
+
 export const eddaTools = [
   // Item tools (1A)
   createItemTool,
@@ -72,4 +78,10 @@ export const eddaTools = [
   confirmPendingTool,
   rejectPendingTool,
   getPendingItemsTool,
+
+  // Thread tools
+  getUnprocessedThreadsTool,
+  getThreadMessagesTool,
+  markThreadProcessedTool,
+  listThreadsTool,
 ];

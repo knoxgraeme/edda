@@ -9,8 +9,8 @@
 import { readFile } from "fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getItemTypes, getSettingsSync, getMcpConnections } from "@edda/db";
-import type { ItemType, McpConnection, Settings } from "@edda/db";
+import { getItemTypes, getSettingsSync, getMcpConnections, getSkillSummaries } from "@edda/db";
+import type { ItemType, McpConnection, Settings, Skill } from "@edda/db";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENTS_MD_PATH = join(__dirname, "../../AGENTS.md");
@@ -35,11 +35,17 @@ function formatMcpConnections(connections: McpConnection[]): string {
   return connections.map((c) => `- ${c.name} (${c.transport})`).join("\n");
 }
 
+function formatSkills(skills: Pick<Skill, "name" | "description">[]): string {
+  if (skills.length === 0) return "No skills loaded.";
+  return skills.map((s) => `- **${s.name}**: ${s.description}`).join("\n");
+}
+
 export async function buildSystemPrompt(): Promise<string> {
-  const [agentsMd, itemTypes, connections] = await Promise.all([
+  const [agentsMd, itemTypes, connections, skills] = await Promise.all([
     readFile(AGENTS_MD_PATH, "utf-8").catch(() => ""),
     getItemTypes(),
     getMcpConnections(),
+    getSkillSummaries(),
   ]);
   const settings = getSettingsSync();
 
@@ -66,6 +72,15 @@ You never ask the user to organize anything — you handle taxonomy.
 - Prefer entity lookups over semantic search when you know the specific entity name
 - When the user asks about pending items or approvals, use get_pending_items
 
+## Thread Processing
+- Use get_unprocessed_threads to find conversations not yet processed by memory extraction
+- Use get_thread_messages to read the full message history of a thread
+- Use mark_thread_processed after extracting knowledge from a thread
+- Use list_threads to browse recent conversation history
+
+## Working Memory
+You have an ephemeral scratch pad for within-conversation reasoning. Use write_file, read_file, and edit_file to store intermediate work, draft responses, or track state during complex multi-step tasks. Files are per-conversation and do not persist across sessions.
+
 ## Available Item Types
 ${formatItemTypes(itemTypes)}
 
@@ -74,6 +89,9 @@ ${formatApprovalSettings(settings)}
 
 ## External Integrations
 ${formatMcpConnections(connections)}
+
+## Skills
+${formatSkills(skills)}
 
 ${agentsMd ? `## About This User\n\n${agentsMd}` : ""}`;
 }
