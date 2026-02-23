@@ -148,7 +148,7 @@ export async function loginAction(password: string): Promise<{ error?: string }>
 
   loginAttempts.delete(ip);
 
-  const token = computeSessionToken(expected);
+  const token = await computeSessionToken(expected);
   const jar = await cookies();
   jar.set(COOKIE_NAME, token, {
     httpOnly: true,

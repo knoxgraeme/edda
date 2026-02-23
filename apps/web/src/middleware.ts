@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { validateSession, COOKIE_NAME } from "./lib/auth";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const password = process.env.EDDA_PASSWORD;
 
   // No password configured — auth disabled
@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
 
   // Check session cookie
   const session = request.cookies.get(COOKIE_NAME)?.value;
-  if (session && validateSession(session)) {
+  if (session && (await validateSession(session))) {
     return NextResponse.next();
   }
 
