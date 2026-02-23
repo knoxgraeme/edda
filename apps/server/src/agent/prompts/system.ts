@@ -3,11 +3,13 @@
  *
  * Reads AGENTS.md content from the database and combines with
  * base behavior instructions and runtime context
- * (item types, approval settings, MCP connections, skills).
+ * (item types, approval settings, MCP connections).
+ *
+ * Skills are handled natively by SkillsMiddleware via progressive disclosure.
  */
 
-import { getAgentsMdContent, getSettingsSync, getItemTypes, getMcpConnections, getSkillSummaries } from "@edda/db";
-import type { ItemType, McpConnection, Settings, Skill } from "@edda/db";
+import { getAgentsMdContent, getSettingsSync, getItemTypes, getMcpConnections } from "@edda/db";
+import type { ItemType, McpConnection, Settings } from "@edda/db";
 
 function formatItemTypes(types: ItemType[]): string {
   return types
@@ -29,17 +31,11 @@ function formatMcpConnections(connections: McpConnection[]): string {
   return connections.map((c) => `- ${c.name} (${c.transport})`).join("\n");
 }
 
-function formatSkills(skills: Pick<Skill, "name" | "description">[]): string {
-  if (skills.length === 0) return "No skills loaded.";
-  return skills.map((s) => `- **${s.name}**: ${s.description}`).join("\n");
-}
-
 export async function buildSystemPrompt(): Promise<string> {
-  const [agentsMd, itemTypes, connections, skills] = await Promise.all([
+  const [agentsMd, itemTypes, connections] = await Promise.all([
     getAgentsMdContent(),
     getItemTypes(),
     getMcpConnections(),
-    getSkillSummaries(),
   ]);
   const settings = getSettingsSync();
 
@@ -74,13 +70,17 @@ You never ask the user to organize anything — you handle taxonomy.
 - For batch inputs (multiple items), use batch_create_items
 
 ## Recall
-- When the user asks about a person, project, or company, use get_entity_items first
-- When answering questions that might involve stored knowledge, use search_items
+- If an entity in the context below has a /memories/ path, use read_file to get the full brief
+- For entities without a memory file, use get_entity_items
+- Use ls /memories/ to browse all available memory files
+- For broader questions, use search_items
 - At the start of each session, consider get_dashboard to see what's actionable today
 - For date-specific questions ("what happened last week"), use get_timeline
 - Use get_agent_knowledge to review learned preferences and facts when relevant
-- Prefer entity lookups over semantic search when you know the specific entity name
 - When the user asks about pending items or approvals, use get_pending_items
+- For anything not listed in the context snapshot, search — it may still exist
+- Prefer: read_file /memories/ → entity lookups → semantic search (in that order)
+- Memory files under /memories/ are read-only — do not attempt to write or edit them
 
 ## Thread Processing
 - Use get_unprocessed_threads to find conversations not yet processed by memory extraction
@@ -99,9 +99,6 @@ ${formatApprovalSettings(settings)}
 
 ## External Integrations
 ${formatMcpConnections(connections)}
-
-## Skills
-${formatSkills(skills)}
 
 ${agentsMd ? `## About This User\n\n${agentsMd}` : ""}`;
 }

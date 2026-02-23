@@ -22,7 +22,8 @@ import {
   pruneAgentsMdVersions,
   createAgentLog,
 } from "@edda/db";
-import type { ItemType } from "@edda/db";
+import type { EntityType, ItemType } from "@edda/db";
+import { getStore } from "../store/index.js";
 import type { AIMessageChunk } from "@langchain/core/messages";
 import { getChatModel } from "../llm/index.js";
 import { saveAgentsMdTool, saveAgentsMdSchema } from "./tools/save-agents-md.js";
@@ -50,6 +51,46 @@ export function _resetHashCache(): void {
   _cachedHashAt = 0;
 }
 
+// ── Memory file helpers ──────────────────────────────────────────
+
+/** Map entity type → memory file directory name (subset of EntityType that has memory files) */
+const ENTITY_TYPE_TO_DIR: Partial<Record<EntityType, string>> = {
+  person: "people",
+  project: "projects",
+  company: "organizations",
+};
+
+/**
+ * Query PostgresStore for existing memory file keys.
+ * Returns a Set of keys like "/people/sarah", "/projects/atlas".
+ */
+async function getMemoryFilePaths(): Promise<Set<string>> {
+  try {
+    const store = await getStore();
+    // Fetch all filesystem items; 200 covers typical usage (memory files + skills).
+    // If the limit is hit, some memory pointers may be missing from the template.
+    const results = await store.search(["filesystem"], { limit: 200 });
+    const prefixes = Object.values(ENTITY_TYPE_TO_DIR).map((d) => `/${d}/`);
+    return new Set(
+      results
+        .filter((item) => prefixes.some((p) => item.key.startsWith(p)))
+        .map((item) => item.key),
+    );
+  } catch (err) {
+    // Store may not be initialized yet (e.g. during tests or first startup)
+    console.warn("[getMemoryFilePaths] Failed to query store, falling back to empty set:", err);
+    return new Set();
+  }
+}
+
+/** Convert entity name to a memory file key, e.g. "Sarah Chen" → "/people/sarah-chen" */
+function entityToMemoryKey(name: string, type: EntityType): string | null {
+  const dir = ENTITY_TYPE_TO_DIR[type];
+  if (!dir) return null;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `/${dir}/${slug}`;
+}
+
 // ── Deterministic template builder ──────────────────────────────
 
 /**
@@ -63,7 +104,7 @@ export async function buildDeterministicTemplate(): Promise<{
 }> {
   const settings = getSettingsSync();
 
-  const [preferences, facts, patterns, entities, itemTypes, pendingCount] =
+  const [preferences, facts, patterns, entities, itemTypes, pendingCount, memoryPaths] =
     await Promise.all([
       getItemsByType("preference", "active"),
       getItemsByType("learned_fact", "active"),
@@ -71,6 +112,7 @@ export async function buildDeterministicTemplate(): Promise<{
       getTopEntities(settings.agents_md_max_entities),
       getItemTypes(),
       getPendingConfirmationsCount(),
+      getMemoryFilePaths(),
     ]);
 
   const maxPerCategory = settings.agents_md_max_per_category;
@@ -105,14 +147,17 @@ export async function buildDeterministicTemplate(): Promise<{
     sections.push(`## Patterns\n${items.map((p) => `- ${p.content}`).join("\n")}`);
   }
 
-  // Entities
+  // Entities — annotate with /memories/ pointers when a memory file exists
   if (entities.length > 0) {
     sections.push(
       `## Key Entities\n${entities
-        .map(
-          (e) =>
-            `- **${e.name}** (${e.type})${e.description ? ` — ${e.description}` : ""} [${e.mention_count}x]`,
-        )
+        .map((e) => {
+          const memKey = entityToMemoryKey(e.name, e.type);
+          const hasMemory = memKey && memoryPaths.has(memKey);
+          const desc = e.description ? ` — ${e.description}` : "";
+          const pointer = hasMemory ? ` → /memories${memKey}` : "";
+          return `- **${e.name}** (${e.type})${desc}${pointer} [${e.mention_count}x]`;
+        })
         .join("\n")}`,
     );
   }

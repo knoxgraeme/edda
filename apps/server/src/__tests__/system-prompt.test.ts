@@ -1,8 +1,8 @@
 /**
- * System prompt builder tests — AGENTS.md from DB, item types, skills,
+ * System prompt builder tests — AGENTS.md from DB, item types,
  * approval settings, MCP connections.
  *
- * Mocks @edda/db for settings, connections, skills, item types, and AGENTS.md content.
+ * Skills are now handled natively by SkillsMiddleware (not in the system prompt).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -14,14 +14,12 @@ const {
   mockGetAgentsMdContent,
   mockGetItemTypes,
   mockGetMcpConnections,
-  mockGetSkillSummaries,
 } = vi.hoisted(() => {
   return {
     mockGetSettingsSync: vi.fn(),
     mockGetAgentsMdContent: vi.fn().mockResolvedValue(""),
     mockGetItemTypes: vi.fn().mockResolvedValue([]),
     mockGetMcpConnections: vi.fn().mockResolvedValue([]),
-    mockGetSkillSummaries: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -30,7 +28,6 @@ vi.mock("@edda/db", () => ({
   getAgentsMdContent: mockGetAgentsMdContent,
   getItemTypes: mockGetItemTypes,
   getMcpConnections: mockGetMcpConnections,
-  getSkillSummaries: mockGetSkillSummaries,
 }));
 
 import { buildSystemPrompt } from "../agent/prompts/system.js";
@@ -64,7 +61,6 @@ describe("buildSystemPrompt", () => {
       },
     ]);
     mockGetMcpConnections.mockResolvedValue([]);
-    mockGetSkillSummaries.mockResolvedValue([]);
     mockGetAgentsMdContent.mockResolvedValue(""); // default: no AGENTS.md content
   });
 
@@ -98,13 +94,15 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(DEFAULT_TEST_SETTINGS.approval_new_type);
   });
 
-  it("output includes skills section when skills exist", async () => {
-    mockGetSkillSummaries.mockResolvedValue([
-      { name: "capture", description: "Captures user input" },
-    ]);
+  it("recall instructions reference /memories/ paths", async () => {
     const prompt = await buildSystemPrompt();
-    expect(prompt).toContain("## Skills");
-    expect(prompt).toContain("**capture**");
-    expect(prompt).toContain("Captures user input");
+    expect(prompt).toContain("read_file");
+    expect(prompt).toContain("/memories/");
+    expect(prompt).toContain("read-only");
+  });
+
+  it("does not include a manual Skills section", async () => {
+    const prompt = await buildSystemPrompt();
+    expect(prompt).not.toContain("## Skills");
   });
 });
