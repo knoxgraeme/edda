@@ -65,8 +65,13 @@ export async function getEmbeddings(): Promise<Embeddings> {
  */
 export async function embed(text: string): Promise<number[]> {
   const embeddings = await getCachedEmbeddings();
-  const [vector] = await embeddings.embedDocuments([text]);
-  return vector;
+  const result = await embeddings.embedDocuments([text]);
+  if (!result || !result[0]) {
+    throw new Error(
+      `Embedding provider returned empty result for text (${text.length} chars). Check your API key and provider configuration.`
+    );
+  }
+  return result[0];
 }
 
 /**

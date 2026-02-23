@@ -5,22 +5,24 @@
  * which read from the settings table (with env var override support).
  */
 
-import { createDeepAgent, StateBackend } from "deepagents";
+import { createDeepAgent, StateBackend, StoreBackend, CompositeBackend } from "deepagents";
 import { getCheckpointer } from "../checkpointer/index.js";
 import { getChatModel } from "../llm/index.js";
 import { getSearchTool } from "../search/index.js";
+import { getStore } from "../store/index.js";
 import { loadMCPTools } from "./mcp.js";
 import { buildSystemPrompt } from "./prompts/system.js";
 import { eddaTools } from "./tools/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createEddaAgent(): Promise<any> {
-  const [model, searchTool, checkpointer, systemPrompt, mcpTools] = await Promise.all([
+  const [model, searchTool, checkpointer, systemPrompt, mcpTools, store] = await Promise.all([
     getChatModel(),
     getSearchTool(),
     getCheckpointer(),
     buildSystemPrompt(),
     loadMCPTools(),
+    getStore(),
   ]);
 
   const tools = [
@@ -45,6 +47,12 @@ export async function createEddaAgent(): Promise<any> {
     tools,
     systemPrompt,
     checkpointer,
-    backend: (stateAndStore) => new StateBackend(stateAndStore),
+    store,
+    backend: (rt) =>
+      new CompositeBackend(new StateBackend(rt), {
+        "/memories/": new StoreBackend(rt),
+        "/skills/": new StoreBackend(rt),
+      }),
+    skills: ["/skills/"],
   });
 }

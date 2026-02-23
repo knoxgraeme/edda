@@ -211,7 +211,8 @@ describe("searchItemsTool", () => {
     });
     const parsed = JSON.parse(result);
 
-    expect(vi.mocked(embed)).toHaveBeenCalledWith("find this");
+    // When type is provided, query is embedded in the same format as stored items
+    expect(vi.mocked(embed)).toHaveBeenCalledWith("note: find this");
     expect(vi.mocked(searchItems)).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ limit: 5, type: "note" }),

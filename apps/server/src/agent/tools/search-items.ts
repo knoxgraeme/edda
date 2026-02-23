@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { searchItems } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const searchItemsSchema = z.object({
   query: z.string().describe("Natural language search query"),
@@ -28,7 +28,10 @@ export const searchItemsSchema = z.object({
 
 export const searchItemsTool = tool(
   async ({ query, type, after, limit, agent_knowledge_only, metadata }) => {
-    const queryEmbedding = await embed(query);
+    // Embed query in the same format used for stored items when type is known,
+    // so cosine similarity scores aren't degraded by format mismatch.
+    const embeddingText = type ? buildEmbeddingText(type, query) : query;
+    const queryEmbedding = await embed(embeddingText);
     const results = await searchItems(queryEmbedding, {
       limit,
       type,
