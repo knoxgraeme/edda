@@ -5,9 +5,10 @@
  * initializes cron runner, and serves the health endpoint.
  */
 
-import { refreshSettings } from "@edda/db";
+import { refreshSettings, getLatestAgentsMd } from "@edda/db";
 import { seedSkills } from "./agent/seed-skills.js";
 import { createEddaAgent } from "./agent/index.js";
+import { runContextRefreshAgent } from "./agent/generate-agents-md.js";
 import { createCronRunner } from "./cron/index.js";
 import { setAgent, startHealthServer } from "./server/health.js";
 
@@ -27,12 +28,21 @@ async function main() {
   setAgent(agent);
   console.log("  Agent ready");
 
-  // 4. Start cron runner
+  // 4. Bootstrap AGENTS.md if empty (first boot only)
+  const latestMd = await getLatestAgentsMd();
+  if (!latestMd?.content?.trim()) {
+    console.log("  AGENTS.md empty — running initial context refresh...");
+    await runContextRefreshAgent().catch((err: unknown) => {
+      console.warn("  Initial context refresh failed (will retry on cron):", err);
+    });
+  }
+
+  // 5. Start cron runner
   const cronRunner = await createCronRunner();
   await cronRunner.start();
   console.log(`  Cron runner: ${settings.cron_runner}`);
 
-  // 5. Health endpoint
+  // 6. Health endpoint
   const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
   console.log(`  Health: http://localhost:${port}/api/health`);

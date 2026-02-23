@@ -40,17 +40,15 @@ link_item_entity. Just focus on creating items quickly and confirming.
 
 ## Type Reference
 
-For full extraction hints and metadata schemas for each type:
-→ Read `references/types.md`
-
-This file is generated from the item_types table and contains the extraction_hint,
-metadata_schema, and behavioral flags for every active type. Always consult it before
-extracting metadata — new types may have been added since your training.
+Item types with classification hints, extraction hints, and metadata schemas are
+included in the AGENTS.md section of the system prompt. This is curated by the
+context_refresh skill from the item_types table. Consult the system prompt for
+available types — new types may have been added since your training.
 
 ## Tool Sequence
 
 Typical capture flow:
-1. Classify type (consult type list in system prompt or references/types.md)
+1. Classify type (consult type list in system prompt)
 2. Single item: call create_item(type, content, summary, metadata, day)
    Multiple items: call batch_create_items([{type, content, summary, metadata, day}, ...])
 3. Respond with brief confirmation: icon + summary + any parsed dates

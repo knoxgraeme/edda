@@ -60,7 +60,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/agent/`** — Agent factory, tool definitions, system prompt builder, and middleware
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
 - **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
-- **`src/skills/`** — Modular agent capabilities: `capture`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `type_evolution`, `user_crons`, `weekly_reflect`
+- **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `type_evolution`, `user_crons`, `weekly_reflect`
 - **`src/cron/`** — Scheduled task runner; can run as `standalone` (node-cron) or `platform` (LangGraph Platform), controlled by env
 - **`src/checkpointer/index.ts`** — State checkpointing backend (postgres, sqlite, or memory)
 - **`src/evals/`** — Vitest-based evaluation suite
@@ -69,7 +69,9 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 
 Next.js App Router with React 19.
 
-- **`src/app/`** — Route pages: `/` (chat), `/dashboard`, `/entities`, `/inbox`, `/settings`
+- **`src/app/`** — Route pages: `/` (chat), `/dashboard`, `/entities`, `/inbox`, `/settings`, `/login`
+- **`src/middleware.ts`** — Next.js middleware; enforces optional password auth via `EDDA_PASSWORD`
+- **`src/lib/auth.ts`** — Session token helpers (HMAC-based cookie auth)
 - **`src/providers/`** — `ChatProvider` and `ClientProvider` context providers
 - **`src/app/hooks/`** — Custom React hooks
 - **`src/components/ui/`** — Shared UI primitives
@@ -78,10 +80,10 @@ Next.js App Router with React 19.
 
 Single source of truth for data model and queries.
 
-- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`
+- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
-- **`migrations/`** — Ordered SQL migration files (001–007); applied via `pnpm migrate`
-- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`
+- **`migrations/`** — Ordered SQL migration files (001–019); applied via `pnpm migrate`
+- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`
 
 ### Configuration Strategy
 
@@ -93,6 +95,17 @@ Critical env vars (see `.env.example`):
 - `EMBEDDING_PROVIDER` — defaults to `voyage`
 - `CRON_RUNNER` — `standalone` or `platform`
 - `CHECKPOINTER` — `postgres`, `sqlite`, or `memory`
+- `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
+
+### AGENTS.md (User Context Document)
+
+The agent's knowledge of the user lives in a curated document called AGENTS.md, stored in the `agents_md_versions` DB table (not on disk). Each row is a complete version with content, the deterministic template used to produce it, and an input hash for change detection.
+
+- **`src/agent/generate-agents-md.ts`** — Core logic: `buildDeterministicTemplate()` queries raw data from DB, `buildTemplateDiff()` computes changes, `maybeRefreshAgentsMd()` stores template+hash on every conversation (fast, no LLM), `runContextRefreshAgent()` spawns a subagent to curate content (cron only)
+- **`src/agent/tools/save-agents-md.ts`** — Schema-only tool bound to the context_refresh subagent (not in main agent's tool set). The real DB write happens in `runContextRefreshAgent()`
+- **`src/agent/prompts/system.ts`** — Reads latest AGENTS.md content from DB via `getAgentsMdContent()` and embeds it in the system prompt
+- **Cron**: `context_refresh` runs daily (default 5am), controlled by `settings.context_refresh_cron`
+- **Change detection**: SHA-256 hash of the deterministic template; post-process path skips if hash matches, with a 30-second in-memory cache to avoid repeated DB queries
 
 ## Code Style
 

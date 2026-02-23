@@ -86,9 +86,25 @@ export interface Settings {
   user_display_name: string | null;
   user_timezone: string;
 
+  // Context refresh
+  context_refresh_cron: string;
+  context_refresh_model: string;
+
   // Meta
   created_at: string;
   updated_at: string;
+}
+
+// ──────────────────────────────────────────────
+// AGENTS.md Versions
+// ──────────────────────────────────────────────
+
+export interface AgentsMdVersion {
+  id: number;
+  content: string;
+  template: string;
+  input_hash: string | null;
+  created_at: string;
 }
 
 // ──────────────────────────────────────────────

@@ -1,19 +1,13 @@
 /**
  * Dynamic system prompt builder
  *
- * Reads AGENTS.md (user context) and combines with
+ * Reads AGENTS.md content from the database and combines with
  * base behavior instructions and runtime context
- * (item types, approval settings, MCP connections).
+ * (item types, approval settings, MCP connections, skills).
  */
 
-import { readFile } from "fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { getItemTypes, getSettingsSync, getMcpConnections, getSkillSummaries } from "@edda/db";
+import { getAgentsMdContent, getSettingsSync, getItemTypes, getMcpConnections, getSkillSummaries } from "@edda/db";
 import type { ItemType, McpConnection, Settings, Skill } from "@edda/db";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const AGENTS_MD_PATH = join(__dirname, "../../AGENTS.md");
 
 function formatItemTypes(types: ItemType[]): string {
   return types
@@ -42,7 +36,7 @@ function formatSkills(skills: Pick<Skill, "name" | "description">[]): string {
 
 export async function buildSystemPrompt(): Promise<string> {
   const [agentsMd, itemTypes, connections, skills] = await Promise.all([
-    readFile(AGENTS_MD_PATH, "utf-8").catch(() => ""),
+    getAgentsMdContent(),
     getItemTypes(),
     getMcpConnections(),
     getSkillSummaries(),
