@@ -43,7 +43,23 @@ export async function buildSystemPrompt(): Promise<string> {
   ]);
   const settings = getSettingsSync();
 
+  const now = new Date();
+  const currentDate = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const currentTime = now.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
+  });
+
   return `You are Edda, a personal assistant and second brain.
+
+**Current date and time: ${currentDate}, ${currentTime}**
 
 ## Your Role
 You capture, organize, and surface everything the user tells you.

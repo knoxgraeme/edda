@@ -101,7 +101,7 @@ export async function searchItems(
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
-  const { threshold = 0.85, limit = 10, type, after, agentKnowledgeOnly, confirmedOnly, excludeSuperseded, metadata } = options;
+  const { threshold = 0.65, limit = 10, type, after, agentKnowledgeOnly, confirmedOnly, excludeSuperseded, metadata } = options;
 
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
   if (excludeSuperseded !== false) {

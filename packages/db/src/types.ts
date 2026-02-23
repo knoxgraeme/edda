@@ -90,6 +90,12 @@ export interface Settings {
   context_refresh_cron: string;
   context_refresh_model: string;
 
+  // Memory sync
+  memory_sync_cron: string;
+  memory_sync_model: string;
+  memory_file_activity_threshold: number;
+  memory_file_stale_days: number;
+
   // Meta
   created_at: string;
   updated_at: string;
@@ -307,4 +313,20 @@ export interface UpsertSkillInput {
   content: string;
   is_system?: boolean;
   created_by?: string;
+}
+
+// ──────────────────────────────────────────────
+// Memory Types
+// ──────────────────────────────────────────────
+
+export interface MemoryType {
+  name: string;
+  description: string;
+  entity_types: EntityType[];
+  activity_threshold: number;
+  stale_days: number;
+  synthesis_style: string;
+  split_threshold: number;
+  built_in: boolean;
+  created_at: string;
 }

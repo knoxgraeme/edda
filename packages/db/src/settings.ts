@@ -72,6 +72,10 @@ const SETTINGS_UPDATE_COLUMNS = [
   "setup_completed",
   "user_display_name",
   "user_timezone",
+  "memory_sync_cron",
+  "memory_sync_model",
+  "memory_file_activity_threshold",
+  "memory_file_stale_days",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {

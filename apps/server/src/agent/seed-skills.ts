@@ -10,6 +10,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { upsertSkill } from "@edda/db";
+import { getStore } from "../store/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = join(__dirname, "../../skills");
@@ -38,8 +39,9 @@ function parseFrontmatter(raw: string): { name: string; description: string } {
 export async function seedSkills(): Promise<void> {
   const entries = await readdir(SKILLS_DIR, { withFileTypes: true });
   const dirs = entries.filter((e) => e.isDirectory() && !e.isSymbolicLink());
+  const store = await getStore();
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     dirs.map(async (dir) => {
       const skillPath = join(SKILLS_DIR, dir.name, "SKILL.md");
       let raw: string;
@@ -56,6 +58,20 @@ export async function seedSkills(): Promise<void> {
       }
 
       await upsertSkill({ name, description, content: raw, is_system: true, created_by: "seed" });
+
+      // Sync to PostgresStore for agent reads via SkillsMiddleware
+      const now = new Date().toISOString();
+      await store.put(["filesystem"], `/skills/${dir.name}/SKILL.md`, {
+        content: raw.split("\n"),
+        created_at: now,
+        modified_at: now,
+      });
     }),
   );
+
+  for (const r of results) {
+    if (r.status === "rejected") {
+      console.error("[seed-skills] Failed to seed skill:", r.reason);
+    }
+  }
 }
