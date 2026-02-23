@@ -157,11 +157,14 @@ ${entityContext}`,
     );
     if (!entity) continue;
 
+    const memoryType = ENTITY_TYPE_TO_DIR[entity.type];
+    if (!memoryType) continue;
+
     const record: MemoryFileRecord = {
       content: update.updated_content.split("\n"),
       created_at: entity.originalCreatedAt ?? now,
       modified_at: now,
-      memory_type: ENTITY_TYPE_TO_DIR[entity.type] ?? entity.type,
+      memory_type: memoryType,
       source: "hotpatch",
     };
 
