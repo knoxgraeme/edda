@@ -6,6 +6,7 @@
  */
 
 import { refreshSettings, getLatestAgentsMd } from "@edda/db";
+import { seedSkills } from "./agent/seed-skills.js";
 import { createEddaAgent } from "./agent/index.js";
 import { runContextRefreshAgent } from "./agent/generate-agents-md.js";
 import { createCronRunner } from "./cron/index.js";
@@ -18,12 +19,16 @@ async function main() {
   const settings = await refreshSettings();
   console.log(`  Provider: ${settings.llm_provider} / ${settings.default_model}`);
 
-  // 2. Create agent
+  // 2. Seed system skills
+  await seedSkills();
+  console.log("  Skills seeded");
+
+  // 3. Create agent
   const agent = await createEddaAgent();
   setAgent(agent);
   console.log("  Agent ready");
 
-  // 3. Bootstrap AGENTS.md if empty (first boot only)
+  // 4. Bootstrap AGENTS.md if empty (first boot only)
   const latestMd = await getLatestAgentsMd();
   if (!latestMd?.content?.trim()) {
     console.log("  AGENTS.md empty — running initial context refresh...");
@@ -32,12 +37,12 @@ async function main() {
     });
   }
 
-  // 4. Start cron runner
+  // 5. Start cron runner
   const cronRunner = await createCronRunner();
   await cronRunner.start();
   console.log(`  Cron runner: ${settings.cron_runner}`);
 
-  // 5. Health endpoint
+  // 6. Health endpoint
   const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
   console.log(`  Health: http://localhost:${port}/api/health`);

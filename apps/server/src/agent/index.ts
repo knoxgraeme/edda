@@ -5,7 +5,7 @@
  * which read from the settings table (with env var override support).
  */
 
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, StateBackend } from "deepagents";
 import { getCheckpointer } from "../checkpointer/index.js";
 import { getChatModel } from "../llm/index.js";
 import { getSearchTool } from "../search/index.js";
@@ -45,5 +45,6 @@ export async function createEddaAgent(): Promise<any> {
     tools,
     systemPrompt,
     checkpointer,
+    backend: (stateAndStore) => new StateBackend(stateAndStore),
   });
 }

@@ -3,11 +3,18 @@
  *
  * Reads AGENTS.md content from the database and combines with
  * base behavior instructions and runtime context
- * (approval settings, MCP connections).
+ * (item types, approval settings, MCP connections, skills).
  */
 
-import { getAgentsMdContent, getSettingsSync, getMcpConnections } from "@edda/db";
-import type { McpConnection, Settings } from "@edda/db";
+import { getAgentsMdContent, getSettingsSync, getItemTypes, getMcpConnections, getSkillSummaries } from "@edda/db";
+import type { ItemType, McpConnection, Settings, Skill } from "@edda/db";
+
+function formatItemTypes(types: ItemType[]): string {
+  return types
+    .filter((t) => !t.agent_internal)
+    .map((t) => `- ${t.icon} **${t.name}**: ${t.classification_hint}`)
+    .join("\n");
+}
 
 function formatApprovalSettings(settings: Settings): string {
   return [
@@ -22,10 +29,17 @@ function formatMcpConnections(connections: McpConnection[]): string {
   return connections.map((c) => `- ${c.name} (${c.transport})`).join("\n");
 }
 
+function formatSkills(skills: Pick<Skill, "name" | "description">[]): string {
+  if (skills.length === 0) return "No skills loaded.";
+  return skills.map((s) => `- **${s.name}**: ${s.description}`).join("\n");
+}
+
 export async function buildSystemPrompt(): Promise<string> {
-  const [agentsMd, connections] = await Promise.all([
+  const [agentsMd, itemTypes, connections, skills] = await Promise.all([
     getAgentsMdContent(),
+    getItemTypes(),
     getMcpConnections(),
+    getSkillSummaries(),
   ]);
   const settings = getSettingsSync();
 
@@ -52,11 +66,26 @@ You never ask the user to organize anything — you handle taxonomy.
 - Prefer entity lookups over semantic search when you know the specific entity name
 - When the user asks about pending items or approvals, use get_pending_items
 
+## Thread Processing
+- Use get_unprocessed_threads to find conversations not yet processed by memory extraction
+- Use get_thread_messages to read the full message history of a thread
+- Use mark_thread_processed after extracting knowledge from a thread
+- Use list_threads to browse recent conversation history
+
+## Working Memory
+You have an ephemeral scratch pad for within-conversation reasoning. Use write_file, read_file, and edit_file to store intermediate work, draft responses, or track state during complex multi-step tasks. Files are per-conversation and do not persist across sessions.
+
+## Available Item Types
+${formatItemTypes(itemTypes)}
+
 ## Approval Settings
 ${formatApprovalSettings(settings)}
 
 ## External Integrations
 ${formatMcpConnections(connections)}
+
+## Skills
+${formatSkills(skills)}
 
 ${agentsMd ? `## About This User\n\n${agentsMd}` : ""}`;
 }

@@ -283,3 +283,28 @@ export interface PendingItem {
   pendingAction: string | null;
   createdAt: string;
 }
+
+// ──────────────────────────────────────────────
+// Skills
+// ──────────────────────────────────────────────
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  version: number;
+  is_system: boolean;
+  confirmed: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertSkillInput {
+  name: string;
+  description: string;
+  content: string;
+  is_system?: boolean;
+  created_by?: string;
+}
