@@ -22,8 +22,9 @@ import {
   pruneAgentsMdVersions,
   createAgentLog,
 } from "@edda/db";
-import type { EntityType, ItemType } from "@edda/db";
+import type { ItemType } from "@edda/db";
 import { getStore } from "../store/index.js";
+import { ENTITY_TYPE_TO_DIR, entityToMemoryKey } from "./memory-paths.js";
 import type { AIMessageChunk } from "@langchain/core/messages";
 import { getChatModel } from "../llm/index.js";
 import { saveAgentsMdTool, saveAgentsMdSchema } from "./tools/save-agents-md.js";
@@ -53,13 +54,6 @@ export function _resetHashCache(): void {
 
 // ── Memory file helpers ──────────────────────────────────────────
 
-/** Map entity type → memory file directory name (subset of EntityType that has memory files) */
-const ENTITY_TYPE_TO_DIR: Partial<Record<EntityType, string>> = {
-  person: "people",
-  project: "projects",
-  company: "organizations",
-};
-
 /**
  * Query PostgresStore for existing memory file keys.
  * Returns a Set of keys like "/people/sarah", "/projects/atlas".
@@ -81,14 +75,6 @@ async function getMemoryFilePaths(): Promise<Set<string>> {
     console.warn("[getMemoryFilePaths] Failed to query store, falling back to empty set:", err);
     return new Set();
   }
-}
-
-/** Convert entity name to a memory file key, e.g. "Sarah Chen" → "/people/sarah-chen" */
-function entityToMemoryKey(name: string, type: EntityType): string | null {
-  const dir = ENTITY_TYPE_TO_DIR[type];
-  if (!dir) return null;
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `/${dir}/${slug}`;
 }
 
 // ── Deterministic template builder ──────────────────────────────

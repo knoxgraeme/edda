@@ -18,6 +18,7 @@ import {
 import type { Settings, Item, CreateAgentLogInput } from "@edda/db";
 
 import { createEddaAgent } from "../agent/index.js";
+import { createMemoryFileTool } from "../agent/tools/create-memory-file.js";
 import { runContextRefreshAgent } from "../agent/generate-agents-md.js";
 import type { CronRunner } from "./index.js";
 
@@ -39,6 +40,9 @@ interface SystemCronConfig {
   modelKey: StringSettingsKey;
   /** Whether this cron requires memory_extraction_enabled */
   requiresMemoryExtraction?: boolean;
+  /** Additional tools beyond eddaTools for this cron agent */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  additionalTools?: any[];
   /** System prompt for the disposable agent */
   buildPrompt: (settings: Settings) => string;
 }
@@ -110,6 +114,25 @@ const SYSTEM_CRONS: SystemCronConfig[] = [
       `\n\n## Output` +
       `\nCreate item: type='insight', source='cron' with the full weekly summary` +
       ` including a memory maintenance section.`,
+  },
+  {
+    name: "memory_sync",
+    cronKey: "memory_sync_cron",
+    modelKey: "memory_sync_model",
+    additionalTools: [createMemoryFileTool],
+    buildPrompt: (s) =>
+      `You are Edda's memory synthesis agent. Today is ${new Date().toISOString().split("T")[0]}.` +
+      `\n\nYour task: Synthesize memory files for entities above the activity threshold.` +
+      `\n1. For each entity type (person, project, company), find entities with` +
+      ` ${s.memory_file_activity_threshold}+ linked items using get_entity_items.` +
+      `\n2. For each qualifying entity, gather linked items via get_entity_items.` +
+      `\n3. Synthesize a concise brief: who/what they are, relationship to user,` +
+      ` key facts, recent activity.` +
+      `\n4. Create memory file via create_memory_file with source='cron'.` +
+      ` Use path format: /people/slug, /projects/slug, /organizations/slug.` +
+      ` Slugs must be lowercase alphanumeric with hyphens (e.g. /people/sarah-chen).` +
+      `\n\nKeep briefs under 2000 characters. Focus on actionable context.` +
+      `\nAlways regenerate from source items — ignore existing memory file content.`,
   },
   {
     name: "type_evolution",
@@ -350,8 +373,8 @@ export class StandaloneCronRunner implements CronRunner {
       const modelName = settings[cronConfig.modelKey];
       const systemPrompt = cronConfig.buildPrompt(settings);
 
-      // Spawn a disposable agent with full Edda tools
-      const agent = await createEddaAgent();
+      // Spawn a disposable agent with Edda tools (+ any cron-specific tools)
+      const agent = await createEddaAgent(cronConfig.additionalTools);
 
       // Invoke the agent with the cron's system prompt as a human message.
       // Each cron gets a unique thread_id per day to avoid state collisions.
