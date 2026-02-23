@@ -26,6 +26,9 @@ import type { Settings, SearchResult, EntitySearchResult } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
 import { getChatModel } from "../../llm/index.js";
 import { maybeRefreshAgentsMd } from "../generate-agents-md.js";
+import { maybeHotpatchMemoryFiles } from "../memory-triage.js";
+import { getMessageText, getMessageRole, buildTranscript } from "../message-helpers.js";
+import type { MessageLike } from "../message-helpers.js";
 
 // ── Zod schemas for structured LLM output ──────────────────────
 
@@ -118,49 +121,11 @@ For each entity, specify the relationship to items in this conversation:
 
 // ── Message type for the state we receive ───────────────────────
 
-interface MessageLike {
-  type?: string;
-  role?: string;
-  content?: string | Array<{ type: string; text?: string }>;
-  tool_calls?: Array<{ name: string; args: Record<string, unknown>; id?: string }>;
-  name?: string;
-  additional_kwargs?: Record<string, unknown>;
-}
-
 interface ConversationState {
   messages?: MessageLike[];
   configurable?: {
     thread_id?: string;
   };
-}
-
-// ── Helper: extract text from messages ──────────────────────────
-
-function getMessageText(msg: MessageLike): string {
-  if (typeof msg.content === "string") return msg.content;
-  if (Array.isArray(msg.content)) {
-    return msg.content
-      .filter((c) => c.type === "text" && c.text)
-      .map((c) => c.text)
-      .join("\n");
-  }
-  return "";
-}
-
-function getMessageRole(msg: MessageLike): string {
-  return msg.role ?? msg.type ?? "unknown";
-}
-
-function buildTranscript(messages: MessageLike[]): string {
-  const lines: string[] = [];
-  for (const msg of messages) {
-    const role = getMessageRole(msg);
-    const text = getMessageText(msg);
-    if (text.trim()) {
-      lines.push(`[${role}]: ${text}`);
-    }
-  }
-  return lines.join("\n\n");
 }
 
 // ── Helper: extract created item IDs from tool call results ─────
@@ -320,6 +285,12 @@ export class EddaPostProcessMiddleware {
       // 8. Regenerate AGENTS.md
       await maybeRefreshAgentsMd().catch((err: unknown) => {
         console.error("[post-process] Failed to refresh AGENTS.md:", err);
+      });
+
+      // 8b. Hotpatch memory files if conversation contradicts or adds significant info
+      // Fire-and-forget: do not block post-process completion
+      maybeHotpatchMemoryFiles(messages, extraction.entities).catch((err: unknown) => {
+        console.error("[post-process] Failed to hotpatch memory files:", err);
       });
 
       // 9. Log to agent_log

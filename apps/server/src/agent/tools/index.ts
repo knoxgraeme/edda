@@ -47,6 +47,9 @@ import { getThreadMessagesTool } from "./get-thread-messages.js";
 import { markThreadProcessedTool } from "./mark-thread-processed.js";
 import { listThreadsTool } from "./list-threads.js";
 
+// Memory tools (cron-only — not in main agent's eddaTools)
+export { createMemoryFileTool } from "./create-memory-file.js";
+
 export const eddaTools = [
   // Item tools (1A)
   createItemTool,
