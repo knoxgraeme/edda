@@ -3,6 +3,7 @@
  */
 
 import { getPool } from "./connection.js";
+import { DECAY_HALF_LIFE_DAYS, LN2, RERANK_MULTIPLIER } from "./items.js";
 
 import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
 
@@ -90,6 +91,7 @@ export async function searchEntities(
   const pool = getPool();
   const { threshold = 0.8, limit = 5, type } = options;
 
+  // ── Build WHERE conditions for the inner CTE (ANN retrieval) ──
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
   const params: unknown[] = [JSON.stringify(embedding), threshold];
   let paramIdx = 3;
@@ -99,17 +101,31 @@ export async function searchEntities(
     params.push(type);
   }
 
+  const innerLimit = limit * RERANK_MULTIPLIER;
+  const innerLimitIdx = paramIdx++;
+  params.push(innerLimit);
+
+  const outerLimitIdx = paramIdx++;
+  params.push(limit);
+
   const { rows } = await pool.query(
-    `SELECT ${ENTITY_COLS},
-            (1 - (embedding <=> $1::vector)) AS raw_similarity,
-            (1 - (embedding <=> $1::vector))
-              * EXP(-0.693 * EXTRACT(EPOCH FROM (now() - COALESCE(last_seen_at, created_at))) / (30 * 86400))
+    `WITH candidates AS (
+       SELECT ${ENTITY_COLS},
+              1 - (embedding <=> $1::vector) AS raw_similarity
+       FROM entities
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY embedding <=> $1::vector
+       LIMIT $${innerLimitIdx}
+     )
+     SELECT ${ENTITY_COLS.split(",").map((c) => `c.${c.trim()}`).join(", ")},
+            c.raw_similarity,
+            c.raw_similarity
+              * EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_seen_at, c.created_at))) / (${DECAY_HALF_LIFE_DAYS} * 86400))
             AS similarity
-     FROM entities
-     WHERE ${conditions.join(" AND ")}
+     FROM candidates c
      ORDER BY similarity DESC
-     LIMIT $${paramIdx}`,
-    [...params, limit],
+     LIMIT $${outerLimitIdx}`,
+    params,
   );
 
   return rows as EntitySearchResult[];

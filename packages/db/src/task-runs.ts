@@ -10,7 +10,7 @@ const TASK_RUN_COLS = `id, agent_definition_id, agent_name, trigger, status,
   duration_ms, error, started_at, completed_at, created_at`;
 
 export async function createTaskRun(input: {
-  agent_definition_id: string;
+  agent_definition_id?: string | null;
   agent_name: string;
   trigger: TaskRunTrigger;
   thread_id?: string;
@@ -23,7 +23,7 @@ export async function createTaskRun(input: {
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING ${TASK_RUN_COLS}`,
     [
-      input.agent_definition_id,
+      input.agent_definition_id ?? null,
       input.agent_name,
       input.trigger,
       input.thread_id ?? null,
