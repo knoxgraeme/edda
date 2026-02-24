@@ -1,162 +1,62 @@
 /**
  * Standalone cron runner — uses node-cron for scheduling
- * Self-hosted, no platform dependency.
  *
- * Registers four system crons (daily_digest, memory_extraction, weekly_reflect,
- * type_evolution) plus a user-cron poller. Each system cron spawns a disposable
- * agent via createEddaAgent() with a cron-specific thread, then logs the result
- * to agent_log.
+ * Reads agent_definitions to register scheduled agents. Each execution creates
+ * a task_run record for observability. The old SYSTEM_CRONS array and
+ * createAgentLog calls are replaced by data-driven scheduling via
+ * getScheduledAgents() and task_runs lifecycle tracking.
+ *
+ * Also runs a user-cron poller for scheduled_task items.
  */
 
 import cron from "node-cron";
 
 import {
   getItemsByType,
+  getScheduledAgents,
   createAgentLog,
+  createTaskRun,
+  startTaskRun,
+  completeTaskRun,
+  failTaskRun,
   refreshSettings,
 } from "@edda/db";
-import type { Settings, Item, CreateAgentLogInput } from "@edda/db";
+import type { AgentDefinition, Settings, Item } from "@edda/db";
 
-import { createEddaAgent } from "../agent/index.js";
-import { createMemoryFileTool } from "../agent/tools/create-memory-file.js";
-import { runContextRefreshAgent } from "../agent/generate-agents-md.js";
+import { buildChannelAgent, resolveThreadId } from "../agent/build-channel-agent.js";
+import {
+  runContextRefreshAgent,
+  maybeRefreshAgentContext,
+} from "../agent/generate-agents-md.js";
+import { runWithConcurrencyLimit } from "./semaphore.js";
 import type { CronRunner } from "./index.js";
 
 // ---------------------------------------------------------------------------
-// System cron definitions
+// Helpers
 // ---------------------------------------------------------------------------
 
-/** Narrow `keyof Settings` to only keys whose value type is `string`. */
-type StringSettingsKey = {
-  [K in keyof Settings]: Settings[K] extends string ? K : never;
-}[keyof Settings];
-
-interface SystemCronConfig {
-  /** Skill name — matches SKILL.md directory name */
-  name: string;
-  /** Settings key for the cron expression */
-  cronKey: StringSettingsKey;
-  /** Settings key for the model to use */
-  modelKey: StringSettingsKey;
-  /** Whether this cron requires memory_extraction_enabled */
-  requiresMemoryExtraction?: boolean;
-  /** Additional tools beyond eddaTools for this cron agent */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  additionalTools?: any[];
-  /** System prompt for the disposable agent */
-  buildPrompt: (settings: Settings) => string;
+/**
+ * Extract the last assistant message content from an agent invocation result.
+ * Returns undefined if no assistant message is found.
+ */
+function extractLastAssistantMessage(result: {
+  messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }>;
+}): string | undefined {
+  const messages = result?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (
+      (m.role === "assistant" || m._getType?.() === "ai") &&
+      typeof m.content === "string"
+    ) {
+      return m.content.slice(0, 500);
+    }
+  }
+  return undefined;
 }
 
-const SYSTEM_CRONS: SystemCronConfig[] = [
-  {
-    name: "daily_digest",
-    cronKey: "daily_digest_cron",
-    modelKey: "daily_digest_model",
-    buildPrompt: (s) =>
-      `You are Edda's daily digest agent. Today is ${new Date().toISOString().split("T")[0]}.` +
-      ` The user's timezone is ${s.user_timezone}.` +
-      (s.user_display_name ? ` The user's name is ${s.user_display_name}.` : "") +
-      `\n\nYour task: Generate a daily digest.` +
-      `\n1. Get yesterday's items (captured, completed) using get_timeline.` +
-      `\n2. Get today's due items using get_dashboard.` +
-      `\n3. Get upcoming items for the next 3 days using get_timeline.` +
-      `\n4. Count open items and stale items.` +
-      `\n5. Get active list summaries using get_list_items for known lists.` +
-      `\n6. Create a daily_digest item with source='cron' summarizing everything.` +
-      `\n\nBe concise. Focus on actionable information.`,
-  },
-  {
-    name: "memory_extraction",
-    cronKey: "memory_extraction_cron",
-    modelKey: "memory_extraction_model",
-    requiresMemoryExtraction: true,
-    buildPrompt: (s) =>
-      `You are Edda's memory extraction agent. Today is ${new Date().toISOString().split("T")[0]}.` +
-      `\n\nYour task: Review unprocessed conversation threads and extract missed implicit knowledge.` +
-      `\n1. Use get_unprocessed_threads to find threads needing review.` +
-      `\n2. For each thread, use get_thread_messages to read the conversation.` +
-      `\n3. Use get_agent_knowledge to see existing memories (avoid duplicates).` +
-      `\n4. For any new preferences, facts, or patterns discovered, create items with` +
-      ` type='preference'/'learned_fact'/'pattern', source='cron'.` +
-      `\n5. For any entities discovered, use upsert_entity and link_item_entity.` +
-      `\n6. After processing each thread, use mark_thread_processed to flag it done.` +
-      `\n\nMemory dedup thresholds: reinforce > ${s.memory_reinforce_threshold},` +
-      ` update ${s.memory_update_threshold}-${s.memory_reinforce_threshold},` +
-      ` insert < ${s.memory_update_threshold}.` +
-      `\nEntity thresholds: exact > ${s.entity_exact_threshold},` +
-      ` fuzzy ${s.entity_fuzzy_threshold}-${s.entity_exact_threshold}.`,
-  },
-  {
-    name: "weekly_reflect",
-    cronKey: "weekly_review_cron",
-    modelKey: "weekly_review_model",
-    buildPrompt: (s) =>
-      `You are Edda's weekly reflection agent. Today is ${new Date().toISOString().split("T")[0]}.` +
-      ` The user's timezone is ${s.user_timezone}.` +
-      (s.user_display_name ? ` The user's name is ${s.user_display_name}.` : "") +
-      `\n\nYour task: Perform a weekly review and memory maintenance.` +
-      `\n\n## Activity Analysis` +
-      `\n1. Pull all items from the past 7 days using get_timeline.` +
-      `\n2. Analyze items by type, completion rate, busiest day.` +
-      `\n3. Identify most mentioned entities.` +
-      `\n4. Flag stale items (open too long).` +
-      `\n5. Detect dropped threads — entities active 2+ weeks ago with no recent mentions.` +
-      `\n6. If cross-conversation patterns detected, create items type='pattern', source='cron'.` +
-      `\n\n## Memory Maintenance` +
-      `\n7. Search for near-duplicate agent-internal items (preference, learned_fact, pattern)` +
-      `   using search_items. Merge duplicates by creating a consolidated item and archiving originals.` +
-      `\n8. Archive stale memories (not reinforced in 90+ days).` +
-      `\n9. Resolve contradictions in learned_facts — keep most recent, archive older.` +
-      `\n10. For entities with many links, regenerate descriptions.` +
-      `\n11. Entity-link backfill: For entities created or updated in the last week, use search_items` +
-      `    to find items with high similarity (>0.85) that are NOT already linked. Create links using` +
-      `    link_item_entity with appropriate relationship types.` +
-      `\n\n## Output` +
-      `\nCreate item: type='insight', source='cron' with the full weekly summary` +
-      ` including a memory maintenance section.`,
-  },
-  {
-    name: "memory_sync",
-    cronKey: "memory_sync_cron",
-    modelKey: "memory_sync_model",
-    additionalTools: [createMemoryFileTool],
-    buildPrompt: (s) =>
-      `You are Edda's memory synthesis agent. Today is ${new Date().toISOString().split("T")[0]}.` +
-      `\n\nYour task: Synthesize memory files for entities above the activity threshold.` +
-      `\n1. For each entity type (person, project, company), find entities with` +
-      ` ${s.memory_file_activity_threshold}+ linked items using get_entity_items.` +
-      `\n2. For each qualifying entity, gather linked items via get_entity_items.` +
-      `\n3. Synthesize a concise brief: who/what they are, relationship to user,` +
-      ` key facts, recent activity.` +
-      `\n4. Create memory file via create_memory_file with source='cron'.` +
-      ` Use path format: /people/slug, /projects/slug, /organizations/slug.` +
-      ` Slugs must be lowercase alphanumeric with hyphens (e.g. /people/sarah-chen).` +
-      `\n\nKeep briefs under 2000 characters. Focus on actionable context.` +
-      `\nAlways regenerate from source items — ignore existing memory file content.`,
-  },
-  {
-    name: "type_evolution",
-    cronKey: "type_evolution_cron",
-    modelKey: "type_evolution_model",
-    buildPrompt: (s) =>
-      `You are Edda's type evolution agent. Today is ${new Date().toISOString().split("T")[0]}.` +
-      `\n\nYour task: Evolve the type system based on usage patterns.` +
-      `\n1. Search for items where type='note' from the last 30 days using search_items or get_timeline.` +
-      `\n2. Look for clusters of similar notes that could be a new type.` +
-      `\n3. For clusters of 5+ similar items:` +
-      `\n   a. Check if an existing type could absorb them — propose reclassify.` +
-      `\n   b. If no match, draft a new type via create_item_type.` +
-      `\n4. Approval mode: ${s.approval_new_type}.` +
-      (s.approval_new_type === "confirm"
-        ? `\n   Set confirmed=false, pending_action describing the proposal.`
-        : `\n   Set confirmed=true and reclassify matching items.`) +
-      `\n\nGuard rails: Max 30 total types. Never auto-delete a type.` +
-      `\nIf two custom types overlap >50% shared items, propose merge.`,
-  },
-];
-
 // ---------------------------------------------------------------------------
-// Cron expression helpers
+// Cron expression helpers (used by user cron poller)
 // ---------------------------------------------------------------------------
 
 /**
@@ -248,206 +148,220 @@ function partMatches(part: string, value: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Interval constants
+// ---------------------------------------------------------------------------
+
+/** How often to sync agent_definitions for new/changed/disabled schedules. */
+const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Default fallback for user cron polling interval. */
+const DEFAULT_USER_CRON_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+// ---------------------------------------------------------------------------
 // StandaloneCronRunner class
 // ---------------------------------------------------------------------------
 
 export class StandaloneCronRunner implements CronRunner {
-  private scheduledTasks: cron.ScheduledTask[] = [];
-  private userCronInterval: ReturnType<typeof setInterval> | null = null;
-  private running = false;
-
-  /** Track last run time per system cron name */
-  private lastRunTimes = new Map<string, Date>();
+  private _tasks: cron.ScheduledTask[] = [];
+  private _registeredAgents = new Map<string, cron.ScheduledTask>();
+  private _syncInterval: NodeJS.Timeout | null = null;
+  private _userCronInterval: NodeJS.Timeout | null = null;
+  private _running = false;
 
   /** Track last run time per user cron (scheduled_task item ID) */
-  private userCronLastRuns = new Map<string, Date>();
+  private _userCronLastRuns = new Map<string, Date>();
 
   async start(): Promise<void> {
-    if (this.running) {
+    if (this._running) {
       console.warn("  [cron] Standalone cron runner is already running");
       return;
     }
-    this.running = true;
+    this._running = true;
 
-    // Refresh settings to get latest cron schedules
     const settings = await refreshSettings();
+    const agents = await getScheduledAgents();
 
-    // Register system crons via node-cron
-    for (const cronConfig of SYSTEM_CRONS) {
-      const cronExpr = settings[cronConfig.cronKey];
-      if (!cronExpr) {
-        console.log(`  [cron] Skipping ${cronConfig.name} — no cron expression configured`);
-        continue;
-      }
-
-      // Skip memory_extraction if disabled
-      if (cronConfig.requiresMemoryExtraction && !settings.memory_extraction_enabled) {
-        console.log(`  [cron] Skipping ${cronConfig.name} — memory extraction disabled`);
-        continue;
-      }
-
-      if (!cron.validate(cronExpr)) {
-        console.error(`  [cron] Invalid cron expression for ${cronConfig.name}: ${cronExpr}`);
-        continue;
-      }
-
-      const task = cron.schedule(cronExpr, async () => {
-        // Re-read settings each invocation so schedule/model changes take effect
-        const freshSettings = await refreshSettings();
-        await this.executeCron(cronConfig, freshSettings);
-      });
-
-      this.scheduledTasks.push(task);
-      console.log(`  [cron] Registered system cron: ${cronConfig.name} (${cronExpr})`);
+    for (const agent of agents) {
+      if (agent.name === "memory_extraction" && !settings.memory_extraction_enabled) continue;
+      this.registerAgent(agent);
     }
 
-    // Context refresh cron — runs its own subagent directly (not via generic agent)
-    const contextRefreshCron = settings.context_refresh_cron;
-    if (contextRefreshCron && cron.validate(contextRefreshCron)) {
-      const task = cron.schedule(contextRefreshCron, async () => {
-        try {
-          await runContextRefreshAgent();
-          console.log("  [cron] context_refresh completed");
-        } catch (err) {
-          console.error("  [cron] context_refresh failed:", err);
-        }
-      });
-      this.scheduledTasks.push(task);
-      console.log(`  [cron] Registered: context_refresh (${contextRefreshCron})`);
-    }
+    // Dynamic schedule sync — picks up new/changed/disabled agents
+    this._syncInterval = setInterval(() => this.syncSchedules(), SCHEDULE_SYNC_INTERVAL_MS);
 
-    // Register user cron poller via setInterval
+    // User cron poller (preserved from existing code)
     if (settings.user_crons_enabled) {
-      const checkIntervalMs = this.parseCronToMs(settings.user_cron_check_interval);
-
-      this.userCronInterval = setInterval(async () => {
-        const freshSettings = await refreshSettings();
-        await this.checkUserCrons(freshSettings);
-      }, checkIntervalMs);
-
-      console.log(
-        `  [cron] User cron poller started (interval: ${checkIntervalMs / 1000}s)`,
-      );
+      this.startUserCronPoller(settings);
     }
 
-    const registeredCount = this.scheduledTasks.length;
+    const registeredCount = this._registeredAgents.size;
     console.log(
-      `  Standalone cron runner started (${registeredCount} system cron(s)` +
+      `  Standalone cron runner started (${registeredCount} agent(s)` +
         `${settings.user_crons_enabled ? " + user cron poller" : ""})`,
     );
   }
 
   async stop(): Promise<void> {
-    if (!this.running) return;
+    if (!this._running) return;
 
-    // Stop all node-cron scheduled tasks
-    for (const task of this.scheduledTasks) {
+    for (const task of this._tasks) {
       task.stop();
     }
-    this.scheduledTasks = [];
+    this._tasks = [];
+    this._registeredAgents.clear();
 
-    // Stop user cron poller
-    if (this.userCronInterval) {
-      clearInterval(this.userCronInterval);
-      this.userCronInterval = null;
+    if (this._syncInterval) {
+      clearInterval(this._syncInterval);
+      this._syncInterval = null;
     }
 
-    this.running = false;
-    this.lastRunTimes.clear();
-    this.userCronLastRuns.clear();
+    if (this._userCronInterval) {
+      clearInterval(this._userCronInterval);
+      this._userCronInterval = null;
+    }
 
+    this._running = false;
+    this._userCronLastRuns.clear();
     console.log("  Standalone cron runner stopped");
   }
 
-  /**
-   * Execute a system cron job. Spawns a disposable agent via createEddaAgent(),
-   * invokes it with the cron-specific prompt, and logs the result to agent_log.
-   */
-  private async executeCron(cronConfig: SystemCronConfig, settings: Settings): Promise<void> {
-    const startTime = Date.now();
-    const cronName = cronConfig.name;
+  // ── Agent registration ──────────────────────────────────────────
 
-    console.log(`  [cron] Executing system cron: ${cronName}`);
+  private registerAgent(agent: AgentDefinition): void {
+    if (this._registeredAgents.has(agent.name)) return;
+    if (!agent.schedule || !cron.validate(agent.schedule)) {
+      console.warn(`  [cron] Skipping ${agent.name} — invalid schedule: ${agent.schedule}`);
+      return;
+    }
 
+    const task = cron.schedule(agent.schedule, () => this.executeAgent(agent));
+    this._registeredAgents.set(agent.name, task);
+    this._tasks.push(task);
+    console.log(`  [cron] Registered: ${agent.name} (${agent.schedule})`);
+  }
+
+  private async syncSchedules(): Promise<void> {
     try {
-      const modelName = settings[cronConfig.modelKey];
-      const systemPrompt = cronConfig.buildPrompt(settings);
+      const settings = await refreshSettings();
+      const currentAgents = await getScheduledAgents();
+      const currentNames = new Set(currentAgents.map((a) => a.name));
 
-      // Spawn a disposable agent with Edda tools (+ any cron-specific tools)
-      const agent = await createEddaAgent(cronConfig.additionalTools);
+      // Register new agents
+      for (const agent of currentAgents) {
+        if (agent.name === "memory_extraction" && !settings.memory_extraction_enabled) continue;
+        if (!this._registeredAgents.has(agent.name)) {
+          this.registerAgent(agent);
+        }
+      }
 
-      // Invoke the agent with the cron's system prompt as a human message.
-      // Each cron gets a unique thread_id per day to avoid state collisions.
-      const result = await agent.invoke(
-        {
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content:
-                `Execute the ${cronName} cron job now. Use the available tools to complete the task.`,
-            },
-          ],
-        },
-        {
-          configurable: {
-            thread_id: `system-cron-${cronName}-${new Date().toISOString().split("T")[0]}`,
-            model: modelName,
-          },
-        },
-      );
-
-      const durationMs = Date.now() - startTime;
-
-      // Extract summary from the last assistant message
-      const messages = (result?.messages ?? []) as Array<{
-        role?: string;
-        content?: string;
-        _getType?: () => string;
-      }>;
-      const lastAssistantMsg = [...messages]
-        .reverse()
-        .find((m) => m.role === "assistant" || m._getType?.() === "ai");
-      const outputSummary =
-        typeof lastAssistantMsg?.content === "string"
-          ? lastAssistantMsg.content.slice(0, 500)
-          : `${cronName} completed`;
-
-      // Log to agent_log
-      const logInput: CreateAgentLogInput = {
-        skill: cronName,
-        trigger: "system_cron",
-        input_summary: `System cron: ${cronName}`,
-        output_summary: outputSummary,
-        model: modelName,
-        duration_ms: durationMs,
-      };
-
-      await createAgentLog(logInput);
-      this.lastRunTimes.set(cronName, new Date());
-
-      console.log(`  [cron] ${cronName} completed in ${durationMs}ms`);
+      // Stop removed/disabled agents
+      for (const [name, task] of this._registeredAgents) {
+        if (!currentNames.has(name)) {
+          task.stop();
+          this._registeredAgents.delete(name);
+          console.log(`  [cron] Unregistered: ${name}`);
+        }
+      }
     } catch (err) {
-      const durationMs = Date.now() - startTime;
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`  [cron] ${cronName} failed: ${errorMsg}`);
-
-      // Log the error to agent_log
-      await createAgentLog({
-        skill: cronName,
-        trigger: "system_cron",
-        input_summary: `System cron: ${cronName}`,
-        output_summary: `ERROR: ${errorMsg.slice(0, 500)}`,
-        duration_ms: durationMs,
-      }).catch((logErr) => {
-        console.error(`  [cron] Failed to log error for ${cronName}:`, logErr);
-      });
+      console.error("  [cron] Schedule sync failed:", err);
     }
   }
 
-  /**
-   * Poll scheduled_task items and execute any that are due.
-   */
+  // ── Agent execution ─────────────────────────────────────────────
+
+  private async executeAgent(definition: AgentDefinition): Promise<void> {
+    const settings = await refreshSettings();
+    const modelName = definition.model_settings_key
+      ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
+      : undefined;
+
+    // context_refresh uses its own subagent pattern, but still gets a task_run
+    if (definition.name === "context_refresh") {
+      await this.executeContextRefresh(definition, modelName);
+      return;
+    }
+
+    const threadId = resolveThreadId(definition);
+
+    const run = await createTaskRun({
+      agent_definition_id: definition.id,
+      agent_name: definition.name,
+      trigger: "cron",
+      thread_id: threadId,
+      model: modelName,
+    });
+
+    await runWithConcurrencyLimit(settings.task_max_concurrency, async () => {
+      const startTime = Date.now();
+      try {
+        await startTaskRun(run.id);
+        console.log(`  [cron] Executing: ${definition.name}`);
+
+        const agent = await buildChannelAgent(definition);
+        const result = await agent.invoke(
+          { messages: [{ role: "user", content: `Execute the ${definition.name} task now.` }] },
+          { configurable: { thread_id: threadId, agent_name: definition.name } },
+        );
+
+        const duration = Date.now() - startTime;
+        const lastMessage = extractLastAssistantMessage(result);
+        await completeTaskRun(run.id, { output_summary: lastMessage, duration_ms: duration });
+
+        // Refresh agent's per-agent AGENTS.md context (fast hash check, no LLM)
+        await maybeRefreshAgentContext(definition);
+
+        console.log(`  [cron] ${definition.name} completed in ${duration}ms`);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        await failTaskRun(run.id, errorMsg);
+        console.error(`  [cron] ${definition.name} failed: ${errorMsg}`);
+      }
+    });
+  }
+
+  private async executeContextRefresh(
+    definition: AgentDefinition,
+    modelName: string | undefined,
+  ): Promise<void> {
+    const run = await createTaskRun({
+      agent_definition_id: definition.id,
+      agent_name: definition.name,
+      trigger: "cron",
+      thread_id: `context-refresh-${new Date().toISOString().split("T")[0]}`,
+      model: modelName,
+    });
+
+    const startTime = Date.now();
+    try {
+      await startTaskRun(run.id);
+      console.log("  [cron] Executing: context_refresh");
+
+      await runContextRefreshAgent();
+
+      await completeTaskRun(run.id, { duration_ms: Date.now() - startTime });
+      console.log(`  [cron] context_refresh completed in ${Date.now() - startTime}ms`);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      await failTaskRun(run.id, errorMsg);
+      console.error(`  [cron] context_refresh failed: ${errorMsg}`);
+    }
+  }
+
+  // ── User cron poller ────────────────────────────────────────────
+
+  private startUserCronPoller(settings: Settings): void {
+    const checkIntervalMs = this.parseCronToMs(settings.user_cron_check_interval);
+
+    this._userCronInterval = setInterval(async () => {
+      const freshSettings = await refreshSettings();
+      await this.checkUserCrons(freshSettings);
+    }, checkIntervalMs);
+
+    console.log(
+      `  [cron] User cron poller started (interval: ${checkIntervalMs / 1000}s)`,
+    );
+  }
+
   private async checkUserCrons(settings: Settings): Promise<void> {
     if (!settings.user_crons_enabled) return;
 
@@ -463,17 +377,14 @@ export class StandaloneCronRunner implements CronRunner {
           cron_human?: string;
         };
 
-        // Skip disabled tasks
         if (metadata.enabled === false) continue;
 
-        // Skip tasks without a cron expression
         if (!metadata.cron) {
           console.warn(`  [cron] scheduled_task ${task.id} has no cron expression`);
           continue;
         }
 
-        const lastRun = this.userCronLastRuns.get(task.id) ?? null;
-
+        const lastRun = this._userCronLastRuns.get(task.id) ?? null;
         if (shouldFire(metadata.cron, lastRun, now)) {
           await this.executeUserCron(task, settings);
         }
@@ -483,9 +394,6 @@ export class StandaloneCronRunner implements CronRunner {
     }
   }
 
-  /**
-   * Execute a user-defined scheduled task by spawning a disposable agent.
-   */
   private async executeUserCron(task: Item, settings: Settings): Promise<void> {
     const startTime = Date.now();
     const taskId = task.id;
@@ -498,24 +406,39 @@ export class StandaloneCronRunner implements CronRunner {
     console.log(`  [cron] Executing user cron: ${taskId} — ${metadata.action ?? task.content}`);
 
     try {
-      const modelName = settings.user_cron_model;
+      // Build a synthetic AgentDefinition for the user cron.
+      // skills: [] → gets full eddaTools (same as old createEddaAgent)
+      const agent = await buildChannelAgent({
+        id: "",
+        name: "user_cron",
+        description: "User-scheduled recurring task",
+        system_prompt:
+          `You are Edda, executing a user-scheduled recurring task.` +
+          ` Today is ${new Date().toISOString().split("T")[0]}.` +
+          ` The user's timezone is ${settings.user_timezone}.` +
+          (settings.user_display_name ? ` The user's name is ${settings.user_display_name}.` : "") +
+          `\n\nScheduled task: ${task.content}` +
+          `\nSchedule: ${metadata.cron_human ?? metadata.cron}` +
+          `\nAction: ${metadata.action ?? task.content}` +
+          `\n\nExecute this action using the available tools. Be concise and effective.`,
+        skills: [],
+        schedule: null,
+        context_mode: "daily",
+        output_mode: "items",
+        scopes: [],
+        scope_mode: "boost",
+        model_settings_key: "user_cron_model",
+        built_in: false,
+        enabled: true,
+        metadata: {},
+        created_at: "",
+        updated_at: "",
+      });
 
-      const systemPrompt =
-        `You are Edda, executing a user-scheduled recurring task.` +
-        ` Today is ${new Date().toISOString().split("T")[0]}.` +
-        ` The user's timezone is ${settings.user_timezone}.` +
-        (settings.user_display_name ? ` The user's name is ${settings.user_display_name}.` : "") +
-        `\n\nScheduled task: ${task.content}` +
-        `\nSchedule: ${metadata.cron_human ?? metadata.cron}` +
-        `\nAction: ${metadata.action ?? task.content}` +
-        `\n\nExecute this action using the available tools. Be concise and effective.`;
-
-      const agent = await createEddaAgent();
-
+      const threadId = `user-cron-${taskId}-${new Date().toISOString().split("T")[0]}`;
       const result = await agent.invoke(
         {
           messages: [
-            { role: "system", content: systemPrompt },
             {
               role: "user",
               content: `Execute the scheduled task now: ${metadata.action ?? task.content}`,
@@ -524,38 +447,25 @@ export class StandaloneCronRunner implements CronRunner {
         },
         {
           configurable: {
-            thread_id: `user-cron-${taskId}-${new Date().toISOString().split("T")[0]}`,
-            model: modelName,
+            thread_id: threadId,
           },
         },
       );
 
       const durationMs = Date.now() - startTime;
+      const outputSummary = extractLastAssistantMessage(result) ?? `User cron ${taskId} completed`;
 
-      const messages = (result?.messages ?? []) as Array<{
-        role?: string;
-        content?: string;
-        _getType?: () => string;
-      }>;
-      const lastAssistantMsg = [...messages]
-        .reverse()
-        .find((m) => m.role === "assistant" || m._getType?.() === "ai");
-      const outputSummary =
-        typeof lastAssistantMsg?.content === "string"
-          ? lastAssistantMsg.content.slice(0, 500)
-          : `User cron ${taskId} completed`;
-
+      // User crons still log to agent_log (no agent_definition to create task_runs)
       await createAgentLog({
         skill: "user_cron",
         trigger: "user_cron",
         input_summary: `Scheduled task: ${task.content}`,
         output_summary: outputSummary,
-        model: modelName,
+        model: settings.user_cron_model,
         duration_ms: durationMs,
       });
 
-      this.userCronLastRuns.set(taskId, new Date());
-
+      this._userCronLastRuns.set(taskId, new Date());
       console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
     } catch (err) {
       const durationMs = Date.now() - startTime;
@@ -574,17 +484,14 @@ export class StandaloneCronRunner implements CronRunner {
     }
   }
 
-  /**
-   * Parse a cron expression like "* /5 * * * *" into a millisecond interval.
-   * Used only for the user cron check interval. Falls back to 5 minutes.
-   */
-  private parseCronToMs(cronExpr: string): number {
-    const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  // ── Cron interval parser ────────────────────────────────────────
 
-    if (!cronExpr) return DEFAULT_INTERVAL_MS;
+  /** Parse a cron expression into a millisecond interval. Falls back to 5 minutes. */
+  private parseCronToMs(cronExpr: string): number {
+    if (!cronExpr) return DEFAULT_USER_CRON_INTERVAL_MS;
 
     const parts = cronExpr.trim().split(/\s+/);
-    if (parts.length < 5) return DEFAULT_INTERVAL_MS;
+    if (parts.length < 5) return DEFAULT_USER_CRON_INTERVAL_MS;
 
     // Handle simple minute-based intervals: "*/N * * * *"
     const minuteField = parts[0];
