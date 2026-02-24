@@ -20,9 +20,6 @@ import {
   getLatestAgentsMd,
   saveAgentsMdVersion,
   pruneAgentsMdVersions,
-  createTaskRun,
-  completeTaskRun,
-  failTaskRun,
   getRecentTaskRuns,
 } from "@edda/db";
 import type { AgentDefinition, ItemType } from "@edda/db";
@@ -31,11 +28,6 @@ import { getChatModel } from "../llm/index.js";
 import { saveAgentsMdTool, saveAgentsMdSchema } from "./tools/save-agents-md.js";
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-/** Rough token estimate: 1 token ≈ 4 characters */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
 
 /** SHA-256 hex hash of a string. */
 function sha256(text: string): string {
@@ -275,34 +267,10 @@ export async function runContextRefreshAgent(): Promise<void> {
     // 7. Prune old versions
     await pruneAgentsMdVersions(settings.agents_md_max_versions);
 
-    // 8. Log success
-    const durationMs = Date.now() - startTime;
-    const taskRun = await createTaskRun({
-      agent_name: "context_refresh",
-      trigger: "cron",
-      input_summary: `Template hash: ${hash.slice(0, 12)}…, diff lines: ${diff.split("\n").length}`,
-      model: settings.context_refresh_model,
-    });
-    await completeTaskRun(taskRun.id, {
-      output_summary: `AGENTS.md updated (${estimateTokens(currentContent)} → new version)`,
-      duration_ms: durationMs,
-    });
-
-    console.log(`  [context_refresh] AGENTS.md updated in ${durationMs}ms`);
+    console.log(`  [context_refresh] AGENTS.md updated in ${Date.now() - startTime}ms`);
   } catch (err) {
-    const _durationMs = Date.now() - startTime;
     console.error("  [context_refresh] Failed:", err);
-
-    const taskRun = await createTaskRun({
-      agent_name: "context_refresh",
-      trigger: "cron",
-    }).catch(() => null);
-    if (taskRun) {
-      await failTaskRun(
-        taskRun.id,
-        (err instanceof Error ? err.message : String(err)).slice(0, 500),
-      ).catch(() => {});
-    }
+    throw err;
   }
 }
 

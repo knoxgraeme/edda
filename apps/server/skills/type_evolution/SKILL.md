@@ -36,4 +36,4 @@ metadata_schema, behavioral flags, dashboard_section, icon.
 - Max 30 total types. Warn at 25.
 - Never auto-delete a type.
 - If two custom types overlap (>50% shared items), propose merge.
-- Log all proposals to agent_log.
+- Log all proposals to task_runs.

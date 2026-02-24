@@ -19,6 +19,7 @@ import { getStore } from "../store/index.js";
 import { loadSkillContent } from "./skill-loader.js";
 import { getMyHistoryTool } from "./tools/get-my-history.js";
 import { getEntityProfileTool } from "./tools/get-entity-profile.js";
+import { listEntitiesTool } from "./tools/list-entities.js";
 
 // -- Tool imports (scoped profiles) --
 import { createItemTool } from "./tools/create-item.js";
@@ -47,6 +48,7 @@ const READ_ONLY_TOOLS = [
   getItemByIdTool,
   getEntityItemsTool,
   getEntityProfileTool,
+  listEntitiesTool,
   getAgentKnowledgeTool,
   getDashboardTool,
   getTimelineTool,
