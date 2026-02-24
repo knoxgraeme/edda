@@ -50,6 +50,7 @@ export const searchItemsTool = tool(
         day: r.day,
         status: r.status,
         similarity: r.similarity,
+        raw_similarity: r.raw_similarity,
         metadata: r.metadata,
       })),
     });

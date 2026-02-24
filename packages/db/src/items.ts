@@ -98,10 +98,25 @@ export async function searchItems(
     confirmedOnly?: boolean;
     excludeSuperseded?: boolean;
     metadata?: Record<string, string>;
+    agent_name?: string;
+    agent_scopes?: string[];
+    scope_mode?: "boost" | "strict";
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
-  const { threshold = 0.65, limit = 10, type, after, agentKnowledgeOnly, confirmedOnly, excludeSuperseded, metadata } = options;
+  const {
+    threshold = 0.65,
+    limit = 10,
+    type,
+    after,
+    agentKnowledgeOnly,
+    confirmedOnly,
+    excludeSuperseded,
+    metadata,
+    agent_name,
+    agent_scopes,
+    scope_mode = "boost",
+  } = options;
 
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
   if (excludeSuperseded !== false) {
@@ -137,8 +152,39 @@ export async function searchItems(
     }
   }
 
+  // Strict scope filtering — hard WHERE clause excluding items outside agent's scope
+  if (scope_mode === "strict" && agent_scopes?.length) {
+    const nameIdx = paramIdx++;
+    const scopesIdx = paramIdx++;
+    conditions.push(
+      `(metadata->>'agent' = $${nameIdx} OR metadata->'scopes' ?| $${scopesIdx}::text[])`,
+    );
+    params.push(agent_name ?? null, agent_scopes);
+  }
+
+  // Build scope boost CASE expression when agent params are provided
+  const hasAgentParams = agent_name || agent_scopes?.length;
+  let scopeBoost: string;
+  if (hasAgentParams) {
+    const nameIdx = paramIdx++;
+    const scopesIdx = paramIdx++;
+    scopeBoost = `* CASE
+              WHEN metadata->>'agent' = $${nameIdx} THEN 1.3
+              WHEN metadata->'scopes' ?| $${scopesIdx}::text[] THEN 1.15
+              ELSE 1.0
+            END`;
+    params.push(agent_name ?? null, agent_scopes ?? []);
+  } else {
+    scopeBoost = "";
+  }
+
   const { rows } = await pool.query(
-    `SELECT ${ITEM_COLS}, 1 - (embedding <=> $1::vector) AS similarity
+    `SELECT ${ITEM_COLS},
+            (1 - (embedding <=> $1::vector)) AS raw_similarity,
+            (1 - (embedding <=> $1::vector))
+              * EXP(-0.693 * EXTRACT(EPOCH FROM (now() - created_at)) / (30 * 86400))
+              ${scopeBoost}
+            AS similarity
      FROM items
      WHERE ${conditions.join(" AND ")}
      ORDER BY similarity DESC

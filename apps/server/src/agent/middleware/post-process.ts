@@ -388,13 +388,13 @@ export class EddaPostProcessMiddleware {
           confirmedOnly: false,
         });
 
-        if (similar.length > 0 && similar[0].similarity >= reinforceThreshold) {
+        if (similar.length > 0 && similar[0].raw_similarity >= reinforceThreshold) {
           // Reinforce — near-exact match, just bump timestamp
           await updateItem(similar[0].id, {
             last_reinforced_at: new Date().toISOString(),
           });
           itemIds.push(similar[0].id);
-        } else if (similar.length > 0 && similar[0].similarity >= updateThreshold) {
+        } else if (similar.length > 0 && similar[0].raw_similarity >= updateThreshold) {
           // Update — similar but not exact, supersede the old item
           const isConfirmed = memory.confidence === 'high';
           const newItem = await createItem({
@@ -472,7 +472,7 @@ export class EddaPostProcessMiddleware {
           limit: 3,
         });
 
-        if (similar.length > 0 && similar[0].similarity >= exactThreshold) {
+        if (similar.length > 0 && similar[0].raw_similarity >= exactThreshold) {
           // 3a. Exact merge — same entity, merge aliases and bump mention count
           const existing = similar[0];
           const mergedAliases = mergeAliases(
@@ -489,7 +489,7 @@ export class EddaPostProcessMiddleware {
           });
           entityIds.push(existing.id);
           entityNameToId.set(entity.name.toLowerCase(), existing.id);
-        } else if (similar.length > 0 && similar[0].similarity >= fuzzyThreshold) {
+        } else if (similar.length > 0 && similar[0].raw_similarity >= fuzzyThreshold) {
           // 3b. Fuzzy match — may be the same entity, depends on approval mode
           const existing = similar[0];
 
@@ -519,7 +519,7 @@ export class EddaPostProcessMiddleware {
             });
             await updateEntity(newEntity.id, {
               confirmed: false,
-              pending_action: `Possible duplicate of "${existing.name}" (${(similar[0].similarity * 100).toFixed(0)}% similar). Approve to keep as separate, or merge.`,
+              pending_action: `Possible duplicate of "${existing.name}" (${(similar[0].raw_similarity * 100).toFixed(0)}% similar). Approve to keep as separate, or merge.`,
             });
             entityIds.push(newEntity.id);
             entityNameToId.set(entity.name.toLowerCase(), newEntity.id);
