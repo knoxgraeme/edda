@@ -31,6 +31,18 @@ import {
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import type { CronRunner } from "./index.js";
 
+/** Allowlist of settings keys that can be used as model overrides. */
+const MODEL_SETTINGS_KEYS = new Set([
+  "default_model",
+  "daily_digest_model",
+  "memory_extraction_model",
+  "weekly_review_model",
+  "type_evolution_model",
+  "context_refresh_model",
+  "user_cron_model",
+  "memory_sync_model",
+]);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -162,8 +174,7 @@ const DEFAULT_USER_CRON_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 // ---------------------------------------------------------------------------
 
 export class StandaloneCronRunner implements CronRunner {
-  private _tasks: cron.ScheduledTask[] = [];
-  private _registeredAgents = new Map<string, cron.ScheduledTask>();
+  private _registeredAgents = new Map<string, { task: cron.ScheduledTask; schedule: string }>();
   private _syncInterval: NodeJS.Timeout | null = null;
   private _userCronInterval: NodeJS.Timeout | null = null;
   private _running = false;
@@ -204,10 +215,9 @@ export class StandaloneCronRunner implements CronRunner {
   async stop(): Promise<void> {
     if (!this._running) return;
 
-    for (const task of this._tasks) {
-      task.stop();
+    for (const entry of this._registeredAgents.values()) {
+      entry.task.stop();
     }
-    this._tasks = [];
     this._registeredAgents.clear();
 
     if (this._syncInterval) {
@@ -228,15 +238,23 @@ export class StandaloneCronRunner implements CronRunner {
   // ── Agent registration ──────────────────────────────────────────
 
   private registerAgent(agent: AgentDefinition): void {
-    if (this._registeredAgents.has(agent.name)) return;
     if (!agent.schedule || !cron.validate(agent.schedule)) {
       console.warn(`  [cron] Skipping ${agent.name} — invalid schedule: ${agent.schedule}`);
       return;
     }
 
+    // If already registered with the same schedule, skip
+    const existing = this._registeredAgents.get(agent.name);
+    if (existing && existing.schedule === agent.schedule) return;
+
+    // If schedule changed, stop the old task first
+    if (existing) {
+      existing.task.stop();
+      console.log(`  [cron] Schedule changed for ${agent.name}: ${existing.schedule} → ${agent.schedule}`);
+    }
+
     const task = cron.schedule(agent.schedule, () => this.executeAgent(agent));
-    this._registeredAgents.set(agent.name, task);
-    this._tasks.push(task);
+    this._registeredAgents.set(agent.name, { task, schedule: agent.schedule });
     console.log(`  [cron] Registered: ${agent.name} (${agent.schedule})`);
   }
 
@@ -255,9 +273,9 @@ export class StandaloneCronRunner implements CronRunner {
       }
 
       // Stop removed/disabled agents
-      for (const [name, task] of this._registeredAgents) {
+      for (const [name, entry] of this._registeredAgents) {
         if (!currentNames.has(name)) {
-          task.stop();
+          entry.task.stop();
           this._registeredAgents.delete(name);
           console.log(`  [cron] Unregistered: ${name}`);
         }
@@ -271,9 +289,10 @@ export class StandaloneCronRunner implements CronRunner {
 
   private async executeAgent(definition: AgentDefinition): Promise<void> {
     const settings = await refreshSettings();
-    const modelName = definition.model_settings_key
-      ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
-      : undefined;
+    const modelName =
+      definition.model_settings_key && MODEL_SETTINGS_KEYS.has(definition.model_settings_key)
+        ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
+        : undefined;
 
     // context_refresh uses its own subagent pattern, but still gets a task_run
     if (definition.name === "context_refresh") {
@@ -448,6 +467,7 @@ export class StandaloneCronRunner implements CronRunner {
         {
           configurable: {
             thread_id: threadId,
+            agent_name: "user_cron",
           },
         },
       );
