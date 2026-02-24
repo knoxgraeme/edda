@@ -51,6 +51,9 @@ import { listThreadsTool } from "./list-threads.js";
 import { createAgentTool } from "./create-agent.js";
 import { runAgentTool } from "./run-agent.js";
 import { getTaskResultTool } from "./get-task-result.js";
+import { listAgentsTool } from "./list-agents.js";
+import { updateAgentTool } from "./update-agent.js";
+import { deleteAgentTool } from "./delete-agent.js";
 
 // Memory tools (cron-only — not in main agent's eddaTools)
 export { createMemoryFileTool } from "./create-memory-file.js";
@@ -97,4 +100,7 @@ export const eddaTools = [
   createAgentTool,
   runAgentTool,
   getTaskResultTool,
+  listAgentsTool,
+  updateAgentTool,
+  deleteAgentTool,
 ];

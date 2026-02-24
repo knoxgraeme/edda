@@ -17,7 +17,6 @@ import { getChatModel } from "../llm/index.js";
 import { getCheckpointer } from "../checkpointer/index.js";
 import { getStore } from "../store/index.js";
 import { loadSkillContent } from "./skill-loader.js";
-import { eddaTools } from "./tools/index.js";
 import { getMyHistoryTool } from "./tools/get-my-history.js";
 
 // -- Tool imports (scoped profiles) --
@@ -66,6 +65,12 @@ const MEMORY_WRITER_TOOLS = [
   markThreadProcessedTool,
 ];
 
+/** User-defined agents get full data access but no admin/orchestration tools. */
+const USER_AGENT_TOOLS = [
+  ...MEMORY_WRITER_TOOLS,
+  createItemTypeTool,
+];
+
 // -- Tool selection --
 
 function getToolsForDefinition(definition: AgentDefinition) {
@@ -79,7 +84,7 @@ function getToolsForDefinition(definition: AgentDefinition) {
   } else if (definition.skills.some((s) => ["daily_digest", "type_evolution"].includes(s))) {
     baseTools = [...REPORTER_TOOLS, createItemTypeTool];
   } else {
-    baseTools = [...eddaTools]; // user-defined agents get full tools
+    baseTools = USER_AGENT_TOOLS;
   }
 
   return [...baseTools, getMyHistoryTool];
@@ -164,7 +169,7 @@ export function resolveThreadId(definition: AgentDefinition): string {
 
 // -- Model settings key allowlist --
 
-const MODEL_SETTINGS_KEYS = new Set([
+export const MODEL_SETTINGS_KEYS = new Set([
   "default_model",
   "daily_digest_model",
   "memory_extraction_model",
