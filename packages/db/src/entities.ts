@@ -100,7 +100,11 @@ export async function searchEntities(
   }
 
   const { rows } = await pool.query(
-    `SELECT ${ENTITY_COLS}, 1 - (embedding <=> $1::vector) AS similarity
+    `SELECT ${ENTITY_COLS},
+            (1 - (embedding <=> $1::vector)) AS raw_similarity,
+            (1 - (embedding <=> $1::vector))
+              * EXP(-0.693 * EXTRACT(EPOCH FROM (now() - COALESCE(last_seen_at, created_at))) / (30 * 86400))
+            AS similarity
      FROM entities
      WHERE ${conditions.join(" AND ")}
      ORDER BY similarity DESC

@@ -275,10 +275,12 @@ export interface CreateAgentLogInput {
 
 export interface SearchResult extends Item {
   similarity: number;
+  raw_similarity: number;
 }
 
 export interface EntitySearchResult extends Entity {
   similarity: number;
+  raw_similarity: number;
 }
 
 // ──────────────────────────────────────────────
