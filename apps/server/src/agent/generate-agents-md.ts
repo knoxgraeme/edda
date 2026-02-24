@@ -281,10 +281,10 @@ export async function runContextRefreshAgent(): Promise<void> {
   }
 }
 
-// ── Per-agent context (channel agents) ──────────────────────────
+// ── Per-agent context (background agents) ───────────────────────
 
 /**
- * Build a lightweight context template for a channel agent from its recent task runs.
+ * Build a lightweight context template for a background agent from its recent task runs.
  * No LLM call — purely deterministic.
  */
 export async function buildAgentTemplate(definition: Agent): Promise<string> {
@@ -310,7 +310,7 @@ export async function buildAgentTemplate(definition: Agent): Promise<string> {
 }
 
 /**
- * Hash-check a channel agent's context and save a new version if changed.
+ * Hash-check a background agent's context and save a new version if changed.
  * Fast path — no LLM call. Called after every cron execution.
  */
 export async function maybeRefreshAgentContext(definition: Agent): Promise<boolean> {

@@ -57,10 +57,10 @@ pnpm init                         # Run interactive setup wizard
 The server is built around **LangGraph** for agentic orchestration and **LangChain** for multi-provider LLM abstraction.
 
 - **`src/index.ts`** — Entry point; orchestrates startup
-- **`src/agent/index.ts`** — Orchestrator agent factory (`createEddaAgent`); mounts `/channels/` and `/skills/` backends
-- **`src/agent/build-channel-agent.ts`** — Factory that builds standalone background agents from `AgentDefinition` rows with scoped tool profiles
-- **`src/agent/task-channel-backend.ts`** — Read-only Store backend at `/channels/`; stitches agent outputs for orchestrator visibility
-- **`src/agent/skill-loader.ts`** — Loads `SKILL.md` content from disk by skill name (with caching)
+- **`src/agent/index.ts`** — Orchestrator agent factory (`createEddaAgent`); mounts `/output/` and `/skills/` backends
+- **`src/agent/build-agent.ts`** — Factory that builds standalone background agents from `Agent` rows with skill-based tool scoping
+- **`src/agent/agent-output-backend.ts`** — Read-only Store backend at `/output/`; stitches agent outputs for orchestrator visibility
+- **`src/agent/skill-loader.ts`** — Loads `SKILL.md` content and `allowed-tools` metadata from disk by skill name (with caching)
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
 - **`src/agent/prompts/system.ts`** — System prompt builder
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
@@ -89,9 +89,9 @@ Next.js App Router with React 19.
 
 Single source of truth for data model and queries.
 
-- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `AgentDefinition`, `TaskRun`
+- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `TaskRun`
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
-- **`src/agent-definitions.ts`** — CRUD for agent definitions (create, update, delete, list, getScheduled)
+- **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getScheduled)
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
 - **`migrations/`** — Ordered SQL migration files (001–027); applied via `pnpm migrate`
 - Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agent_definitions`, `task_runs`
@@ -112,25 +112,24 @@ Notable DB settings (in `settings` table):
 - `task_max_concurrency` — Max parallel agent executions (default: 3)
 - `notification_targets` — Where to send agent notifications (default: [inbox])
 
-### Agent Channels (Multi-Agent System)
+### Background Agents (Multi-Agent System)
 
-Edda uses a multi-agent architecture where the main orchestrator delegates to background **channel agents** that run on schedules or on-demand.
+Edda uses a multi-agent architecture where the main orchestrator delegates to background agents that run on schedules or on-demand.
 
-- **`agent_definitions`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], schedule (cron expression), context_mode, output_mode, scopes, scope_mode, model_settings_key, built_in flag, enabled flag
+- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], schedule (cron expression), context_mode, trigger, scopes, scope_mode, model_settings_key, enabled flag, metadata
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Context modes**: `isolated` (unique thread per run), `daily` (shared thread per day), `persistent` (single shared thread)
-- **Output modes**: `channel` (writes to Store for orchestrator visibility), `items` (writes to DB), `both`
-- **Tool profiles**: Channel agents get scoped tool sets based on their skills — `READ_ONLY`, `REPORTER` (+ create_item), or `MEMORY_WRITER` (+ update/delete/entity tools)
+- **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
 
-**Built-in system agents** (seeded in migration 023):
-| Agent | Schedule | Skills | Context | Output |
-|---|---|---|---|---|
-| daily_digest | 7am daily | daily_digest | daily | channel |
-| memory_extraction | 10pm daily | memory_extraction | isolated | items |
-| weekly_reflect | Sunday 3am | weekly_reflect | daily | both |
-| type_evolution | on-demand | type_evolution | isolated | items |
-| context_refresh | 5am daily | context_refresh | isolated | items |
-| post_process | triggered by memory_extraction | post_process | isolated | items |
+**Built-in system agents** (seeded in migration 029):
+| Agent | Schedule | Skills | Context |
+|---|---|---|---|
+| daily_digest | 7am daily | daily_digest | daily |
+| memory_extraction | 10pm daily | memory_extraction | isolated |
+| weekly_reflect | Sunday 3am | weekly_reflect | daily |
+| type_evolution | on-demand | type_evolution | isolated |
+| context_refresh | 5am daily | context_refresh | isolated |
+| post_process | triggered by memory_extraction | post_process | isolated |
 
 ### AGENTS.md (User Context Document)
 

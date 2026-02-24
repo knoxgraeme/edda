@@ -71,45 +71,6 @@ const ALL_TOOLS: StructuredTool[] = [
 
 const ALL_TOOLS_BY_NAME = new Map(ALL_TOOLS.map((t) => [t.name, t]));
 
-// -- Tool groups (for reference in create_agent / documentation) --
-
-export const TOOL_GROUPS: Record<string, string[]> = {
-  read: [
-    "search_items",
-    "get_item_by_id",
-    "get_entity_items",
-    "get_entity_profile",
-    "list_entities",
-    "get_agent_knowledge",
-    "get_dashboard",
-    "get_timeline",
-    "get_list_items",
-  ],
-  write: ["create_item", "batch_create_items", "update_item", "delete_item"],
-  entity: ["upsert_entity", "link_item_entity"],
-  thread: [
-    "get_unprocessed_threads",
-    "get_thread_messages",
-    "mark_thread_processed",
-    "list_threads",
-  ],
-  admin: ["create_item_type", "get_settings", "update_settings"],
-  mcp: [
-    "add_mcp_connection",
-    "list_mcp_connections",
-    "update_mcp_connection",
-    "remove_mcp_connection",
-  ],
-  orchestration: [
-    "create_agent",
-    "run_agent",
-    "list_agents",
-    "update_agent",
-    "delete_agent",
-    "get_task_result",
-  ],
-};
-
 // -- Tool selection --
 
 /**
@@ -117,7 +78,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
  *
  * Tool resolution (additive):
  * 1. Collect allowed-tools from all of the agent's skills (union)
- * 2. Add any tools listed in agent.tools[]
+ * 2. Add any individual tool names from agent.tools[]
  * 3. Filter ALL_TOOLS to only those in the resolved set
  * 4. Always include get_my_history
  *
@@ -126,26 +87,20 @@ export const TOOL_GROUPS: Record<string, string[]> = {
  */
 function getToolsForAgent(agent: Agent): StructuredTool[] {
   const skillTools = collectSkillTools(agent.skills);
-  const agentTools = agent.tools;
 
-  // Expand tool groups in agent.tools (e.g., "read" → individual tool names)
-  const expanded = new Set(skillTools);
-  for (const entry of agentTools) {
-    if (TOOL_GROUPS[entry]) {
-      for (const t of TOOL_GROUPS[entry]) expanded.add(t);
-    } else {
-      expanded.add(entry);
-    }
+  const resolved = new Set(skillTools);
+  for (const entry of agent.tools) {
+    resolved.add(entry);
   }
 
   // No restrictions declared — return all tools
-  if (expanded.size === 0) return ALL_TOOLS;
+  if (resolved.size === 0) return ALL_TOOLS;
 
   // Always include get_my_history
-  expanded.add("get_my_history");
+  resolved.add("get_my_history");
 
   const tools: StructuredTool[] = [];
-  for (const name of expanded) {
+  for (const name of resolved) {
     const tool = ALL_TOOLS_BY_NAME.get(name);
     if (tool) tools.push(tool);
   }
@@ -193,7 +148,7 @@ async function buildAgentPrompt(agent: Agent, settings: Settings): Promise<strin
   const base =
     agent.system_prompt || skillContent || `You are ${agent.name}, an Edda background agent.`;
 
-  const agentContext = await getAgentsMdContent(agent.name);
+  const [agentContext] = await Promise.all([getAgentsMdContent(agent.name)]);
   const contextSection = agentContext ? `\n\n## Your Context\n${agentContext}` : "";
 
   // Output instructions — all agents have /output/ mount

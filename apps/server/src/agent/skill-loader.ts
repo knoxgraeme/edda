@@ -89,8 +89,11 @@ export function collectSkillTools(skillNames: string[]): Set<string> {
         anyDeclared = true;
         for (const t of meta.allowedTools) tools.add(t);
       }
-    } catch {
-      // Skill not found — skip (error logged by caller)
+    } catch (err) {
+      console.warn(
+        `[collectSkillTools] Failed to load skill "${name}":`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
   // If no skill declared allowed-tools, return empty set (meaning "all tools")
