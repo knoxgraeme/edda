@@ -40,7 +40,7 @@ Cron: settings.weekly_review_cron (default "0 18 * * 0")
 5. Dropped threads: entities active 2+ weeks ago, no recent mentions.
 6. If new cross-conversation behavioral patterns detected, create items
    with type='pattern', source='cron'. This catches patterns that span
-   multiple days and wouldn't be visible to the daily memory_extraction cron
+   multiple days and wouldn't be visible to the daily memory_catchup cron
    (e.g. "user tends to capture ideas on weekday evenings" requires a week of data).
 
 ## Behavior — Memory Maintenance

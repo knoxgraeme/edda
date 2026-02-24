@@ -15,8 +15,6 @@ const AGENT_VISIBLE_KEYS: (keyof Settings)[] = [
   "user_timezone",
   "web_search_enabled",
   "web_search_max_results",
-  "memory_extraction_enabled",
-  "user_crons_enabled",
   "approval_new_type",
   "approval_archive_stale",
   "approval_merge_entity",

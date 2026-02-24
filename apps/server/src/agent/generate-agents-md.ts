@@ -196,11 +196,46 @@ export async function maybeRefreshAgentsMd(): Promise<void> {
   _cachedHashAt = Date.now();
 }
 
-// ── Cron entry point: subagent curation ─────────────────────────
+// ── Context refresh input (for normal agent path) ───────────────
+
+/**
+ * Build the invocation message for the context_refresh agent.
+ * Returns null if no changes detected (skip execution).
+ * Called by the cron runner before invoking context_refresh via buildAgent().
+ */
+export async function prepareContextRefreshInput(): Promise<string | null> {
+  const settings = getSettingsSync();
+  const { template, hash } = await buildDeterministicTemplate();
+  const latest = await getLatestAgentsMd();
+
+  if (latest?.input_hash === hash) return null;
+
+  const diff = buildTemplateDiff(latest?.template ?? "", template);
+  if (diff === "(no changes)") return null;
+
+  const tokenBudget = settings.agents_md_token_budget;
+  const currentContent = latest?.content ?? "(empty — this is the first version)";
+
+  return `Review the changes and update AGENTS.md. Save your edited version using the save_agents_md tool.
+
+## Current AGENTS.md (what's live now):
+${currentContent}
+
+## What Changed Since Last Edit:
+${diff}
+
+## Raw Materials (full deterministic template):
+${template}
+
+## Budget:
+Keep total length under ${tokenBudget} tokens (~${tokenBudget * 4} characters).`;
+}
+
+// ── Legacy cron entry point (kept for reference, to be removed in Phase 5) ──
 
 /**
  * Spawn a subagent to curate AGENTS.md based on what changed.
- * Called by the context_refresh cron job.
+ * @deprecated Use prepareContextRefreshInput() + buildAgent() instead.
  */
 export async function runContextRefreshAgent(): Promise<void> {
   const startTime = Date.now();
@@ -279,6 +314,29 @@ export async function runContextRefreshAgent(): Promise<void> {
     console.error("  [context_refresh] Failed:", err);
     throw err;
   }
+}
+
+/**
+ * Post-execution hook for context_refresh: store the template hash
+ * and prune old versions so the next run detects changes correctly.
+ * Called by the cron runner after a successful context_refresh execution.
+ */
+export async function finalizeContextRefresh(): Promise<void> {
+  const settings = getSettingsSync();
+  const { template, hash } = await buildDeterministicTemplate();
+  const latest = await getLatestAgentsMd();
+
+  // If the agent didn't call save_agents_md (no new version),
+  // store the template + hash with current content so we don't re-run
+  if (latest?.input_hash !== hash) {
+    await saveAgentsMdVersion({
+      content: latest?.content ?? "",
+      template,
+      inputHash: hash,
+    });
+  }
+
+  await pruneAgentsMdVersions(settings.agents_md_max_versions);
 }
 
 // ── Per-agent context (background agents) ───────────────────────

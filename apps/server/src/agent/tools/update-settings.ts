@@ -20,8 +20,6 @@ export const updateSettingsSchema = z.object({
         .optional(),
       web_search_enabled: z.boolean().optional(),
       web_search_max_results: z.number().int().min(1).max(20).optional(),
-      memory_extraction_enabled: z.boolean().optional(),
-      user_crons_enabled: z.boolean().optional(),
       type_evolution_enabled: z.boolean().optional(),
       approval_new_type: z.enum(["auto", "confirm"]).optional(),
       approval_archive_stale: z.enum(["auto", "confirm"]).optional(),

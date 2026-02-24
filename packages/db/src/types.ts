@@ -44,7 +44,6 @@ export interface Settings {
   checkpointer_backend: CheckpointerBackend;
 
   // Memory extraction
-  memory_extraction_enabled: boolean;
   memory_extraction_cron: string;
   memory_extraction_model: string;
 
@@ -73,10 +72,7 @@ export interface Settings {
   type_evolution_cron: string;
   type_evolution_model: string;
 
-  // User crons
-  user_crons_enabled: boolean;
-  user_cron_check_interval: string;
-  user_cron_model: string;
+  // Crons
   cron_runner: CronRunner;
   langgraph_platform_url: string | null;
 
