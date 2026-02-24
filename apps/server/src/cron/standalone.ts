@@ -6,7 +6,7 @@
  * createAgentLog calls are replaced by data-driven scheduling via
  * getScheduledAgents() and task_runs lifecycle tracking.
  *
- * Also runs a user-cron poller for scheduled_task items.
+ * Also registers user crons (scheduled_task items) via node-cron.
  */
 
 import cron from "node-cron";
@@ -21,7 +21,7 @@ import {
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
-import type { AgentDefinition, Settings, Item } from "@edda/db";
+import type { AgentDefinition, Item } from "@edda/db";
 
 import { buildChannelAgent, resolveThreadId } from "../agent/build-channel-agent.js";
 import {
@@ -68,106 +68,11 @@ function extractLastAssistantMessage(result: {
 }
 
 // ---------------------------------------------------------------------------
-// Cron expression helpers (used by user cron poller)
-// ---------------------------------------------------------------------------
-
-/**
- * Determine whether a cron expression should fire given the last run time.
- * Checks if the current minute matches the cron pattern AND the job has not
- * already run in this minute window.
- */
-export function shouldFire(
-  cronExpression: string,
-  lastRunAt: Date | null,
-  now: Date = new Date(),
-): boolean {
-  if (!cron.validate(cronExpression)) {
-    console.warn(`  [cron] Invalid cron expression: ${cronExpression}`);
-    return false;
-  }
-
-  // Parse cron fields: minute hour dayOfMonth month dayOfWeek
-  const parts = cronExpression.trim().split(/\s+/);
-  if (parts.length < 5) return false;
-
-  const matches = cronFieldMatches(parts, now);
-  if (!matches) return false;
-
-  // If no last run, fire immediately on first match
-  if (!lastRunAt) return true;
-
-  // Ensure we don't fire twice in the same minute
-  const nowMinute = Math.floor(now.getTime() / 60000);
-  const lastMinute = Math.floor(lastRunAt.getTime() / 60000);
-  return nowMinute > lastMinute;
-}
-
-/**
- * Check if the given date matches all fields of a cron expression.
- */
-function cronFieldMatches(parts: string[], date: Date): boolean {
-  const minute = date.getMinutes();
-  const hour = date.getHours();
-  const dayOfMonth = date.getDate();
-  const month = date.getMonth() + 1; // 1-indexed
-  const dayOfWeek = date.getDay(); // 0=Sunday
-
-  return (
-    fieldMatches(parts[0], minute, 0, 59) &&
-    fieldMatches(parts[1], hour, 0, 23) &&
-    fieldMatches(parts[2], dayOfMonth, 1, 31) &&
-    fieldMatches(parts[3], month, 1, 12) &&
-    fieldMatches(parts[4], dayOfWeek, 0, 7) // 0 and 7 both = Sunday
-  );
-}
-
-/**
- * Check if a single cron field matches a value.
- * Supports: star, numbers, ranges (1-5), steps (star/5, 1-10/2), lists (1,3,5).
- */
-function fieldMatches(field: string, value: number, _min: number, _max: number): boolean {
-  if (field === "*") return true;
-
-  // Handle lists: "1,3,5"
-  const parts = field.split(",");
-  for (const part of parts) {
-    if (partMatches(part.trim(), value)) return true;
-  }
-  return false;
-}
-
-function partMatches(part: string, value: number): boolean {
-  // Handle step: "*/5" or "1-10/2"
-  const stepParts = part.split("/");
-  const step = stepParts.length > 1 ? parseInt(stepParts[1], 10) : 1;
-  const range = stepParts[0];
-
-  if (range === "*") {
-    return value % step === 0;
-  }
-
-  // Handle range: "1-5"
-  if (range.includes("-")) {
-    const [startStr, endStr] = range.split("-");
-    const start = parseInt(startStr, 10);
-    const end = parseInt(endStr, 10);
-    if (value < start || value > end) return false;
-    return (value - start) % step === 0;
-  }
-
-  // Plain number
-  return parseInt(range, 10) === value;
-}
-
-// ---------------------------------------------------------------------------
 // Interval constants
 // ---------------------------------------------------------------------------
 
 /** How often to sync agent_definitions for new/changed/disabled schedules. */
 const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
-/** Default fallback for user cron polling interval. */
-const DEFAULT_USER_CRON_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
 // StandaloneCronRunner class
@@ -175,12 +80,9 @@ const DEFAULT_USER_CRON_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export class StandaloneCronRunner implements CronRunner {
   private _registeredAgents = new Map<string, { task: cron.ScheduledTask; schedule: string }>();
+  private _registeredUserCrons = new Map<string, { task: cron.ScheduledTask; schedule: string }>();
   private _syncInterval: NodeJS.Timeout | null = null;
-  private _userCronInterval: NodeJS.Timeout | null = null;
   private _running = false;
-
-  /** Track last run time per user cron (scheduled_task item ID) */
-  private _userCronLastRuns = new Map<string, Date>();
 
   async start(): Promise<void> {
     if (this._running) {
@@ -200,15 +102,16 @@ export class StandaloneCronRunner implements CronRunner {
     // Dynamic schedule sync — picks up new/changed/disabled agents
     this._syncInterval = setInterval(() => this.syncSchedules(), SCHEDULE_SYNC_INTERVAL_MS);
 
-    // User cron poller (preserved from existing code)
+    // Register user crons via node-cron (same pattern as system agents)
     if (settings.user_crons_enabled) {
-      this.startUserCronPoller(settings);
+      await this.syncUserCrons();
     }
 
     const registeredCount = this._registeredAgents.size;
+    const userCronCount = this._registeredUserCrons.size;
     console.log(
       `  Standalone cron runner started (${registeredCount} agent(s)` +
-        `${settings.user_crons_enabled ? " + user cron poller" : ""})`,
+        `${settings.user_crons_enabled ? `, ${userCronCount} user cron(s)` : ""})`,
     );
   }
 
@@ -220,18 +123,17 @@ export class StandaloneCronRunner implements CronRunner {
     }
     this._registeredAgents.clear();
 
+    for (const entry of this._registeredUserCrons.values()) {
+      entry.task.stop();
+    }
+    this._registeredUserCrons.clear();
+
     if (this._syncInterval) {
       clearInterval(this._syncInterval);
       this._syncInterval = null;
     }
 
-    if (this._userCronInterval) {
-      clearInterval(this._userCronInterval);
-      this._userCronInterval = null;
-    }
-
     this._running = false;
-    this._userCronLastRuns.clear();
     console.log("  Standalone cron runner stopped");
   }
 
@@ -279,6 +181,18 @@ export class StandaloneCronRunner implements CronRunner {
           this._registeredAgents.delete(name);
           console.log(`  [cron] Unregistered: ${name}`);
         }
+      }
+
+      // Sync user crons
+      if (settings.user_crons_enabled) {
+        await this.syncUserCrons();
+      } else {
+        // If user crons were disabled, stop all registered user crons
+        for (const [id, entry] of this._registeredUserCrons) {
+          entry.task.stop();
+          console.log(`  [cron] Unregistered user cron: ${id}`);
+        }
+        this._registeredUserCrons.clear();
       }
     } catch (err) {
       console.error("  [cron] Schedule sync failed:", err);
@@ -366,27 +280,12 @@ export class StandaloneCronRunner implements CronRunner {
     }
   }
 
-  // ── User cron poller ────────────────────────────────────────────
+  // ── User cron scheduling ────────────────────────────────────────
 
-  private startUserCronPoller(settings: Settings): void {
-    const checkIntervalMs = this.parseCronToMs(settings.user_cron_check_interval);
-
-    this._userCronInterval = setInterval(async () => {
-      const freshSettings = await refreshSettings();
-      await this.checkUserCrons(freshSettings);
-    }, checkIntervalMs);
-
-    console.log(
-      `  [cron] User cron poller started (interval: ${checkIntervalMs / 1000}s)`,
-    );
-  }
-
-  private async checkUserCrons(settings: Settings): Promise<void> {
-    if (!settings.user_crons_enabled) return;
-
+  private async syncUserCrons(): Promise<void> {
     try {
       const tasks = await getItemsByType("scheduled_task", "active");
-      const now = new Date();
+      const activeIds = new Set<string>();
 
       for (const task of tasks) {
         const metadata = task.metadata as {
@@ -398,22 +297,48 @@ export class StandaloneCronRunner implements CronRunner {
 
         if (metadata.enabled === false) continue;
 
-        if (!metadata.cron) {
-          console.warn(`  [cron] scheduled_task ${task.id} has no cron expression`);
+        if (!metadata.cron || !cron.validate(metadata.cron)) {
+          console.warn(
+            `  [cron] scheduled_task ${task.id} has invalid/missing cron: ${metadata.cron}`,
+          );
           continue;
         }
 
-        const lastRun = this._userCronLastRuns.get(task.id) ?? null;
-        if (shouldFire(metadata.cron, lastRun, now)) {
-          await this.executeUserCron(task, settings);
+        activeIds.add(task.id);
+
+        const existing = this._registeredUserCrons.get(task.id);
+        if (existing && existing.schedule === metadata.cron) continue;
+
+        // Schedule changed or new task — (re-)register
+        if (existing) {
+          existing.task.stop();
+          console.log(
+            `  [cron] User cron ${task.id} schedule changed: ${existing.schedule} → ${metadata.cron}`,
+          );
+        }
+
+        const scheduledTask = cron.schedule(metadata.cron, () => this.executeUserCron(task));
+        this._registeredUserCrons.set(task.id, { task: scheduledTask, schedule: metadata.cron });
+        console.log(
+          `  [cron] Registered user cron: ${task.id} (${metadata.cron}) — ${metadata.action ?? task.content}`,
+        );
+      }
+
+      // Stop user crons no longer in the active set
+      for (const [id, entry] of this._registeredUserCrons) {
+        if (!activeIds.has(id)) {
+          entry.task.stop();
+          this._registeredUserCrons.delete(id);
+          console.log(`  [cron] Unregistered user cron: ${id}`);
         }
       }
     } catch (err) {
-      console.error("  [cron] Error checking user crons:", err);
+      console.error("  [cron] Error syncing user crons:", err);
     }
   }
 
-  private async executeUserCron(task: Item, settings: Settings): Promise<void> {
+  private async executeUserCron(task: Item): Promise<void> {
+    const settings = await refreshSettings();
     const startTime = Date.now();
     const taskId = task.id;
     const metadata = task.metadata as {
@@ -485,7 +410,6 @@ export class StandaloneCronRunner implements CronRunner {
         duration_ms: durationMs,
       });
 
-      this._userCronLastRuns.set(taskId, new Date());
       console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
     } catch (err) {
       const durationMs = Date.now() - startTime;
@@ -504,26 +428,4 @@ export class StandaloneCronRunner implements CronRunner {
     }
   }
 
-  // ── Cron interval parser ────────────────────────────────────────
-
-  /** Parse a cron expression into a millisecond interval. Falls back to 5 minutes. */
-  private parseCronToMs(cronExpr: string): number {
-    if (!cronExpr) return DEFAULT_USER_CRON_INTERVAL_MS;
-
-    const parts = cronExpr.trim().split(/\s+/);
-    if (parts.length < 5) return DEFAULT_USER_CRON_INTERVAL_MS;
-
-    // Handle simple minute-based intervals: "*/N * * * *"
-    const minuteField = parts[0];
-    if (minuteField.startsWith("*/")) {
-      const minutes = parseInt(minuteField.slice(2), 10);
-      if (!isNaN(minutes) && minutes > 0) {
-        return minutes * 60 * 1000;
-      }
-    }
-
-    // For complex patterns, default to checking every 1 minute
-    // (the shouldFire function will handle the actual schedule matching)
-    return 60 * 1000;
-  }
 }
