@@ -5,10 +5,12 @@
 import { Semaphore } from "async-mutex";
 
 let _semaphore: Semaphore | null = null;
+let _configuredMax = 0;
 
 export function getTaskSemaphore(maxConcurrency: number): Semaphore {
-  if (!_semaphore || _semaphore.getValue() !== maxConcurrency) {
+  if (!_semaphore || _configuredMax !== maxConcurrency) {
     _semaphore = new Semaphore(maxConcurrency);
+    _configuredMax = maxConcurrency;
   }
   return _semaphore;
 }
