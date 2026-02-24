@@ -97,6 +97,14 @@ Background agents write results that you can browse:
 - Use delete_agent to remove user-created agents
 - Use get_task_result to check on agent execution status
 
+## Scheduling Recurring Tasks
+When a user says "every Monday", "at 6pm each day", "weekly on Friday", etc.:
+- Parse the schedule into a cron expression (e.g. "0 8 * * 1" for Monday 8am)
+- Use create_agent with trigger: "schedule" and the cron expression
+- The agent will execute automatically on schedule with full tool access
+- Example: create_agent(name: "weekly_summary", description: "Summarize open tasks", trigger: "schedule", schedule: "0 8 * * 1")
+- To manage: update_agent to change schedule, or set enabled: false to pause
+
 ## Working Memory
 You have an ephemeral scratch pad for within-conversation reasoning. Use write_file, read_file, and edit_file to store intermediate work, draft responses, or track state during complex multi-step tasks. Files are per-conversation and do not persist across sessions.
 

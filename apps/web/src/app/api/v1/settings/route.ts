@@ -18,8 +18,6 @@ const UpdateSettingsSchema = z
     embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),
     embedding_model: z.string().max(100).optional(),
     notification_targets: z.array(z.string()).optional(),
-    user_crons_enabled: z.boolean().optional(),
-    memory_extraction_enabled: z.boolean().optional(),
     context_refresh_cron: z.string().max(50).optional(),
   })
   .strict();

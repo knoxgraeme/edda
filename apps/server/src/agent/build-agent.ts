@@ -196,7 +196,6 @@ export const MODEL_SETTINGS_KEYS = new Set([
   "weekly_review_model",
   "type_evolution_model",
   "context_refresh_model",
-  "user_cron_model",
 ]);
 
 // -- Agent builder --

@@ -242,14 +242,6 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
             <CardTitle className="text-base">Scheduled Tasks</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="memory_extraction_enabled">Memory extraction</Label>
-              <Switch
-                id="memory_extraction_enabled"
-                checked={form.memory_extraction_enabled}
-                onCheckedChange={(v) => update("memory_extraction_enabled", v)}
-              />
-            </div>
             <FieldGroup
               label="Extraction schedule"
               htmlFor="memory_extraction_cron"
@@ -269,25 +261,6 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
               />
             </FieldGroup>
             <Separator />
-            <div className="flex items-center justify-between">
-              <Label htmlFor="user_crons_enabled">User crons</Label>
-              <Switch
-                id="user_crons_enabled"
-                checked={form.user_crons_enabled}
-                onCheckedChange={(v) => update("user_crons_enabled", v)}
-              />
-            </div>
-            <FieldGroup
-              label="Check interval"
-              htmlFor="user_cron_check_interval"
-              description="Cron expression for how often to check user scheduled tasks"
-            >
-              <Input
-                id="user_cron_check_interval"
-                value={form.user_cron_check_interval}
-                onChange={(e) => update("user_cron_check_interval", e.target.value)}
-              />
-            </FieldGroup>
             <FieldGroup label="Cron runner" htmlFor="cron_runner">
               <Select
                 id="cron_runner"

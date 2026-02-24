@@ -12,8 +12,6 @@ const { DEFAULT_SETTINGS } = vi.hoisted(() => ({
     user_timezone: "America/New_York",
     web_search_enabled: false,
     web_search_max_results: 5,
-    memory_extraction_enabled: true,
-    user_crons_enabled: false,
     approval_new_type: "confirm",
     approval_archive_stale: "confirm",
     approval_merge_entity: "confirm",
