@@ -57,12 +57,20 @@ pnpm init                         # Run interactive setup wizard
 The server is built around **LangGraph** for agentic orchestration and **LangChain** for multi-provider LLM abstraction.
 
 - **`src/index.ts`** — Entry point; orchestrates startup
-- **`src/agent/`** — Agent factory, tool definitions, system prompt builder, and middleware
+- **`src/agent/index.ts`** — Orchestrator agent factory (`createEddaAgent`); mounts `/channels/` and `/skills/` backends
+- **`src/agent/build-channel-agent.ts`** — Factory that builds standalone background agents from `AgentDefinition` rows with scoped tool profiles
+- **`src/agent/task-channel-backend.ts`** — Read-only Store backend at `/channels/`; stitches agent outputs for orchestrator visibility
+- **`src/agent/skill-loader.ts`** — Loads `SKILL.md` content from disk by skill name (with caching)
+- **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
+- **`src/agent/prompts/system.ts`** — System prompt builder
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
 - **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
-- **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `type_evolution`, `user_crons`, `weekly_reflect`
-- **`src/cron/`** — Scheduled task runner; can run as `standalone` (node-cron) or `platform` (LangGraph Platform), controlled by env
+- **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `post_process`, `recall`, `type_evolution`, `user_crons`, `weekly_reflect`
+- **`src/cron/standalone.ts`** — Standalone cron runner; reads `agent_definitions` for schedules, creates `task_run` records, syncs dynamically
+- **`src/cron/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
+- **`src/notifications/index.ts`** — Creates notification items for agent run completions/failures
 - **`src/checkpointer/index.ts`** — State checkpointing backend (postgres, sqlite, or memory)
+- **`src/utils/sanitize-error.ts`** — Strips internal details from errors before returning to agents
 - **`src/evals/`** — Vitest-based evaluation suite
 
 ### Frontend (`apps/web`)
@@ -70,6 +78,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 Next.js App Router with React 19.
 
 - **`src/app/`** — Route pages: `/` (chat), `/dashboard`, `/entities`, `/inbox`, `/settings`, `/login`
+- **`src/app/api/v1/`** — REST API routes (agents, task-runs, items, entities, threads, settings, dashboard, timeline, confirmations, mcp-connections)
 - **`src/middleware.ts`** — Next.js middleware; enforces optional password auth via `EDDA_PASSWORD`
 - **`src/lib/auth.ts`** — Session token helpers (HMAC-based cookie auth)
 - **`src/providers/`** — `ChatProvider` and `ClientProvider` context providers
@@ -80,10 +89,12 @@ Next.js App Router with React 19.
 
 Single source of truth for data model and queries.
 
-- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`
+- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `AgentDefinition`, `TaskRun`
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
-- **`migrations/`** — Ordered SQL migration files (001–019); applied via `pnpm migrate`
-- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`
+- **`src/agent-definitions.ts`** — CRUD for agent definitions (create, update, delete, list, getScheduled)
+- **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
+- **`migrations/`** — Ordered SQL migration files (001–027); applied via `pnpm migrate`
+- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agent_definitions`, `task_runs`
 
 ### Configuration Strategy
 
@@ -97,15 +108,47 @@ Critical env vars (see `.env.example`):
 - `CHECKPOINTER` — `postgres`, `sqlite`, or `memory`
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
 
+Notable DB settings (in `settings` table):
+- `task_max_concurrency` — Max parallel agent executions (default: 3)
+- `notification_targets` — Where to send agent notifications (default: [inbox])
+
+### Agent Channels (Multi-Agent System)
+
+Edda uses a multi-agent architecture where the main orchestrator delegates to background **channel agents** that run on schedules or on-demand.
+
+- **`agent_definitions`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], schedule (cron expression), context_mode, output_mode, scopes, scope_mode, model_settings_key, built_in flag, enabled flag
+- **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
+- **Context modes**: `isolated` (unique thread per run), `daily` (shared thread per day), `persistent` (single shared thread)
+- **Output modes**: `channel` (writes to Store for orchestrator visibility), `items` (writes to DB), `both`
+- **Tool profiles**: Channel agents get scoped tool sets based on their skills — `READ_ONLY`, `REPORTER` (+ create_item), or `MEMORY_WRITER` (+ update/delete/entity tools)
+
+**Built-in system agents** (seeded in migration 023):
+| Agent | Schedule | Skills | Context | Output |
+|---|---|---|---|---|
+| daily_digest | 7am daily | daily_digest | daily | channel |
+| memory_extraction | 10pm daily | memory_extraction | isolated | items |
+| weekly_reflect | Sunday 3am | weekly_reflect | daily | both |
+| type_evolution | on-demand | type_evolution | isolated | items |
+| context_refresh | 5am daily | context_refresh | isolated | items |
+| post_process | triggered by memory_extraction | post_process | isolated | items |
+
 ### AGENTS.md (User Context Document)
 
-The agent's knowledge of the user lives in a curated document called AGENTS.md, stored in the `agents_md_versions` DB table (not on disk). Each row is a complete version with content, the deterministic template used to produce it, and an input hash for change detection.
+The agent's knowledge of the user lives in a curated document called AGENTS.md, stored in the `agents_md_versions` DB table (not on disk). Each row is a complete version with content, the deterministic template used to produce it, and an input hash for change detection. Supports per-agent variants via `agent_name` column.
 
 - **`src/agent/generate-agents-md.ts`** — Core logic: `buildDeterministicTemplate()` queries raw data from DB, `buildTemplateDiff()` computes changes, `maybeRefreshAgentsMd()` stores template+hash on every conversation (fast, no LLM), `runContextRefreshAgent()` spawns a subagent to curate content (cron only)
 - **`src/agent/tools/save-agents-md.ts`** — Schema-only tool bound to the context_refresh subagent (not in main agent's tool set). The real DB write happens in `runContextRefreshAgent()`
 - **`src/agent/prompts/system.ts`** — Reads latest AGENTS.md content from DB via `getAgentsMdContent()` and embeds it in the system prompt
 - **Cron**: `context_refresh` runs daily (default 5am), controlled by `settings.context_refresh_cron`
 - **Change detection**: SHA-256 hash of the deterministic template; post-process path skips if hash matches, with a 30-second in-memory cache to avoid repeated DB queries
+
+### Memory System
+
+Memory is entity-based, not file-based. The `post_process` skill extracts knowledge (preferences, learned facts, patterns) and entities (person, project, company, etc.) from conversation transcripts into items and entity profiles.
+
+- **`get_entity_profile` tool** — Dynamically assembles a complete entity profile from `entities` + linked `items`; always fresh, no cron needed
+- **`post_process` skill** — Extracts implicit knowledge from conversations; deduplicates via semantic similarity (reinforce ≥0.95, supersede 0.85–0.95, create new otherwise)
+- **`memory_extraction` agent** — Runs nightly; iterates unprocessed threads and invokes `post_process` for each
 
 ## Code Style
 
