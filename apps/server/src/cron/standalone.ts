@@ -35,6 +35,7 @@ import {
 } from "../agent/build-channel-agent.js";
 import { runContextRefreshAgent, maybeRefreshAgentContext } from "../agent/generate-agents-md.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
+import { notify } from "../notifications/index.js";
 import type { CronRunner } from "./index.js";
 
 // ---------------------------------------------------------------------------
@@ -266,6 +267,16 @@ export class StandaloneCronRunner implements CronRunner {
         const lastMessage = extractLastAssistantMessage(result);
         await completeTaskRun(run.id, { output_summary: lastMessage, duration_ms: duration });
 
+        try {
+          await notify({
+            agentName: freshDef.name,
+            runId: run.id,
+            summary: lastMessage?.slice(0, 200) ?? `${freshDef.name} completed`,
+          });
+        } catch (notifyErr) {
+          console.error(`  [cron] ${freshDef.name} notification failed (run was successful):`, notifyErr);
+        }
+
         // Refresh agent's per-agent AGENTS.md context (fast hash check, no LLM)
         try {
           await maybeRefreshAgentContext(freshDef);
@@ -280,6 +291,16 @@ export class StandaloneCronRunner implements CronRunner {
           await failTaskRun(run.id, sanitizeError(err));
         } catch (dbErr) {
           console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
+        }
+        try {
+          await notify({
+            agentName: freshDef.name,
+            runId: run.id,
+            summary: `${freshDef.name} failed: ${sanitizeError(err).slice(0, 150)}`,
+            priority: "high",
+          });
+        } catch (notifyErr) {
+          console.error(`  [cron] ${freshDef.name} failure notification failed:`, notifyErr);
         }
       }
     });
