@@ -367,7 +367,7 @@ export interface AgentDefinition {
 
 export interface TaskRun {
   id: string;
-  agent_definition_id: string;
+  agent_definition_id: string | null;
   agent_name: string;
   trigger: TaskRunTrigger;
   status: TaskRunStatus;

@@ -130,9 +130,12 @@ export async function updateAgentDefinition(
     AGENT_DEF_UPDATE_COLUMNS.includes(k as (typeof AGENT_DEF_UPDATE_COLUMNS)[number]),
   );
   if (entries.length === 0) {
-    const existing = await getAgentDefinitionByName(id);
-    if (!existing) throw new Error(`Agent definition not found: ${id}`);
-    return existing;
+    const { rows: check } = await pool.query(
+      `SELECT ${AGENT_DEF_COLS} FROM agent_definitions WHERE id = $1`,
+      [id],
+    );
+    if (check.length === 0) throw new Error(`Agent definition not found: ${id}`);
+    return check[0] as AgentDefinition;
   }
 
   const sets = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(", ");

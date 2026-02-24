@@ -21,7 +21,7 @@ export async function getLatestAgentsMd(
      ORDER BY id DESC LIMIT 1`,
     [agentName],
   );
-  return rows[0] ?? null;
+  return (rows[0] as AgentsMdVersion) ?? null;
 }
 
 /** Save a new AGENTS.md version. */
@@ -39,7 +39,7 @@ export async function saveAgentsMdVersion(input: {
      RETURNING id, content, template, input_hash, agent_name, created_at`,
     [input.content, input.template, input.inputHash, agentName],
   );
-  return rows[0];
+  return rows[0] as AgentsMdVersion;
 }
 
 /** Prune old versions, keeping the most recent `keepCount` rows per agent. */
@@ -51,7 +51,11 @@ export async function pruneAgentsMdVersions(keepCount: number): Promise<void> {
   await pool.query(
     `DELETE FROM agents_md_versions
      WHERE id NOT IN (
-       SELECT id FROM agents_md_versions ORDER BY id DESC LIMIT $1
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (PARTITION BY agent_name ORDER BY id DESC) AS rn
+         FROM agents_md_versions
+       ) ranked
+       WHERE rn <= $1
      )`,
     [keepCount],
   );
@@ -61,11 +65,4 @@ export async function pruneAgentsMdVersions(keepCount: number): Promise<void> {
 export async function getAgentsMdContent(agentName = "orchestrator"): Promise<string> {
   const latest = await getLatestAgentsMd(agentName);
   return latest?.content ?? "";
-}
-
-/** Get latest full version row by agent name. */
-export async function getLatestAgentsMdVersion(
-  agentName: string,
-): Promise<AgentsMdVersion | null> {
-  return getLatestAgentsMd(agentName);
 }
