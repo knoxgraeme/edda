@@ -11,6 +11,7 @@ export const createAgentSchema = z.object({
     .string()
     .min(1)
     .max(50)
+    .regex(/^[a-z][a-z0-9_]*$/, "Agent name must be snake_case (lowercase letters, digits, underscores; must start with a letter)")
     .describe("Unique agent name (snake_case)"),
   description: z.string().describe("What this agent does"),
   system_prompt: z.string().optional().describe("Custom system prompt (overrides skills)"),
