@@ -1,5 +1,5 @@
 /**
- * get_my_history — lets channel agents query their own past task runs.
+ * get_my_history — lets background agents query their own past task runs.
  *
  * An isolated-context agent can still know "I ran 3 times this week
  * and failed once" regardless of context_mode.
