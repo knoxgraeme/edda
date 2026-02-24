@@ -96,6 +96,10 @@ export interface Settings {
   memory_file_activity_threshold: number;
   memory_file_stale_days: number;
 
+  // Agent channels
+  notification_targets: string[];
+  task_max_concurrency: number;
+
   // Meta
   created_at: string;
   updated_at: string;
@@ -110,6 +114,7 @@ export interface AgentsMdVersion {
   content: string;
   template: string;
   input_hash: string | null;
+  agent_name: string;
   created_at: string;
 }
 
@@ -328,5 +333,52 @@ export interface MemoryType {
   synthesis_style: string;
   split_threshold: number;
   built_in: boolean;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Agent Definitions
+// ──────────────────────────────────────────────
+
+export type AgentContextMode = "isolated" | "daily" | "persistent";
+export type AgentOutputMode = "channel" | "items" | "both";
+export type AgentScopeMode = "boost" | "strict";
+export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent";
+
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string | null;
+  skills: string[];
+  schedule: string | null;
+  context_mode: AgentContextMode;
+  output_mode: AgentOutputMode;
+  scopes: string[];
+  scope_mode: AgentScopeMode;
+  model_settings_key: string | null;
+  built_in: boolean;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskRun {
+  id: string;
+  agent_definition_id: string;
+  agent_name: string;
+  trigger: TaskRunTrigger;
+  status: TaskRunStatus;
+  thread_id: string | null;
+  input_summary: string | null;
+  output_summary: string | null;
+  model: string | null;
+  tokens_used: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
   created_at: string;
 }

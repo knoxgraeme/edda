@@ -20,5 +20,7 @@ export * from "./agents-md.js";
 export * from "./skills.js";
 export * from "./memory-types.js";
 export * from "./memory-queries.js";
+export * from "./agent-definitions.js";
+export * from "./task-runs.js";
 export * from "./migrate.js";
 export * from "./seed-settings.js";

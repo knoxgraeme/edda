@@ -76,6 +76,8 @@ const SETTINGS_UPDATE_COLUMNS = [
   "memory_sync_model",
   "memory_file_activity_threshold",
   "memory_file_stale_days",
+  "notification_targets",
+  "task_max_concurrency",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {

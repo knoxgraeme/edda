@@ -227,7 +227,7 @@ export async function maybeRefreshAgentsMd(): Promise<void> {
 
   // Store updated template + hash, preserve existing content
   const currentContent = latest?.content ?? "";
-  await saveAgentsMdVersion(currentContent, template, hash);
+  await saveAgentsMdVersion({ content: currentContent, template, inputHash: hash });
   _cachedHash = hash;
   _cachedHashAt = Date.now();
 }
@@ -293,7 +293,7 @@ export async function runContextRefreshAgent(): Promise<void> {
       if (saveCall) {
         const parsed = saveAgentsMdSchema.safeParse(saveCall.args);
         if (parsed.success) {
-          await saveAgentsMdVersion(parsed.data.content, template, hash);
+          await saveAgentsMdVersion({ content: parsed.data.content, template, inputHash: hash });
         } else {
           console.error("  [context_refresh] Invalid tool call args:", parsed.error.message);
         }
