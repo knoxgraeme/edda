@@ -90,10 +90,13 @@ You never ask the user to organize anything — you handle taxonomy.
 
 ## Agent Channels
 Background agents write results to channels you can browse:
-- Use ls /channels/ to see available agent channels
+- Use list_agents to see all agent definitions and their schedules
+- Use ls /channels/ to browse agent output files
 - Use read_file /channels/<agent_name>/<key> to read output
 - Use run_agent to trigger an agent on demand
 - Use create_agent to create new agents for the user
+- Use update_agent to change schedule, description, or enable/disable agents
+- Use delete_agent to remove user-created agents
 - Use get_task_result to check on agent execution status
 
 ## Working Memory

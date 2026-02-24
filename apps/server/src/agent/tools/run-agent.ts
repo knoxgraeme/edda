@@ -16,6 +16,16 @@ import { runWithConcurrencyLimit } from "../../cron/semaphore.js";
 
 const MAX_CONCURRENT_AGENTS = 3;
 
+/** Strip connection strings, file paths, and stack traces from error messages. */
+function sanitizeError(err: unknown): string {
+  const raw = err instanceof Error ? `${err.constructor.name}: ${err.message}` : String(err);
+  return raw
+    .replace(/(?:postgres|mysql|mongodb|redis):\/\/[^\s]+/gi, "[redacted-url]")
+    .replace(/\/(?:Users|home|var|tmp|opt|etc)\/[^\s:]+/g, "[redacted-path]")
+    .replace(/\bat\s+\S+\s+\(.*\)/g, "")
+    .slice(0, 200);
+}
+
 export const runAgentSchema = z.object({
   agent_name: z.string().describe("Name of the agent to run"),
   input: z.string().optional().describe("Optional task input or instructions"),
@@ -53,8 +63,8 @@ export const runAgentTool = tool(
             duration_ms: Date.now() - startTime,
           });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          await failTaskRun(run.id, msg).catch(() => {});
+          if (err instanceof Error) console.error(`[run_agent] ${definition.name}:`, err);
+          await failTaskRun(run.id, sanitizeError(err)).catch(() => {});
         }
       }).catch(() => {});
     });

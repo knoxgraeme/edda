@@ -23,7 +23,11 @@ import {
 } from "@edda/db";
 import type { AgentDefinition, Item } from "@edda/db";
 
-import { buildChannelAgent, resolveThreadId } from "../agent/build-channel-agent.js";
+import {
+  buildChannelAgent,
+  resolveThreadId,
+  MODEL_SETTINGS_KEYS,
+} from "../agent/build-channel-agent.js";
 import {
   runContextRefreshAgent,
   maybeRefreshAgentContext,
@@ -31,21 +35,19 @@ import {
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import type { CronRunner } from "./index.js";
 
-/** Allowlist of settings keys that can be used as model overrides. */
-const MODEL_SETTINGS_KEYS = new Set([
-  "default_model",
-  "daily_digest_model",
-  "memory_extraction_model",
-  "weekly_review_model",
-  "type_evolution_model",
-  "context_refresh_model",
-  "user_cron_model",
-  "memory_sync_model",
-]);
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Strip connection strings, file paths, and stack traces from error messages. */
+function sanitizeError(err: unknown): string {
+  const raw = err instanceof Error ? `${err.constructor.name}: ${err.message}` : String(err);
+  return raw
+    .replace(/(?:postgres|mysql|mongodb|redis):\/\/[^\s]+/gi, "[redacted-url]")
+    .replace(/\/(?:Users|home|var|tmp|opt|etc)\/[^\s:]+/g, "[redacted-path]")
+    .replace(/\bat\s+\S+\s+\(.*\)/g, "")
+    .slice(0, 200);
+}
 
 /**
  * Extract the last assistant message content from an agent invocation result.
@@ -245,9 +247,8 @@ export class StandaloneCronRunner implements CronRunner {
 
         console.log(`  [cron] ${definition.name} completed in ${duration}ms`);
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        await failTaskRun(run.id, errorMsg);
-        console.error(`  [cron] ${definition.name} failed: ${errorMsg}`);
+        if (err instanceof Error) console.error(`  [cron] ${definition.name} error:`, err);
+        await failTaskRun(run.id, sanitizeError(err));
       }
     });
   }
@@ -274,9 +275,8 @@ export class StandaloneCronRunner implements CronRunner {
       await completeTaskRun(run.id, { duration_ms: Date.now() - startTime });
       console.log(`  [cron] context_refresh completed in ${Date.now() - startTime}ms`);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      await failTaskRun(run.id, errorMsg);
-      console.error(`  [cron] context_refresh failed: ${errorMsg}`);
+      if (err instanceof Error) console.error(`  [cron] context_refresh error:`, err);
+      await failTaskRun(run.id, sanitizeError(err));
     }
   }
 
