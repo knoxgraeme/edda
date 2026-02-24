@@ -70,10 +70,22 @@ const MEMORY_WRITER_TOOLS = [
 ];
 
 /** User-defined agents get full data access but no admin/orchestration tools. */
-const USER_AGENT_TOOLS = [...MEMORY_WRITER_TOOLS, createItemTypeTool];
+const _USER_AGENT_TOOLS = [...MEMORY_WRITER_TOOLS, createItemTypeTool];
 
 // -- Tool selection --
 
+/**
+ * Determine the tool set for a channel agent based on its skills.
+ *
+ * Tool profiles (least to most permissive):
+ * - READ_ONLY_TOOLS: search, entities, dashboard (reserved for future use)
+ * - REPORTER_TOOLS: read-only + create items (default for user-created agents)
+ * - MEMORY_WRITER_TOOLS: reporter + entity/memory write tools (post_process, weekly_reflect, etc.)
+ * - USER_AGENT_TOOLS: full data tools including type management (explicit skill assignment only)
+ *
+ * User-created agents default to REPORTER_TOOLS. To grant write access, assign a
+ * skill that maps to a higher tier (e.g., post_process → MEMORY_WRITER_TOOLS).
+ */
 function getToolsForDefinition(definition: AgentDefinition) {
   let baseTools;
   if (
@@ -85,7 +97,7 @@ function getToolsForDefinition(definition: AgentDefinition) {
   } else if (definition.skills.some((s) => ["daily_digest", "type_evolution"].includes(s))) {
     baseTools = [...REPORTER_TOOLS, createItemTypeTool];
   } else {
-    baseTools = USER_AGENT_TOOLS;
+    baseTools = REPORTER_TOOLS;
   }
 
   return [...baseTools, getMyHistoryTool];
@@ -119,12 +131,23 @@ async function buildAgentPrompt(definition: AgentDefinition, settings: Settings)
     .map((s) => {
       try {
         return loadSkillContent(s);
-      } catch {
+      } catch (err) {
+        console.error(
+          `[buildChannelAgent] Failed to load skill "${s}" for agent "${definition.name}":`,
+          err instanceof Error ? err.message : err,
+        );
         return null;
       }
     })
     .filter(Boolean)
     .join("\n\n---\n\n");
+
+  if (skillContent.length === 0 && definition.skills.length > 0 && !definition.system_prompt) {
+    throw new Error(
+      `Agent "${definition.name}" has ${definition.skills.length} skill(s) configured but none could be loaded. ` +
+        `Check that SKILL.md files exist in the skills/ directory.`,
+    );
+  }
 
   const base =
     definition.system_prompt ||
@@ -165,6 +188,11 @@ export function resolveThreadId(definition: AgentDefinition): string {
       return `task-${definition.name}-${today}`;
     case "persistent":
       return `task-${definition.name}`;
+    default:
+      throw new Error(
+        `Unknown context_mode "${definition.context_mode}" for agent "${definition.name}". ` +
+          `Expected "isolated", "daily", or "persistent".`,
+      );
   }
 }
 

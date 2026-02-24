@@ -10,20 +10,21 @@ import {
   startTaskRun,
   completeTaskRun,
   failTaskRun,
+  refreshSettings,
 } from "@edda/db";
 import { buildChannelAgent, resolveThreadId } from "../build-channel-agent.js";
 import { runWithConcurrencyLimit } from "../../cron/semaphore.js";
+import { sanitizeError } from "../../utils/sanitize-error.js";
 
-const MAX_CONCURRENT_AGENTS = 3;
+const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Strip connection strings, file paths, and stack traces from error messages. */
-function sanitizeError(err: unknown): string {
-  const raw = err instanceof Error ? `${err.constructor.name}: ${err.message}` : String(err);
-  return raw
-    .replace(/(?:postgres|mysql|mongodb|redis):\/\/[^\s]+/gi, "[redacted-url]")
-    .replace(/\/(?:Users|home|var|tmp|opt|etc)\/[^\s:]+/g, "[redacted-path]")
-    .replace(/\bat\s+\S+\s+\(.*\)/g, "")
-    .slice(0, 200);
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
 }
 
 export const runAgentSchema = z.object({
@@ -46,16 +47,22 @@ export const runAgentTool = tool(
     });
 
     // Fire-and-forget with task_run tracking and concurrency control
+    const settings = await refreshSettings();
     setImmediate(() => {
-      runWithConcurrencyLimit(MAX_CONCURRENT_AGENTS, async () => {
+      runWithConcurrencyLimit(settings.task_max_concurrency, async () => {
         const startTime = Date.now();
         try {
           await startTaskRun(run.id);
           const agent = await buildChannelAgent(definition);
           const message = input ?? `Execute the ${definition.name} task now.`;
-          const result = await agent.invoke(
-            { messages: [{ role: "user", content: message }] },
-            { configurable: { thread_id: threadId, agent_name: definition.name } },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result: any = await withTimeout(
+            agent.invoke(
+              { messages: [{ role: "user", content: message }] },
+              { configurable: { thread_id: threadId, agent_name: definition.name } },
+            ),
+            AGENT_TIMEOUT_MS,
+            definition.name,
           );
           const lastMsg = result?.messages?.[result.messages.length - 1]?.content;
           await completeTaskRun(run.id, {
@@ -63,10 +70,17 @@ export const runAgentTool = tool(
             duration_ms: Date.now() - startTime,
           });
         } catch (err) {
-          if (err instanceof Error) console.error(`[run_agent] ${definition.name}:`, err);
-          await failTaskRun(run.id, sanitizeError(err)).catch(() => {});
+          console.error(`[run_agent] ${definition.name}:`, err);
+          await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
+            console.error(`[run_agent] Failed to record failure for ${run.id}:`, dbErr);
+          });
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error(`[run_agent] Concurrency/setup failure for ${definition.name}:`, err);
+        failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
+          console.error(`[run_agent] Failed to record failure for ${run.id}:`, dbErr);
+        });
+      });
     });
 
     return JSON.stringify({

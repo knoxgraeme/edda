@@ -45,8 +45,8 @@ is equally important. Perform the following maintenance steps:
 10. **Consolidate entity descriptions**: For entities with 10+ linked items,
     regenerate a clean description from recent linked item content.
 
-11. **Refresh AGENTS.md**: After maintenance, call generateAgentsMd() to
-    reflect the consolidated state.
+11. **Refresh AGENTS.md**: After maintenance, the cron runner will
+    automatically refresh the agent context via hash-based change detection.
 
 ## Output
 Create item: type='insight', source='cron'. Include a "memory maintenance"

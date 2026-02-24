@@ -1,8 +1,8 @@
 /**
  * Shared PostgresStore singleton — persistent cross-thread storage
  *
- * Used by the agent (via StoreBackend), seed-skills, cron jobs,
- * and memory triage. All consumers share the same Postgres-backed
+ * Used by the agent (via StoreBackend), seed-skills, and cron jobs.
+ * All consumers share the same Postgres-backed
  * store tables (managed by PostgresStore.setup()).
  */
 

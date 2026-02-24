@@ -13,13 +13,20 @@ import cron from "node-cron";
 import {
   getItemsByType,
   getScheduledAgents,
+  getAgentDefinitionByName,
+  getUnprocessedThreads,
+  setThreadMetadata,
   createTaskRun,
   startTaskRun,
   completeTaskRun,
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
+import { sanitizeError } from "../utils/sanitize-error.js";
 import type { AgentDefinition, Item } from "@edda/db";
+import { getSharedCheckpointer } from "../checkpointer/index.js";
+import { buildTranscript } from "../agent/message-helpers.js";
+import type { MessageLike } from "../agent/message-helpers.js";
 
 import {
   buildChannelAgent,
@@ -33,16 +40,6 @@ import type { CronRunner } from "./index.js";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Strip connection strings, file paths, and stack traces from error messages. */
-function sanitizeError(err: unknown): string {
-  const raw = err instanceof Error ? `${err.constructor.name}: ${err.message}` : String(err);
-  return raw
-    .replace(/(?:postgres|mysql|mongodb|redis):\/\/[^\s]+/gi, "[redacted-url]")
-    .replace(/\/(?:Users|home|var|tmp|opt|etc)\/[^\s:]+/g, "[redacted-path]")
-    .replace(/\bat\s+\S+\s+\(.*\)/g, "")
-    .slice(0, 200);
-}
 
 /**
  * Extract the last assistant message content from an agent invocation result.
@@ -59,6 +56,21 @@ function extractLastAssistantMessage(result: {
     }
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Timeout helpers
+// ---------------------------------------------------------------------------
+
+const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -196,25 +208,38 @@ export class StandaloneCronRunner implements CronRunner {
   // ── Agent execution ─────────────────────────────────────────────
 
   private async executeAgent(definition: AgentDefinition): Promise<void> {
+    // Re-fetch to pick up non-schedule changes (system_prompt, skills, etc.)
+    const freshDef = await getAgentDefinitionByName(definition.name);
+    if (!freshDef || !freshDef.enabled) {
+      console.log(`  [cron] Skipping ${definition.name} — not found or disabled`);
+      return;
+    }
+
     const settings = await refreshSettings();
     const modelName =
-      definition.model_settings_key && MODEL_SETTINGS_KEYS.has(definition.model_settings_key)
+      freshDef.model_settings_key && MODEL_SETTINGS_KEYS.has(freshDef.model_settings_key)
         ? ((settings as unknown as Record<string, unknown>)[
-            definition.model_settings_key
+            freshDef.model_settings_key
           ] as string)
         : undefined;
 
     // context_refresh uses its own subagent pattern, but still gets a task_run
-    if (definition.name === "context_refresh") {
-      await this.executeContextRefresh(definition, modelName);
+    if (freshDef.name === "context_refresh") {
+      await this.executeContextRefresh(freshDef, modelName);
       return;
     }
 
-    const threadId = resolveThreadId(definition);
+    // memory_extraction iterates unprocessed threads and invokes post_process for each
+    if (freshDef.name === "memory_extraction") {
+      await this.executeMemoryExtraction(freshDef);
+      return;
+    }
+
+    const threadId = resolveThreadId(freshDef);
 
     const run = await createTaskRun({
-      agent_definition_id: definition.id,
-      agent_name: definition.name,
+      agent_definition_id: freshDef.id,
+      agent_name: freshDef.name,
       trigger: "cron",
       thread_id: threadId,
       model: modelName,
@@ -224,12 +249,17 @@ export class StandaloneCronRunner implements CronRunner {
       const startTime = Date.now();
       try {
         await startTaskRun(run.id);
-        console.log(`  [cron] Executing: ${definition.name}`);
+        console.log(`  [cron] Executing: ${freshDef.name}`);
 
-        const agent = await buildChannelAgent(definition);
-        const result = await agent.invoke(
-          { messages: [{ role: "user", content: `Execute the ${definition.name} task now.` }] },
-          { configurable: { thread_id: threadId, agent_name: definition.name } },
+        const agent = await buildChannelAgent(freshDef);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result: any = await withTimeout(
+          agent.invoke(
+            { messages: [{ role: "user", content: `Execute the ${freshDef.name} task now.` }] },
+            { configurable: { thread_id: threadId, agent_name: freshDef.name } },
+          ),
+          AGENT_TIMEOUT_MS,
+          freshDef.name,
         );
 
         const duration = Date.now() - startTime;
@@ -237,12 +267,20 @@ export class StandaloneCronRunner implements CronRunner {
         await completeTaskRun(run.id, { output_summary: lastMessage, duration_ms: duration });
 
         // Refresh agent's per-agent AGENTS.md context (fast hash check, no LLM)
-        await maybeRefreshAgentContext(definition);
+        try {
+          await maybeRefreshAgentContext(freshDef);
+        } catch (ctxErr) {
+          console.error(`  [cron] ${freshDef.name} context refresh failed (agent run was successful):`, ctxErr);
+        }
 
-        console.log(`  [cron] ${definition.name} completed in ${duration}ms`);
+        console.log(`  [cron] ${freshDef.name} completed in ${duration}ms`);
       } catch (err) {
-        if (err instanceof Error) console.error(`  [cron] ${definition.name} error:`, err);
-        await failTaskRun(run.id, sanitizeError(err));
+        console.error(`  [cron] ${freshDef.name} error:`, err);
+        try {
+          await failTaskRun(run.id, sanitizeError(err));
+        } catch (dbErr) {
+          console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
+        }
       }
     });
   }
@@ -269,9 +307,123 @@ export class StandaloneCronRunner implements CronRunner {
       await completeTaskRun(run.id, { duration_ms: Date.now() - startTime });
       console.log(`  [cron] context_refresh completed in ${Date.now() - startTime}ms`);
     } catch (err) {
-      if (err instanceof Error) console.error(`  [cron] context_refresh error:`, err);
-      await failTaskRun(run.id, sanitizeError(err));
+      console.error(`  [cron] context_refresh error:`, err);
+      try {
+        await failTaskRun(run.id, sanitizeError(err));
+      } catch (dbErr) {
+        console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
+      }
     }
+  }
+
+  // ── Memory extraction (unprocessed thread catchup) ──────────────
+
+  private async executeMemoryExtraction(definition: AgentDefinition): Promise<void> {
+    const postProcessDef = await getAgentDefinitionByName("post_process");
+    if (!postProcessDef || !postProcessDef.enabled) {
+      console.warn("  [cron] post_process agent definition not found or disabled, skipping");
+      return;
+    }
+
+    const threads = await getUnprocessedThreads(50);
+    if (threads.length === 0) {
+      console.log("  [cron] memory_extraction: no unprocessed threads");
+      return;
+    }
+
+    const checkpointer = getSharedCheckpointer();
+    if (!checkpointer) {
+      console.warn("  [cron] Checkpointer not ready, skipping memory_extraction");
+      return;
+    }
+
+    console.log(`  [cron] memory_extraction: processing ${threads.length} thread(s)`);
+    const settings = await refreshSettings();
+    let processed = 0;
+
+    // Build the agent once for all threads
+    const agent = await buildChannelAgent(postProcessDef);
+
+    await Promise.all(
+      threads.map(async (thread) => {
+        try {
+          // Get messages from checkpointer
+          const tuple = await checkpointer.getTuple({
+            configurable: { thread_id: thread.thread_id },
+          });
+          const rawMessages = (tuple?.checkpoint?.channel_values?.messages ?? []) as MessageLike[];
+          if (rawMessages.length < 2) {
+            await setThreadMetadata(thread.thread_id, {
+              processed_by_hook: true,
+              processed_at: new Date().toISOString(),
+            });
+            return;
+          }
+
+          const transcript = buildTranscript(rawMessages);
+          if (transcript.trim().length < 50) {
+            await setThreadMetadata(thread.thread_id, {
+              processed_by_hook: true,
+              processed_at: new Date().toISOString(),
+            });
+            return;
+          }
+
+          const agentThreadId = resolveThreadId(postProcessDef);
+          const run = await createTaskRun({
+            agent_definition_id: definition.id,
+            agent_name: definition.name,
+            trigger: "cron",
+            thread_id: agentThreadId,
+            input_summary: `Thread ${thread.thread_id}: ${transcript.length} chars`,
+          });
+
+          await runWithConcurrencyLimit(settings.task_max_concurrency, async () => {
+            const startTime = Date.now();
+            try {
+              await startTaskRun(run.id);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const result: any = await withTimeout(
+                agent.invoke(
+                  {
+                    messages: [
+                      {
+                        role: "user",
+                        content:
+                          `Extract implicit knowledge and entities from this conversation transcript.\n\n` +
+                          transcript,
+                      },
+                    ],
+                  },
+                  { configurable: { thread_id: agentThreadId, agent_name: postProcessDef.name } },
+                ),
+                AGENT_TIMEOUT_MS,
+                `memory_extraction:${thread.thread_id}`,
+              );
+              const duration = Date.now() - startTime;
+              const lastMessage = extractLastAssistantMessage(result);
+              await completeTaskRun(run.id, { output_summary: lastMessage, duration_ms: duration });
+              await setThreadMetadata(thread.thread_id, {
+                processed_by_hook: true,
+                processed_at: new Date().toISOString(),
+              });
+              processed++;
+            } catch (err) {
+              console.error(`  [cron] memory_extraction thread ${thread.thread_id} error:`, err);
+              try {
+                await failTaskRun(run.id, sanitizeError(err));
+              } catch (dbErr) {
+                console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
+              }
+            }
+          });
+        } catch (err) {
+          console.error(`  [cron] memory_extraction thread ${thread.thread_id} error:`, err);
+        }
+      }),
+    );
+
+    console.log(`  [cron] memory_extraction: processed ${processed}/${threads.length} thread(s)`);
   }
 
   // ── User cron scheduling ────────────────────────────────────────
@@ -411,8 +563,12 @@ export class StandaloneCronRunner implements CronRunner {
 
       console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
     } catch (err) {
-      if (err instanceof Error) console.error(`  [cron] User cron ${taskId} error:`, err);
-      await failTaskRun(run.id, sanitizeError(err));
+      console.error(`  [cron] User cron ${taskId} error:`, err);
+      try {
+        await failTaskRun(run.id, sanitizeError(err));
+      } catch (dbErr) {
+        console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
+      }
     }
   }
 }
