@@ -5,6 +5,8 @@ description: >
   compares the current AGENTS.md against fresh data from the database, makes
   surgical edits to reflect changes, and saves a new version. Prevents prompt
   bloat through curation and token budgeting.
+allowed-tools:
+  - save_agents_md
 ---
 
 # context_refresh

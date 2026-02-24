@@ -1,15 +1,15 @@
 /**
- * TaskChannelBackend — read-only backend mounted at /channels/ on the orchestrator.
+ * AgentOutputBackend — read-only backend mounted at /output/ on the orchestrator.
  *
- * Channel agents write to Store via their /output/ StoreBackend mount (Phase 2b),
+ * Background agents write to Store via their /output/ StoreBackend mount,
  * which uses namespace [agentName, "filesystem", ...]. This backend reads from
- * those same namespaces, stitching all agent outputs into a unified /channels/
+ * those same namespaces, stitching all agent outputs into a unified /output/
  * directory tree.
  *
  * Orchestrator sees:                    Store namespace:
- * /channels/                            (lists agents)
- * /channels/daily_digest/               [daily_digest, filesystem] -> search keys
- * /channels/daily_digest/2026-02-23     [daily_digest, filesystem] -> get "2026-02-23"
+ * /output/                              (lists agents)
+ * /output/daily_digest/                 [daily_digest, filesystem] -> search keys
+ * /output/daily_digest/2026-02-23       [daily_digest, filesystem] -> get "2026-02-23"
  */
 
 import type {
@@ -25,12 +25,12 @@ import { getAgents } from "@edda/db";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StoreRef = any;
 
-/** Module-level cache shared across all TaskChannelBackend instances. */
+/** Module-level cache shared across all AgentOutputBackend instances. */
 let _agentCache: { names: string[]; ts: number } | null = null;
 
 const STORE_SEARCH_LIMIT = 50;
 
-export class TaskChannelBackend implements BackendProtocol {
+export class AgentOutputBackend implements BackendProtocol {
   private store: StoreRef;
 
   constructor(rt: { state: unknown; store?: StoreRef }) {
@@ -52,12 +52,12 @@ export class TaskChannelBackend implements BackendProtocol {
 
   async read(path: string) {
     const parts = path.replace(/^\//, "").split("/");
-    if (parts.length < 2) return "Use: read_file /channels/<agent>/<key>";
+    if (parts.length < 2) return "Use: read_file /output/<agent>/<key>";
 
     const [agentName, ...keyParts] = parts;
     const key = keyParts.join("/");
     const result = await this.store.get([agentName, "filesystem"], key);
-    if (!result) return `No output found at /channels/${agentName}/${key}`;
+    if (!result) return `No output found at /output/${agentName}/${key}`;
     return result.value?.content ?? JSON.stringify(result.value);
   }
 
@@ -72,11 +72,11 @@ export class TaskChannelBackend implements BackendProtocol {
   }
 
   async write(): Promise<WriteResult> {
-    return { error: "Channels are read-only from the orchestrator." };
+    return { error: "Agent outputs are read-only from the orchestrator." };
   }
 
   async edit(): Promise<EditResult> {
-    return { error: "Channels are read-only from the orchestrator." };
+    return { error: "Agent outputs are read-only from the orchestrator." };
   }
 
   async grepRaw(query: string): Promise<GrepMatch[] | string> {
@@ -92,7 +92,11 @@ export class TaskChannelBackend implements BackendProtocol {
       for (const item of items) {
         const content: string = item.value?.content ?? "";
         if (content.toLowerCase().includes(query.toLowerCase())) {
-          results.push({ path: `/channels/${name}/${item.key}`, line: 1, text: content.slice(0, 200) });
+          results.push({
+            path: `/output/${name}/${item.key}`,
+            line: 1,
+            text: content.slice(0, 200),
+          });
         }
       }
     }
@@ -110,7 +114,7 @@ export class TaskChannelBackend implements BackendProtocol {
     const results: FileInfo[] = [];
     for (const { name, items } of allItems) {
       for (const item of items) {
-        const filePath = `/channels/${name}/${item.key}`;
+        const filePath = `/output/${name}/${item.key}`;
         if (matchGlob(pattern, filePath)) {
           results.push({ path: filePath });
         }

@@ -12,7 +12,7 @@ import {
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
-import { buildChannelAgent, resolveThreadId } from "../build-channel-agent.js";
+import { buildAgent, resolveThreadId } from "../build-agent.js";
 import { runWithConcurrencyLimit } from "../../cron/semaphore.js";
 import { sanitizeError } from "../../utils/sanitize-error.js";
 
@@ -53,7 +53,7 @@ export const runAgentTool = tool(
         const startTime = Date.now();
         try {
           await startTaskRun(run.id);
-          const agent = await buildChannelAgent(definition);
+          const agent = await buildAgent(definition);
           const message = input ?? `Execute the ${definition.name} task now.`;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result: any = await withTimeout(

@@ -4,6 +4,18 @@ description: >
   Handles user requests to create automated recurring tasks. Use when the user
   says "every Monday", "at 6pm each day", "weekly on Friday", or any request
   to schedule a repeating automated action.
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - create_item
+  - update_item
 ---
 
 # user_crons

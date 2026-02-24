@@ -4,6 +4,17 @@ description: >
   Retrieval and synthesis skill. Handles dashboard requests, semantic search,
   entity lookups, temporal queries, and list views. Use when the user is asking
   about past content, their schedule, or wants to see their daily overview.
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - update_item
 ---
 
 # recall

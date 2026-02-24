@@ -5,6 +5,26 @@ description: >
   Identifies themes, surfaces most active entities, detects dropped threads,
   consolidates duplicate memories, resolves contradictions, archives stale
   knowledge, and creates an insight item.
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - create_item
+  - batch_create_items
+  - update_item
+  - delete_item
+  - upsert_entity
+  - link_item_entity
+  - get_unprocessed_threads
+  - get_thread_messages
+  - mark_thread_processed
+  - list_threads
 ---
 
 # weekly_reflect
