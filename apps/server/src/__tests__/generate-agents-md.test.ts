@@ -107,7 +107,7 @@ describe("maybeRefreshAgentsMd", () => {
 
     // saveAgentsMdVersion should have been called since hashes won't match
     expect(mockSaveAgentsMdVersion).toHaveBeenCalledTimes(1);
-    const savedHash = mockSaveAgentsMdVersion.mock.calls[0][2];
+    const savedHash = mockSaveAgentsMdVersion.mock.calls[0][0].inputHash;
 
     // Reset and set the latest to have the matching hash
     vi.clearAllMocks();
@@ -139,7 +139,7 @@ describe("maybeRefreshAgentsMd", () => {
 
     expect(mockSaveAgentsMdVersion).toHaveBeenCalledTimes(1);
     // Should preserve existing content
-    expect(mockSaveAgentsMdVersion.mock.calls[0][0]).toBe("old content");
+    expect(mockSaveAgentsMdVersion.mock.calls[0][0].content).toBe("old content");
   });
 
   it("saves when no previous version exists", async () => {
@@ -149,7 +149,7 @@ describe("maybeRefreshAgentsMd", () => {
 
     expect(mockSaveAgentsMdVersion).toHaveBeenCalledTimes(1);
     // Content should be empty string when no previous version
-    expect(mockSaveAgentsMdVersion.mock.calls[0][0]).toBe("");
+    expect(mockSaveAgentsMdVersion.mock.calls[0][0].content).toBe("");
   });
 
   it("uses in-memory cache to skip DB queries on rapid calls", async () => {
