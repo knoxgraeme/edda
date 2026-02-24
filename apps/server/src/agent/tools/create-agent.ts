@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createAgentDefinition } from "@edda/db";
+import { createAgentDefinition, getAgentDefinitions } from "@edda/db";
 
 export const createAgentSchema = z.object({
   name: z
@@ -13,11 +13,13 @@ export const createAgentSchema = z.object({
     .max(50)
     .regex(/^[a-z][a-z0-9_]*$/, "Agent name must be snake_case (lowercase letters, digits, underscores; must start with a letter)")
     .describe("Unique agent name (snake_case)"),
-  description: z.string().describe("What this agent does"),
-  system_prompt: z.string().optional().describe("Custom system prompt (overrides skills)"),
+  description: z.string().max(500).describe("What this agent does"),
+  system_prompt: z.string().max(10000).optional().describe("Custom system prompt (overrides skills)"),
   skills: z
     .array(z.string())
+    .max(10)
     .optional()
+    .default([])
     .describe("Skill names to use (e.g. ['daily_digest'])"),
   schedule: z
     .string()
@@ -50,10 +52,24 @@ export const createAgentTool = tool(
     scopes,
     scope_mode,
   }) => {
+    const existing = await getAgentDefinitions();
+    const userAgentCount = existing.filter((a) => !a.built_in).length;
+    if (userAgentCount >= 20) {
+      throw new Error("Maximum number of user-created agents (20) reached. Delete unused agents first.");
+    }
+
     if (schedule) {
       const cron = await import("node-cron");
       if (!cron.validate(schedule)) {
         throw new Error(`Invalid cron expression: ${schedule}`);
+      }
+      // Reject overly frequent schedules (more than once per 5 minutes)
+      const parts = schedule.split(/\s+/);
+      if (parts[0] === "*" || parts[0]?.includes("/")) {
+        const interval = parts[0] === "*" ? 1 : parseInt(parts[0].split("/")[1] ?? "1", 10);
+        if (interval < 5) {
+          throw new Error("Agent schedule cannot run more frequently than every 5 minutes.");
+        }
       }
     }
 

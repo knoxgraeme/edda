@@ -23,7 +23,8 @@ Topic questions, "what did I say about...", "that thing about...", "anything abo
 ## Entity Triggers
 "everything about X", "when did I mention X", "what's happening with project Y"
 → Resolve entity by searching entities table.
-→ Call get_entity_items to get all linked items.
+→ Call get_entity_profile for a rich summary (description, linked items, activity).
+→ If deeper detail is needed, call get_entity_items for all linked items.
 → Summarize the arc — first mention, key events, recent activity.
 
 ## Temporal Triggers

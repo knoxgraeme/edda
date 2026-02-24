@@ -252,16 +252,23 @@ export async function runContextRefreshAgent(): Promise<void> {
 
     // 6. Extract tool call, validate, and save
     const toolCalls = (result as AIMessageChunk).tool_calls;
-    if (toolCalls && toolCalls.length > 0) {
-      const saveCall = toolCalls.find((tc) => tc.name === "save_agents_md");
-      if (saveCall) {
-        const parsed = saveAgentsMdSchema.safeParse(saveCall.args);
-        if (parsed.success) {
-          await saveAgentsMdVersion({ content: parsed.data.content, template, inputHash: hash });
-        } else {
-          console.error("  [context_refresh] Invalid tool call args:", parsed.error.message);
-        }
+    const saveCall = toolCalls?.find((tc) => tc.name === "save_agents_md");
+
+    if (!saveCall) {
+      const callNames = toolCalls?.map((tc) => tc.name) ?? [];
+      console.warn(
+        `  [context_refresh] Subagent did not call save_agents_md. Tool calls: [${callNames.join(", ")}]`,
+      );
+      // Still store the template+hash so the next run detects changes correctly
+      await saveAgentsMdVersion({ content: currentContent, template, inputHash: hash });
+    } else {
+      const parsed = saveAgentsMdSchema.safeParse(saveCall.args);
+      if (!parsed.success) {
+        throw new Error(
+          `context_refresh subagent returned invalid save_agents_md args: ${parsed.error.message}`,
+        );
       }
+      await saveAgentsMdVersion({ content: parsed.data.content, template, inputHash: hash });
     }
 
     // 7. Prune old versions

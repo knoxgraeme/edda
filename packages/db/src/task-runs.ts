@@ -36,10 +36,14 @@ export async function createTaskRun(input: {
 
 export async function startTaskRun(id: string): Promise<void> {
   const pool = getPool();
-  await pool.query(
-    `UPDATE task_runs SET status = 'running', started_at = now() WHERE id = $1`,
+  const { rowCount } = await pool.query(
+    `UPDATE task_runs SET status = 'running', started_at = now()
+     WHERE id = $1 AND status = 'pending'`,
     [id],
   );
+  if (rowCount === 0) {
+    console.warn(`[task-runs] startTaskRun(${id}): no pending run found`);
+  }
 }
 
 export async function completeTaskRun(
@@ -51,23 +55,30 @@ export async function completeTaskRun(
   },
 ): Promise<void> {
   const pool = getPool();
-  await pool.query(
+  const { rowCount } = await pool.query(
     `UPDATE task_runs
      SET status = 'completed', completed_at = now(),
          output_summary = COALESCE($2, output_summary),
          tokens_used = COALESCE($3, tokens_used),
          duration_ms = COALESCE($4, duration_ms)
-     WHERE id = $1`,
+     WHERE id = $1 AND status = 'running'`,
     [id, output.output_summary ?? null, output.tokens_used ?? null, output.duration_ms ?? null],
   );
+  if (rowCount === 0) {
+    console.warn(`[task-runs] completeTaskRun(${id}): no running run found`);
+  }
 }
 
 export async function failTaskRun(id: string, error: string): Promise<void> {
   const pool = getPool();
-  await pool.query(
-    `UPDATE task_runs SET status = 'failed', completed_at = now(), error = $2 WHERE id = $1`,
+  const { rowCount } = await pool.query(
+    `UPDATE task_runs SET status = 'failed', completed_at = now(), error = $2
+     WHERE id = $1 AND status IN ('pending', 'running')`,
     [id, error],
   );
+  if (rowCount === 0) {
+    console.warn(`[task-runs] failTaskRun(${id}): no pending or running run found`);
+  }
 }
 
 export async function getRecentTaskRuns(
@@ -97,6 +108,12 @@ export async function getRecentTaskRuns(
     params,
   );
   return rows as TaskRun[];
+}
+
+export async function getTaskRunById(id: string): Promise<TaskRun | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT * FROM task_runs WHERE id = $1`, [id]);
+  return (rows[0] as TaskRun) ?? null;
 }
 
 export async function getRunningTaskCount(): Promise<number> {
