@@ -2,9 +2,8 @@
  * Standalone cron runner — uses node-cron for scheduling
  *
  * Reads agent_definitions to register scheduled agents. Each execution creates
- * a task_run record for observability. The old SYSTEM_CRONS array and
- * createAgentLog calls are replaced by data-driven scheduling via
- * getScheduledAgents() and task_runs lifecycle tracking.
+ * a task_run record for observability. Scheduling is data-driven via
+ * getScheduledAgents() with task_runs lifecycle tracking.
  *
  * Also registers user crons (scheduled_task items) via node-cron.
  */
@@ -334,7 +333,6 @@ export class StandaloneCronRunner implements CronRunner {
 
   private async executeUserCron(task: Item): Promise<void> {
     const settings = await refreshSettings();
-    const startTime = Date.now();
     const taskId = task.id;
     const metadata = task.metadata as {
       cron?: string;
@@ -342,9 +340,21 @@ export class StandaloneCronRunner implements CronRunner {
       cron_human?: string;
     };
 
-    console.log(`  [cron] Executing user cron: ${taskId} — ${metadata.action ?? task.content}`);
+    const threadId = `user-cron-${taskId}-${new Date().toISOString().split("T")[0]}`;
 
+    const run = await createTaskRun({
+      agent_name: "user_cron",
+      trigger: "cron",
+      thread_id: threadId,
+      input_summary: `Scheduled task: ${task.content}`,
+      model: settings.user_cron_model,
+    });
+
+    const startTime = Date.now();
     try {
+      await startTaskRun(run.id);
+      console.log(`  [cron] Executing user cron: ${taskId} — ${metadata.action ?? task.content}`);
+
       // Build a synthetic AgentDefinition for the user cron.
       // skills: [] → gets full eddaTools (same as old createEddaAgent)
       const agent = await buildChannelAgent({
@@ -374,7 +384,6 @@ export class StandaloneCronRunner implements CronRunner {
         updated_at: "",
       });
 
-      const threadId = `user-cron-${taskId}-${new Date().toISOString().split("T")[0]}`;
       const result = await agent.invoke(
         {
           messages: [
@@ -395,33 +404,15 @@ export class StandaloneCronRunner implements CronRunner {
       const durationMs = Date.now() - startTime;
       const outputSummary = extractLastAssistantMessage(result) ?? `User cron ${taskId} completed`;
 
-      const userCronRun = await createTaskRun({
-        agent_name: "user_cron",
-        trigger: "cron",
-        input_summary: `Scheduled task: ${task.content}`,
-        model: settings.user_cron_model,
-      });
-      await completeTaskRun(userCronRun.id, {
+      await completeTaskRun(run.id, {
         output_summary: outputSummary,
         duration_ms: durationMs,
       });
 
       console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
     } catch (err) {
-      const _durationMs = Date.now() - startTime;
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`  [cron] User cron ${taskId} failed: ${errorMsg}`);
-
-      const errRun = await createTaskRun({
-        agent_name: "user_cron",
-        trigger: "cron",
-        input_summary: `Scheduled task: ${task.content}`,
-      }).catch(() => null);
-      if (errRun) {
-        await failTaskRun(errRun.id, errorMsg.slice(0, 500)).catch((logErr) => {
-          console.error(`  [cron] Failed to log error for user cron ${taskId}:`, logErr);
-        });
-      }
+      if (err instanceof Error) console.error(`  [cron] User cron ${taskId} error:`, err);
+      await failTaskRun(run.id, sanitizeError(err));
     }
   }
 }

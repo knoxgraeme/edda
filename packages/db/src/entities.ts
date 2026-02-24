@@ -220,7 +220,7 @@ export async function listEntities(
 export interface EntityConnection {
   id: string;
   name: string;
-  type: string;
+  type: EntityType;
   shared_items: number;
   top_relationship: string;
 }
@@ -232,7 +232,7 @@ export async function getEntityConnections(
   const pool = getPool();
   const { rows } = await pool.query(
     `SELECT e2.id, e2.name, e2.type,
-            COUNT(DISTINCT ie1.item_id) AS shared_items,
+            COUNT(DISTINCT ie1.item_id)::int AS shared_items,
             MODE() WITHIN GROUP (ORDER BY ie2.relationship) AS top_relationship
      FROM item_entities ie1
      JOIN item_entities ie2

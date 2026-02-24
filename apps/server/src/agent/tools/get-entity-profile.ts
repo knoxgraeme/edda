@@ -26,10 +26,12 @@ export const getEntityProfileSchema = z.object({
 export const getEntityProfileTool = tool(
   async ({ name, max_items, include_connections }) => {
     const entity = await resolveEntity(name);
-    if (!entity) return JSON.stringify({ found: false, query: name });
+    if (!entity) return JSON.stringify({ found: false, query: name, suggestion: "Try search_items for a broader semantic search, or check spelling/aliases." });
 
-    const items = await getEntityItems(entity.id, { limit: max_items });
-    const connections = include_connections ? await getEntityConnections(entity.id) : [];
+    const [items, connections] = await Promise.all([
+      getEntityItems(entity.id, { limit: max_items }),
+      include_connections ? getEntityConnections(entity.id) : Promise.resolve([]),
+    ]);
 
     // Group items by type for readability
     const itemsByType: Record<string, Array<{ content: string; day: string | null }>> = {};

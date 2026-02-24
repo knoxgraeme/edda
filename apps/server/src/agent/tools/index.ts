@@ -57,6 +57,7 @@ import { deleteAgentTool } from "./delete-agent.js";
 
 // Entity profile tool
 import { getEntityProfileTool } from "./get-entity-profile.js";
+import { listEntitiesTool } from "./list-entities.js";
 
 export const eddaTools = [
   // Item tools (1A)
@@ -76,6 +77,7 @@ export const eddaTools = [
   linkItemEntityTool,
   getEntityItemsTool,
   getEntityProfileTool,
+  listEntitiesTool,
 
   // Type / Settings / MCP tools (1C)
   createItemTypeTool,
