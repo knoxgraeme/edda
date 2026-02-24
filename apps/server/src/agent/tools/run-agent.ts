@@ -12,6 +12,9 @@ import {
   failTaskRun,
 } from "@edda/db";
 import { buildChannelAgent, resolveThreadId } from "../build-channel-agent.js";
+import { runWithConcurrencyLimit } from "../../cron/semaphore.js";
+
+const MAX_CONCURRENT_AGENTS = 3;
 
 export const runAgentSchema = z.object({
   agent_name: z.string().describe("Name of the agent to run"),
@@ -32,25 +35,28 @@ export const runAgentTool = tool(
       thread_id: threadId,
     });
 
-    // Fire-and-forget with task_run tracking
-    setImmediate(async () => {
-      const startTime = Date.now();
-      try {
-        await startTaskRun(run.id);
-        const agent = await buildChannelAgent(definition);
-        const message = input ?? `Execute the ${definition.name} task now.`;
-        const result = await agent.invoke(
-          { messages: [{ role: "user", content: message }] },
-          { configurable: { thread_id: threadId, agent_name: definition.name } },
-        );
-        const lastMsg = result?.messages?.[result.messages.length - 1]?.content;
-        await completeTaskRun(run.id, {
-          output_summary: typeof lastMsg === "string" ? lastMsg.slice(0, 500) : undefined,
-          duration_ms: Date.now() - startTime,
-        });
-      } catch (err) {
-        await failTaskRun(run.id, err instanceof Error ? err.message : String(err));
-      }
+    // Fire-and-forget with task_run tracking and concurrency control
+    setImmediate(() => {
+      runWithConcurrencyLimit(MAX_CONCURRENT_AGENTS, async () => {
+        const startTime = Date.now();
+        try {
+          await startTaskRun(run.id);
+          const agent = await buildChannelAgent(definition);
+          const message = input ?? `Execute the ${definition.name} task now.`;
+          const result = await agent.invoke(
+            { messages: [{ role: "user", content: message }] },
+            { configurable: { thread_id: threadId, agent_name: definition.name } },
+          );
+          const lastMsg = result?.messages?.[result.messages.length - 1]?.content;
+          await completeTaskRun(run.id, {
+            output_summary: typeof lastMsg === "string" ? lastMsg.slice(0, 500) : undefined,
+            duration_ms: Date.now() - startTime,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await failTaskRun(run.id, msg).catch(() => {});
+        }
+      }).catch(() => {});
     });
 
     return JSON.stringify({

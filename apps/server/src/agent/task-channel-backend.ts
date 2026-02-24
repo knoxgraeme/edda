@@ -12,31 +12,41 @@
  * /channels/daily_digest/2026-02-23     [daily_digest, filesystem] -> get "2026-02-23"
  */
 
-import type { BackendProtocol, EditResult, FileData, FileInfo, WriteResult } from "deepagents";
+import type {
+  BackendProtocol,
+  EditResult,
+  FileData,
+  FileInfo,
+  GrepMatch,
+  WriteResult,
+} from "deepagents";
 import { getAgentDefinitions } from "@edda/db";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StoreRef = any;
 
+/** Module-level cache shared across all TaskChannelBackend instances. */
+let _agentCache: { names: string[]; ts: number } | null = null;
+
+const STORE_SEARCH_LIMIT = 50;
+
 export class TaskChannelBackend implements BackendProtocol {
   private store: StoreRef;
-  private _agentCache: { names: string[]; ts: number } | null = null;
 
   constructor(rt: { state: unknown; store?: StoreRef }) {
     this.store = rt.store;
   }
 
-  async lsInfo(path: string) {
+  async lsInfo(path: string): Promise<FileInfo[]> {
     if (path === "/" || path === "") {
       const names = await this.getAgentNames();
-      return names.map((n) => ({ name: n, type: "directory" as const }));
+      return names.map((n) => ({ path: `${n}/`, is_dir: true }));
     }
 
     const agentName = path.replace(/^\//, "").replace(/\/$/, "").split("/")[0];
-    const items = await this.store.search([agentName, "filesystem"]);
+    const items = await this.store.search([agentName, "filesystem"], { limit: STORE_SEARCH_LIMIT });
     return items.map((item: { key: string }) => ({
-      name: item.key,
-      type: "file" as const,
+      path: `${agentName}/${item.key}`,
     }));
   }
 
@@ -69,29 +79,38 @@ export class TaskChannelBackend implements BackendProtocol {
     return { error: "Channels are read-only from the orchestrator." };
   }
 
-  async grepRaw(query: string) {
+  async grepRaw(query: string): Promise<GrepMatch[] | string> {
     const names = await this.getAgentNames();
-    const results: string[] = [];
-    for (const name of names) {
-      const items = await this.store.search([name, "filesystem"], { limit: 5 });
+    const results: GrepMatch[] = [];
+    const allItems = await Promise.all(
+      names.map(async (name) => ({
+        name,
+        items: await this.store.search([name, "filesystem"], { limit: STORE_SEARCH_LIMIT }),
+      })),
+    );
+    for (const { name, items } of allItems) {
       for (const item of items) {
-        const content = item.value?.content ?? "";
+        const content: string = item.value?.content ?? "";
         if (content.toLowerCase().includes(query.toLowerCase())) {
-          results.push(`/channels/${name}/${item.key}: ${content.slice(0, 200)}`);
+          results.push({ path: `/channels/${name}/${item.key}`, line: 1, text: content.slice(0, 200) });
         }
       }
     }
-    return results.join("\n");
+    return results;
   }
 
   async globInfo(pattern: string, _path?: string): Promise<FileInfo[]> {
     const names = await this.getAgentNames();
+    const allItems = await Promise.all(
+      names.map(async (name) => ({
+        name,
+        items: await this.store.search([name, "filesystem"], { limit: STORE_SEARCH_LIMIT }),
+      })),
+    );
     const results: FileInfo[] = [];
-    for (const name of names) {
-      const items = await this.store.search([name, "filesystem"]);
+    for (const { name, items } of allItems) {
       for (const item of items) {
         const filePath = `/channels/${name}/${item.key}`;
-        // Simple glob matching: support * wildcard
         if (matchGlob(pattern, filePath)) {
           results.push({ path: filePath });
         }
@@ -101,12 +120,12 @@ export class TaskChannelBackend implements BackendProtocol {
   }
 
   private async getAgentNames(): Promise<string[]> {
-    if (this._agentCache && Date.now() - this._agentCache.ts < 60_000) {
-      return this._agentCache.names;
+    if (_agentCache && Date.now() - _agentCache.ts < 60_000) {
+      return _agentCache.names;
     }
     const agents = await getAgentDefinitions({ enabled: true });
     const names = agents.map((a) => a.name);
-    this._agentCache = { names, ts: Date.now() };
+    _agentCache = { names, ts: Date.now() };
     return names;
   }
 }
