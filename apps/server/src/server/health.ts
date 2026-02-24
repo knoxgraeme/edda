@@ -4,11 +4,12 @@
 
 import { randomUUID } from "crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { getPool, listThreads, upsertThread, setThreadTitle } from "@edda/db";
+import { getPool, listThreads, upsertThread, setThreadTitle, searchItems } from "@edda/db";
 import { HumanMessage } from "@langchain/core/messages";
 import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod";
 import { getSharedCheckpointer } from "../checkpointer/index.js";
+import { embed } from "../embed/index.js";
 
 let agent: Runnable | null = null;
 
@@ -27,9 +28,16 @@ function setCors(res: ServerResponse) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
+  let totalSize = 0;
   for await (const chunk of req) {
+    totalSize += (chunk as Buffer).length;
+    if (totalSize > MAX_BODY_BYTES) {
+      throw new Error("Request body too large");
+    }
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks).toString();
@@ -42,8 +50,9 @@ async function handleHealth(res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
   } catch (err) {
+    console.error("[health] Health check failed:", err);
     res.writeHead(503, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "error", error: String(err) }));
+    res.end(JSON.stringify({ status: "error", error: "Health check failed" }));
   }
 }
 
@@ -141,9 +150,9 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
     console.error("[stream] Error:", err);
     if (!res.headersSent) {
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: String(err) }));
+      res.end(JSON.stringify({ error: "Internal server error" }));
     } else {
-      res.write(`data: ${JSON.stringify({ error: String(err) })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
       res.end();
     }
   }
@@ -161,8 +170,9 @@ async function handleThreadList(res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(threads));
   } catch (err) {
+    console.error("[threads] List error:", err);
     res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: String(err) }));
+    res.end(JSON.stringify({ error: "Internal server error" }));
   }
 }
 
@@ -212,8 +222,42 @@ async function handleThreadDetail(threadId: string, res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(messages));
   } catch (err) {
+    console.error("[threads] Detail error:", err);
     res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: String(err) }));
+    res.end(JSON.stringify({ error: "Internal server error" }));
+  }
+}
+
+const SearchSchema = z.object({
+  query: z.string().min(1),
+  type: z.string().optional(),
+  limit: z.number().int().min(1).max(100).default(20),
+});
+
+async function handleSearchItems(req: IncomingMessage, res: ServerResponse) {
+  try {
+    const raw = await readBody(req);
+    const parsed = SearchSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: parsed.error.issues[0].message }));
+      return;
+    }
+
+    const { query, type, limit } = parsed.data;
+    const embedding = await embed(query);
+    const results = await searchItems(embedding, {
+      limit,
+      type: type ?? undefined,
+      confirmedOnly: true,
+    });
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ data: results }));
+  } catch (err) {
+    console.error("[search] Error:", err);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Search failed" }));
   }
 }
 
@@ -238,6 +282,8 @@ export async function startHealthServer(port: number): Promise<void> {
       await handleThreadList(res);
     } else if (threadDetailMatch && req.method === "GET") {
       await handleThreadDetail(threadDetailMatch[1], res);
+    } else if (url === "/api/search/items" && req.method === "POST") {
+      await handleSearchItems(req, res);
     } else {
       res.writeHead(404);
       res.end();
