@@ -21,8 +21,9 @@ import {
   saveAgentsMdVersion,
   pruneAgentsMdVersions,
   createAgentLog,
+  getRecentTaskRuns,
 } from "@edda/db";
-import type { ItemType } from "@edda/db";
+import type { AgentDefinition, ItemType } from "@edda/db";
 import { getStore } from "../store/index.js";
 import { ENTITY_TYPE_TO_DIR, entityToMemoryKey } from "./memory-paths.js";
 import type { AIMessageChunk } from "@langchain/core/messages";
@@ -326,6 +327,57 @@ export async function runContextRefreshAgent(): Promise<void> {
       duration_ms: durationMs,
     }).catch(() => {});
   }
+}
+
+// ── Per-agent context (channel agents) ──────────────────────────
+
+/**
+ * Build a lightweight context template for a channel agent from its recent task runs.
+ * No LLM call — purely deterministic.
+ */
+export async function buildAgentTemplate(definition: AgentDefinition): Promise<string> {
+  const recentRuns = await getRecentTaskRuns({ agent_name: definition.name, limit: 20 });
+
+  const sections: string[] = [
+    `# ${definition.name}`,
+    `## Purpose\n${definition.description}`,
+  ];
+
+  if (recentRuns.length > 0) {
+    const completed = recentRuns.filter((r) => r.status === "completed").length;
+    const failed = recentRuns.filter((r) => r.status === "failed").length;
+    sections.push(
+      `## Recent Runs\n- ${completed} completed, ${failed} failed (last ${recentRuns.length} runs)`,
+    );
+
+    const lastOutputs = recentRuns
+      .filter((r) => r.output_summary)
+      .slice(0, 3)
+      .map((r) => `- ${r.started_at?.split("T")[0]}: ${r.output_summary?.slice(0, 100)}`);
+    if (lastOutputs.length) sections.push(`## Recent Output\n${lastOutputs.join("\n")}`);
+  }
+
+  return sections.join("\n\n");
+}
+
+/**
+ * Hash-check a channel agent's context and save a new version if changed.
+ * Fast path — no LLM call. Called after every cron execution.
+ */
+export async function maybeRefreshAgentContext(definition: AgentDefinition): Promise<boolean> {
+  const template = await buildAgentTemplate(definition);
+  const hash = sha256(template);
+
+  const existing = await getLatestAgentsMd(definition.name);
+  if (existing?.input_hash === hash) return false;
+
+  await saveAgentsMdVersion({
+    content: template,
+    template,
+    inputHash: hash,
+    agentName: definition.name,
+  });
+  return true;
 }
 
 // ── Subagent prompt ─────────────────────────────────────────────
