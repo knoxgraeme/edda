@@ -55,8 +55,8 @@ import { listAgentsTool } from "./list-agents.js";
 import { updateAgentTool } from "./update-agent.js";
 import { deleteAgentTool } from "./delete-agent.js";
 
-// Memory tools (cron-only — not in main agent's eddaTools)
-export { createMemoryFileTool } from "./create-memory-file.js";
+// Entity profile tool
+import { getEntityProfileTool } from "./get-entity-profile.js";
 
 export const eddaTools = [
   // Item tools (1A)
@@ -75,6 +75,7 @@ export const eddaTools = [
   upsertEntityTool,
   linkItemEntityTool,
   getEntityItemsTool,
+  getEntityProfileTool,
 
   // Type / Settings / MCP tools (1C)
   createItemTypeTool,

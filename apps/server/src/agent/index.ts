@@ -66,7 +66,6 @@ export async function createEddaAgent(additionalTools: any[] = []): Promise<any>
     store,
     backend: (rt) =>
       new CompositeBackend(new StateBackend(rt), {
-        "/memories/": new StoreBackend(rt),
         "/skills/": new StoreBackend(rt),
         "/channels/": new TaskChannelBackend(rt),
       }),

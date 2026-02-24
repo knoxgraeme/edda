@@ -25,7 +25,6 @@ import type { Settings, SearchResult, EntitySearchResult } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
 import { getChatModel } from "../../llm/index.js";
 import { maybeRefreshAgentsMd } from "../generate-agents-md.js";
-import { maybeHotpatchMemoryFiles } from "../memory-triage.js";
 import { getMessageText, getMessageRole, buildTranscript } from "../message-helpers.js";
 import type { MessageLike } from "../message-helpers.js";
 
@@ -34,9 +33,11 @@ import type { MessageLike } from "../message-helpers.js";
 const MemorySchema = z.object({
   type: z.enum(["preference", "learned_fact", "pattern"]),
   content: z.string().describe("The memory to store, written as a concise statement"),
-  confidence: z.enum(["high", "medium", "low"]).describe(
-    "How confident: high = explicitly stated or clearly implied, medium = reasonably inferred, low = loosely inferred or ambiguous"
-  ),
+  confidence: z
+    .enum(["high", "medium", "low"])
+    .describe(
+      "How confident: high = explicitly stated or clearly implied, medium = reasonably inferred, low = loosely inferred or ambiguous",
+    ),
 });
 
 const ExtractedEntitySchema = z.object({
@@ -48,25 +49,27 @@ const ExtractedEntitySchema = z.object({
 
 const EntityLinkSchema = z.object({
   entity_name: z.string().describe("The entity name this link is for"),
-  relationship: z.enum(["mentioned", "about", "assigned_to", "decided_by"]).describe("How the entity relates to the conversation items"),
+  relationship: z
+    .enum(["mentioned", "about", "assigned_to", "decided_by"])
+    .describe("How the entity relates to the conversation items"),
 });
 
 const ExtractionResultSchema = z.object({
   memories: z.array(MemorySchema).describe("Implicit knowledge extracted from the conversation"),
-  entities: z
-    .array(ExtractedEntitySchema)
-    .describe("Named entities mentioned in the conversation"),
-  entity_links: z.array(EntityLinkSchema).optional()
-    .describe("Relationship types for extracted entities. If omitted, defaults to 'mentioned' for all."),
+  entities: z.array(ExtractedEntitySchema).describe("Named entities mentioned in the conversation"),
+  entity_links: z
+    .array(EntityLinkSchema)
+    .optional()
+    .describe(
+      "Relationship types for extracted entities. If omitted, defaults to 'mentioned' for all.",
+    ),
 });
 
 type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
 type ExtractedMemory = z.infer<typeof MemorySchema>;
 type ExtractedEntity = z.infer<typeof ExtractedEntitySchema>;
 
-const VALID_ENTITY_TYPES = new Set<string>(
-  ExtractedEntitySchema.shape.type.options,
-);
+const VALID_ENTITY_TYPES = new Set<string>(ExtractedEntitySchema.shape.type.options);
 
 // ── Extraction prompt ───────────────────────────────────────────
 
@@ -262,8 +265,10 @@ export class EddaPostProcessMiddleware {
       await this.processMemories(extraction.memories, settings);
 
       // 5. Process entities with semantic dedup
-      const { entityIds: allEntityIds, entityNameToId } =
-        await this.processEntities(extraction.entities, settings);
+      const { entityIds: allEntityIds, entityNameToId } = await this.processEntities(
+        extraction.entities,
+        settings,
+      );
 
       // 6. Link entities to items created during the conversation
       await this.linkEntitiesToItems(
@@ -282,13 +287,6 @@ export class EddaPostProcessMiddleware {
       await maybeRefreshAgentsMd().catch((err: unknown) => {
         console.error("[post-process] Failed to refresh AGENTS.md:", err);
       });
-
-      // 8b. Hotpatch memory files if conversation contradicts or adds significant info
-      // Fire-and-forget: do not block post-process completion
-      maybeHotpatchMemoryFiles(messages, extraction.entities).catch((err: unknown) => {
-        console.error("[post-process] Failed to hotpatch memory files:", err);
-      });
-
     } catch (err) {
       console.error("[post-process] Error in afterAgent:", err);
 
@@ -371,13 +369,15 @@ export class EddaPostProcessMiddleware {
           itemIds.push(similar[0].id);
         } else if (similar.length > 0 && similar[0].raw_similarity >= updateThreshold) {
           // Update — similar but not exact, supersede the old item
-          const isConfirmed = memory.confidence === 'high';
+          const isConfirmed = memory.confidence === "high";
           const newItem = await createItem({
             type: memory.type,
             content: memory.content,
             source: "posthook",
             confirmed: isConfirmed,
-            pending_action: isConfirmed ? undefined : `Auto-extracted with ${memory.confidence} confidence. Review and confirm or reject.`,
+            pending_action: isConfirmed
+              ? undefined
+              : `Auto-extracted with ${memory.confidence} confidence. Review and confirm or reject.`,
             embedding: vector,
             embedding_model: settings.embedding_model,
           });
@@ -389,13 +389,15 @@ export class EddaPostProcessMiddleware {
           itemIds.push(newItem.id);
         } else {
           // Insert — no close match, create new memory
-          const isConfirmed = memory.confidence === 'high';
+          const isConfirmed = memory.confidence === "high";
           const newItem = await createItem({
             type: memory.type,
             content: memory.content,
             source: "posthook",
             confirmed: isConfirmed,
-            pending_action: isConfirmed ? undefined : `Auto-extracted with ${memory.confidence} confidence. Review and confirm or reject.`,
+            pending_action: isConfirmed
+              ? undefined
+              : `Auto-extracted with ${memory.confidence} confidence. Review and confirm or reject.`,
             embedding: vector,
             embedding_model: settings.embedding_model,
           });
@@ -450,11 +452,7 @@ export class EddaPostProcessMiddleware {
         if (similar.length > 0 && similar[0].raw_similarity >= exactThreshold) {
           // 3a. Exact merge — same entity, merge aliases and bump mention count
           const existing = similar[0];
-          const mergedAliases = mergeAliases(
-            existing.aliases,
-            entity.aliases ?? [],
-            entity.name,
-          );
+          const mergedAliases = mergeAliases(existing.aliases, entity.aliases ?? [], entity.name);
 
           await updateEntity(existing.id, {
             aliases: mergedAliases,
@@ -470,11 +468,7 @@ export class EddaPostProcessMiddleware {
 
           if (settings.approval_merge_entity === "auto") {
             // Auto-merge: merge aliases and bump mention count
-            const mergedAliases = mergeAliases(
-              existing.aliases,
-              entity.aliases ?? [],
-              entity.name,
-            );
+            const mergedAliases = mergeAliases(existing.aliases, entity.aliases ?? [], entity.name);
             await updateEntity(existing.id, {
               aliases: mergedAliases,
               mention_count: existing.mention_count + 1,
@@ -551,10 +545,7 @@ export class EddaPostProcessMiddleware {
           await linkItemEntity(itemId, entityId, relationship);
         } catch (err) {
           // Swallow — link may already exist or item/entity may have been deleted
-          console.error(
-            `[post-process] Failed to link entity ${entityId} to item ${itemId}:`,
-            err,
-          );
+          console.error(`[post-process] Failed to link entity ${entityId} to item ${itemId}:`, err);
         }
       }
     }

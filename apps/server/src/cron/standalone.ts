@@ -14,7 +14,6 @@ import cron from "node-cron";
 import {
   getItemsByType,
   getScheduledAgents,
-  createAgentLog,
   createTaskRun,
   startTaskRun,
   completeTaskRun,
@@ -28,10 +27,7 @@ import {
   resolveThreadId,
   MODEL_SETTINGS_KEYS,
 } from "../agent/build-channel-agent.js";
-import {
-  runContextRefreshAgent,
-  maybeRefreshAgentContext,
-} from "../agent/generate-agents-md.js";
+import { runContextRefreshAgent, maybeRefreshAgentContext } from "../agent/generate-agents-md.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import type { CronRunner } from "./index.js";
 
@@ -59,10 +55,7 @@ function extractLastAssistantMessage(result: {
   const messages = result?.messages ?? [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (
-      (m.role === "assistant" || m._getType?.() === "ai") &&
-      typeof m.content === "string"
-    ) {
+    if ((m.role === "assistant" || m._getType?.() === "ai") && typeof m.content === "string") {
       return m.content.slice(0, 500);
     }
   }
@@ -154,7 +147,9 @@ export class StandaloneCronRunner implements CronRunner {
     // If schedule changed, stop the old task first
     if (existing) {
       existing.task.stop();
-      console.log(`  [cron] Schedule changed for ${agent.name}: ${existing.schedule} → ${agent.schedule}`);
+      console.log(
+        `  [cron] Schedule changed for ${agent.name}: ${existing.schedule} → ${agent.schedule}`,
+      );
     }
 
     const task = cron.schedule(agent.schedule, () => this.executeAgent(agent));
@@ -205,7 +200,9 @@ export class StandaloneCronRunner implements CronRunner {
     const settings = await refreshSettings();
     const modelName =
       definition.model_settings_key && MODEL_SETTINGS_KEYS.has(definition.model_settings_key)
-        ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
+        ? ((settings as unknown as Record<string, unknown>)[
+            definition.model_settings_key
+          ] as string)
         : undefined;
 
     // context_refresh uses its own subagent pattern, but still gets a task_run
@@ -398,32 +395,33 @@ export class StandaloneCronRunner implements CronRunner {
       const durationMs = Date.now() - startTime;
       const outputSummary = extractLastAssistantMessage(result) ?? `User cron ${taskId} completed`;
 
-      // User crons still log to agent_log (no agent_definition to create task_runs)
-      await createAgentLog({
-        skill: "user_cron",
-        trigger: "user_cron",
+      const userCronRun = await createTaskRun({
+        agent_name: "user_cron",
+        trigger: "cron",
         input_summary: `Scheduled task: ${task.content}`,
-        output_summary: outputSummary,
         model: settings.user_cron_model,
+      });
+      await completeTaskRun(userCronRun.id, {
+        output_summary: outputSummary,
         duration_ms: durationMs,
       });
 
       console.log(`  [cron] User cron ${taskId} completed in ${durationMs}ms`);
     } catch (err) {
-      const durationMs = Date.now() - startTime;
+      const _durationMs = Date.now() - startTime;
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`  [cron] User cron ${taskId} failed: ${errorMsg}`);
 
-      await createAgentLog({
-        skill: "user_cron",
-        trigger: "user_cron",
+      const errRun = await createTaskRun({
+        agent_name: "user_cron",
+        trigger: "cron",
         input_summary: `Scheduled task: ${task.content}`,
-        output_summary: `ERROR: ${errorMsg.slice(0, 500)}`,
-        duration_ms: durationMs,
-      }).catch((logErr) => {
-        console.error(`  [cron] Failed to log error for user cron ${taskId}:`, logErr);
-      });
+      }).catch(() => null);
+      if (errRun) {
+        await failTaskRun(errRun.id, errorMsg.slice(0, 500)).catch((logErr) => {
+          console.error(`  [cron] Failed to log error for user cron ${taskId}:`, logErr);
+        });
+      }
     }
   }
-
 }

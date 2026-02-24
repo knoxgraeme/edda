@@ -9,7 +9,14 @@
 // Settings
 // ──────────────────────────────────────────────
 
-export type LlmProvider = "anthropic" | "openai" | "google" | "groq" | "ollama" | "mistral" | "bedrock";
+export type LlmProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "groq"
+  | "ollama"
+  | "mistral"
+  | "bedrock";
 export type EmbeddingProvider = "voyage" | "openai" | "google";
 export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
@@ -89,12 +96,6 @@ export interface Settings {
   // Context refresh
   context_refresh_cron: string;
   context_refresh_model: string;
-
-  // Memory sync
-  memory_sync_cron: string;
-  memory_sync_model: string;
-  memory_file_activity_threshold: number;
-  memory_file_stale_days: number;
 
   // Agent channels
   notification_targets: string[];
@@ -236,40 +237,6 @@ export interface DashboardData {
 }
 
 // ──────────────────────────────────────────────
-// Agent Log
-// ──────────────────────────────────────────────
-
-export interface AgentLog {
-  id: string;
-  skill: string;
-  trigger: string;
-  input_summary: string | null;
-  output_summary: string | null;
-  items_created: string[];
-  items_retrieved: string[];
-  entities_created: string[];
-  model: string | null;
-  tokens_in: number | null;
-  tokens_out: number | null;
-  duration_ms: number | null;
-  created_at: string;
-}
-
-export interface CreateAgentLogInput {
-  skill: string;
-  trigger: string;
-  input_summary?: string;
-  output_summary?: string;
-  items_created?: string[];
-  items_retrieved?: string[];
-  entities_created?: string[];
-  model?: string;
-  tokens_in?: number;
-  tokens_out?: number;
-  duration_ms?: number;
-}
-
-// ──────────────────────────────────────────────
 // Search
 // ──────────────────────────────────────────────
 
@@ -320,22 +287,6 @@ export interface UpsertSkillInput {
   content: string;
   is_system?: boolean;
   created_by?: string;
-}
-
-// ──────────────────────────────────────────────
-// Memory Types
-// ──────────────────────────────────────────────
-
-export interface MemoryType {
-  name: string;
-  description: string;
-  entity_types: EntityType[];
-  activity_threshold: number;
-  stale_days: number;
-  synthesis_style: string;
-  split_threshold: number;
-  built_in: boolean;
-  created_at: string;
 }
 
 // ──────────────────────────────────────────────
