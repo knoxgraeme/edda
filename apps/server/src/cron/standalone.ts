@@ -168,12 +168,10 @@ export class StandaloneCronRunner implements CronRunner {
       const currentAgents = await getScheduledAgents();
       const currentNames = new Set(currentAgents.map((a) => a.name));
 
-      // Register new agents
+      // Register new agents and detect schedule changes on existing ones
       for (const agent of currentAgents) {
         if (agent.name === "memory_extraction" && !settings.memory_extraction_enabled) continue;
-        if (!this._registeredAgents.has(agent.name)) {
-          this.registerAgent(agent);
-        }
+        this.registerAgent(agent);
       }
 
       // Stop removed/disabled agents
