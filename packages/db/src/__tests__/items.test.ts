@@ -167,7 +167,9 @@ describe("items", () => {
       expect(sql).toEqual(expect.stringContaining("ORDER BY similarity DESC"));
       expect(params[0]).toBe(JSON.stringify([0.1, 0.2, 0.3])); // embedding
       expect(params[1]).toBe(0.9); // threshold
-      expect(params[2]).toBe(5); // limit (at end)
+      // CTE uses inner limit (limit * RERANK_MULTIPLIER) then outer limit
+      expect(params[2]).toBe(15); // inner limit (5 * 3)
+      expect(params[3]).toBe(5);  // outer limit
     });
 
     it("adds optional filters for type, after date, and agentKnowledgeOnly", async () => {
@@ -193,14 +195,16 @@ describe("items", () => {
     it("increments parameter indices correctly across optional filters", async () => {
       query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-      // With type + after, LIMIT should be $5
+      // With type + after: inner LIMIT $5, outer LIMIT $6
       await searchItems([0.1], { type: "note", after: "2026-01-01", limit: 20 });
 
       const [sql, params] = query.mock.calls[0];
       expect(sql).toEqual(expect.stringContaining("LIMIT $5"));
-      // params: [embedding, threshold, type, after, limit]
-      expect(params).toHaveLength(5);
-      expect(params[4]).toBe(20);
+      expect(sql).toEqual(expect.stringContaining("LIMIT $6"));
+      // params: [embedding, threshold, type, after, innerLimit, outerLimit]
+      expect(params).toHaveLength(6);
+      expect(params[4]).toBe(60); // inner limit (20 * 3)
+      expect(params[5]).toBe(20); // outer limit
     });
   });
 
