@@ -94,11 +94,11 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(DEFAULT_TEST_SETTINGS.approval_new_type);
   });
 
-  it("recall instructions reference /memories/ paths", async () => {
+  it("recall instructions reference entity profile and search", async () => {
     const prompt = await buildSystemPrompt();
-    expect(prompt).toContain("read_file");
-    expect(prompt).toContain("/memories/");
-    expect(prompt).toContain("read-only");
+    expect(prompt).toContain("get_entity_profile");
+    expect(prompt).toContain("search_items");
+    expect(prompt).toContain("get_dashboard");
   });
 
   it("does not include a manual Skills section", async () => {

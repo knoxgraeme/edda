@@ -20,12 +20,12 @@ import {
   getLatestAgentsMd,
   saveAgentsMdVersion,
   pruneAgentsMdVersions,
-  createAgentLog,
+  createTaskRun,
+  completeTaskRun,
+  failTaskRun,
   getRecentTaskRuns,
 } from "@edda/db";
 import type { AgentDefinition, ItemType } from "@edda/db";
-import { getStore } from "../store/index.js";
-import { ENTITY_TYPE_TO_DIR, entityToMemoryKey } from "./memory-paths.js";
 import type { AIMessageChunk } from "@langchain/core/messages";
 import { getChatModel } from "../llm/index.js";
 import { saveAgentsMdTool, saveAgentsMdSchema } from "./tools/save-agents-md.js";
@@ -53,31 +53,6 @@ export function _resetHashCache(): void {
   _cachedHashAt = 0;
 }
 
-// ── Memory file helpers ──────────────────────────────────────────
-
-/**
- * Query PostgresStore for existing memory file keys.
- * Returns a Set of keys like "/people/sarah", "/projects/atlas".
- */
-async function getMemoryFilePaths(): Promise<Set<string>> {
-  try {
-    const store = await getStore();
-    // Fetch all filesystem items; 200 covers typical usage (memory files + skills).
-    // If the limit is hit, some memory pointers may be missing from the template.
-    const results = await store.search(["filesystem"], { limit: 200 });
-    const prefixes = Object.values(ENTITY_TYPE_TO_DIR).map((d) => `/${d}/`);
-    return new Set(
-      results
-        .filter((item) => prefixes.some((p) => item.key.startsWith(p)))
-        .map((item) => item.key),
-    );
-  } catch (err) {
-    // Store may not be initialized yet (e.g. during tests or first startup)
-    console.warn("[getMemoryFilePaths] Failed to query store, falling back to empty set:", err);
-    return new Set();
-  }
-}
-
 // ── Deterministic template builder ──────────────────────────────
 
 /**
@@ -91,16 +66,14 @@ export async function buildDeterministicTemplate(): Promise<{
 }> {
   const settings = getSettingsSync();
 
-  const [preferences, facts, patterns, entities, itemTypes, pendingCount, memoryPaths] =
-    await Promise.all([
-      getItemsByType("preference", "active"),
-      getItemsByType("learned_fact", "active"),
-      getItemsByType("pattern", "active"),
-      getTopEntities(settings.agents_md_max_entities),
-      getItemTypes(),
-      getPendingConfirmationsCount(),
-      getMemoryFilePaths(),
-    ]);
+  const [preferences, facts, patterns, entities, itemTypes, pendingCount] = await Promise.all([
+    getItemsByType("preference", "active"),
+    getItemsByType("learned_fact", "active"),
+    getItemsByType("pattern", "active"),
+    getTopEntities(settings.agents_md_max_entities),
+    getItemTypes(),
+    getPendingConfirmationsCount(),
+  ]);
 
   const maxPerCategory = settings.agents_md_max_per_category;
   const sections: string[] = [];
@@ -134,16 +107,13 @@ export async function buildDeterministicTemplate(): Promise<{
     sections.push(`## Patterns\n${items.map((p) => `- ${p.content}`).join("\n")}`);
   }
 
-  // Entities — annotate with /memories/ pointers when a memory file exists
+  // Entities
   if (entities.length > 0) {
     sections.push(
       `## Key Entities\n${entities
         .map((e) => {
-          const memKey = entityToMemoryKey(e.name, e.type);
-          const hasMemory = memKey && memoryPaths.has(memKey);
           const desc = e.description ? ` — ${e.description}` : "";
-          const pointer = hasMemory ? ` → /memories${memKey}` : "";
-          return `- **${e.name}** (${e.type})${desc}${pointer} [${e.mention_count}x]`;
+          return `- **${e.name}** (${e.type})${desc} [${e.mention_count}x]`;
         })
         .join("\n")}`,
     );
@@ -153,9 +123,10 @@ export async function buildDeterministicTemplate(): Promise<{
   const userTypes = itemTypes.filter((t: ItemType) => !t.agent_internal);
   if (userTypes.length > 0) {
     const typeLines = userTypes.map((t: ItemType) => {
-      const meta = Object.keys(t.metadata_schema).length > 0
-        ? ` | metadata: ${JSON.stringify(t.metadata_schema)}`
-        : "";
+      const meta =
+        Object.keys(t.metadata_schema).length > 0
+          ? ` | metadata: ${JSON.stringify(t.metadata_schema)}`
+          : "";
       const hint = t.extraction_hint ? ` | extract: ${t.extraction_hint}` : "";
       return `- ${t.icon} **${t.name}**: ${t.classification_hint}${meta}${hint}`;
     });
@@ -272,7 +243,7 @@ export async function runContextRefreshAgent(): Promise<void> {
     if (!model.bindTools) {
       throw new Error(
         `Model "${settings.context_refresh_model}" does not support tool binding. ` +
-        `context_refresh requires a model that implements bindTools().`,
+          `context_refresh requires a model that implements bindTools().`,
       );
     }
     const modelWithTools = model.bindTools([saveAgentsMdTool]);
@@ -306,26 +277,32 @@ export async function runContextRefreshAgent(): Promise<void> {
 
     // 8. Log success
     const durationMs = Date.now() - startTime;
-    await createAgentLog({
-      skill: "context_refresh",
-      trigger: "system_cron",
+    const taskRun = await createTaskRun({
+      agent_name: "context_refresh",
+      trigger: "cron",
       input_summary: `Template hash: ${hash.slice(0, 12)}…, diff lines: ${diff.split("\n").length}`,
-      output_summary: `AGENTS.md updated (${estimateTokens(currentContent)} → new version)`,
       model: settings.context_refresh_model,
+    });
+    await completeTaskRun(taskRun.id, {
+      output_summary: `AGENTS.md updated (${estimateTokens(currentContent)} → new version)`,
       duration_ms: durationMs,
     });
 
     console.log(`  [context_refresh] AGENTS.md updated in ${durationMs}ms`);
   } catch (err) {
-    const durationMs = Date.now() - startTime;
+    const _durationMs = Date.now() - startTime;
     console.error("  [context_refresh] Failed:", err);
 
-    await createAgentLog({
-      skill: "context_refresh",
-      trigger: "system_cron",
-      output_summary: `ERROR: ${err instanceof Error ? err.message : String(err)}`,
-      duration_ms: durationMs,
-    }).catch(() => {});
+    const taskRun = await createTaskRun({
+      agent_name: "context_refresh",
+      trigger: "cron",
+    }).catch(() => null);
+    if (taskRun) {
+      await failTaskRun(
+        taskRun.id,
+        (err instanceof Error ? err.message : String(err)).slice(0, 500),
+      ).catch(() => {});
+    }
   }
 }
 
@@ -338,10 +315,7 @@ export async function runContextRefreshAgent(): Promise<void> {
 export async function buildAgentTemplate(definition: AgentDefinition): Promise<string> {
   const recentRuns = await getRecentTaskRuns({ agent_name: definition.name, limit: 20 });
 
-  const sections: string[] = [
-    `# ${definition.name}`,
-    `## Purpose\n${definition.description}`,
-  ];
+  const sections: string[] = [`# ${definition.name}`, `## Purpose\n${definition.description}`];
 
   if (recentRuns.length > 0) {
     const completed = recentRuns.filter((r) => r.status === "completed").length;

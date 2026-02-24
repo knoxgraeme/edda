@@ -34,7 +34,9 @@ vi.mock("@edda/db", () => ({
   getLatestAgentsMd: mockGetLatestAgentsMd,
   saveAgentsMdVersion: mockSaveAgentsMdVersion,
   pruneAgentsMdVersions: vi.fn(),
-  createAgentLog: vi.fn(),
+  createTaskRun: vi.fn().mockResolvedValue({ id: "test-run-id" }),
+  completeTaskRun: vi.fn(),
+  failTaskRun: vi.fn(),
 }));
 
 vi.mock("../llm/index.js", () => ({

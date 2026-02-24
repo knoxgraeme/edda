@@ -48,10 +48,6 @@ export const DEFAULT_TEST_SETTINGS: Settings = {
   user_timezone: "America/New_York",
   context_refresh_cron: "0 5 * * *",
   context_refresh_model: "claude-sonnet-4-20250514",
-  memory_sync_cron: "0 6 * * 0",
-  memory_sync_model: "",
-  memory_file_activity_threshold: 10,
-  memory_file_stale_days: 90,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -113,10 +109,6 @@ export function mockDbModule() {
     // confirmations.ts
     confirmPending: vi.fn(),
     rejectPending: vi.fn(),
-
-    // agent-log.ts
-    createAgentLog: vi.fn(),
-    getRecentAgentLogs: vi.fn().mockResolvedValue([]),
 
     // agents-md.ts
     getLatestAgentsMd: vi.fn().mockResolvedValue(null),

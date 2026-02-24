@@ -72,10 +72,6 @@ const SETTINGS_UPDATE_COLUMNS = [
   "setup_completed",
   "user_display_name",
   "user_timezone",
-  "memory_sync_cron",
-  "memory_sync_model",
-  "memory_file_activity_threshold",
-  "memory_file_stale_days",
   "notification_targets",
   "task_max_concurrency",
 ] as const;
@@ -90,10 +86,7 @@ export async function updateSettings(updates: Partial<Settings>): Promise<Settin
   const sets = entries.map(([k], i) => `"${k}" = $${i + 1}`).join(", ");
   const vals = entries.map(([, v]) => v);
 
-  await pool.query(
-    `UPDATE settings SET ${sets}, updated_at = now() WHERE id = true`,
-    vals,
-  );
+  await pool.query(`UPDATE settings SET ${sets}, updated_at = now() WHERE id = true`, vals);
 
   return refreshSettings();
 }

@@ -18,6 +18,7 @@ import { getCheckpointer } from "../checkpointer/index.js";
 import { getStore } from "../store/index.js";
 import { loadSkillContent } from "./skill-loader.js";
 import { getMyHistoryTool } from "./tools/get-my-history.js";
+import { getEntityProfileTool } from "./tools/get-entity-profile.js";
 
 // -- Tool imports (scoped profiles) --
 import { createItemTool } from "./tools/create-item.js";
@@ -45,6 +46,7 @@ const READ_ONLY_TOOLS = [
   searchItemsTool,
   getItemByIdTool,
   getEntityItemsTool,
+  getEntityProfileTool,
   getAgentKnowledgeTool,
   getDashboardTool,
   getTimelineTool,
@@ -66,10 +68,7 @@ const MEMORY_WRITER_TOOLS = [
 ];
 
 /** User-defined agents get full data access but no admin/orchestration tools. */
-const USER_AGENT_TOOLS = [
-  ...MEMORY_WRITER_TOOLS,
-  createItemTypeTool,
-];
+const USER_AGENT_TOOLS = [...MEMORY_WRITER_TOOLS, createItemTypeTool];
 
 // -- Tool selection --
 
@@ -177,7 +176,6 @@ export const MODEL_SETTINGS_KEYS = new Set([
   "type_evolution_model",
   "context_refresh_model",
   "user_cron_model",
-  "memory_sync_model",
 ]);
 
 // -- Agent builder --
