@@ -4,6 +4,18 @@ description: >
   Evolves the type system based on usage patterns. Runs as a cron job. Clusters
   unclassified "note" items, proposes new types or reclassifications. Respects
   approval settings — creates types with confirmed=true (auto) or confirmed=false (confirm).
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - create_item
+  - create_item_type
 ---
 
 # type_evolution

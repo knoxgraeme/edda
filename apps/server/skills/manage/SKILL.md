@@ -4,6 +4,22 @@ description: >
   Item modification skill. Handles completing, snoozing, editing, archiving items,
   and processing confirmation approvals/rejections. Use when the user wants to
   change an existing item or respond to a pending confirmation.
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - update_item
+  - delete_item
+  - confirm_pending
+  - reject_pending
+  - get_pending_items
+  - get_settings
 ---
 
 # manage

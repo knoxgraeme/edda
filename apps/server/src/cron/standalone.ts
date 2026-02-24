@@ -29,10 +29,10 @@ import { buildTranscript } from "../agent/message-helpers.js";
 import type { MessageLike } from "../agent/message-helpers.js";
 
 import {
-  buildChannelAgent,
+  buildAgent,
   resolveThreadId,
   MODEL_SETTINGS_KEYS,
-} from "../agent/build-channel-agent.js";
+} from "../agent/build-agent.js";
 import { runContextRefreshAgent, maybeRefreshAgentContext } from "../agent/generate-agents-md.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import { notify } from "../notifications/index.js";
@@ -252,7 +252,7 @@ export class StandaloneCronRunner implements CronRunner {
         await startTaskRun(run.id);
         console.log(`  [cron] Executing: ${freshDef.name}`);
 
-        const agent = await buildChannelAgent(freshDef);
+        const agent = await buildAgent(freshDef);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result: any = await withTimeout(
           agent.invoke(
@@ -363,7 +363,7 @@ export class StandaloneCronRunner implements CronRunner {
     let processed = 0;
 
     // Build the agent once for all threads
-    const agent = await buildChannelAgent(postProcessDef);
+    const agent = await buildAgent(postProcessDef);
 
     await Promise.all(
       threads.map(async (thread) => {
@@ -530,7 +530,7 @@ export class StandaloneCronRunner implements CronRunner {
 
       // Build a synthetic Agent for the user cron.
       // skills: [] → gets full eddaTools (same as old createEddaAgent)
-      const agent = await buildChannelAgent({
+      const agent = await buildAgent({
         id: "",
         name: "user_cron",
         description: "User-scheduled recurring task",

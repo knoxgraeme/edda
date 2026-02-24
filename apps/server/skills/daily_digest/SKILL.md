@@ -3,6 +3,18 @@ name: daily_digest
 description: >
   Auto-generated morning briefing. Runs as a cron job. Summarizes yesterday,
   surfaces today's due items, flags stale open items. Creates a daily_digest item.
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - create_item
+  - batch_create_items
 ---
 
 # daily_digest

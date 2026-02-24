@@ -4,6 +4,18 @@ description: >
   Universal intake skill. Classifies user input into the most specific item type,
   extracts metadata, and stores everything anchored to today. Use this skill
   whenever the user is giving you something to remember, track, or save.
+allowed-tools:
+  - search_items
+  - get_item_by_id
+  - get_entity_items
+  - get_entity_profile
+  - list_entities
+  - get_agent_knowledge
+  - get_dashboard
+  - get_timeline
+  - get_list_items
+  - create_item
+  - batch_create_items
 ---
 
 # capture

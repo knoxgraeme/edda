@@ -13,7 +13,7 @@ import { getStore } from "../store/index.js";
 import { loadMCPTools } from "./mcp.js";
 import { buildSystemPrompt } from "./prompts/system.js";
 import { eddaTools } from "./tools/index.js";
-import { TaskChannelBackend } from "./task-channel-backend.js";
+import { AgentOutputBackend } from "./agent-output-backend.js";
 import { loadSkillContent } from "./skill-loader.js";
 
 // Scoped tool imports for memory_writer SubAgent
@@ -67,7 +67,7 @@ export async function createEddaAgent(additionalTools: any[] = []): Promise<any>
     backend: (rt) =>
       new CompositeBackend(new StateBackend(rt), {
         "/skills/": new StoreBackend(rt),
-        "/channels/": new TaskChannelBackend(rt),
+        "/output/": new AgentOutputBackend(rt),
       }),
     skills: ["/skills/"],
     subagents: [
