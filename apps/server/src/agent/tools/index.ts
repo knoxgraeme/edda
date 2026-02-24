@@ -47,6 +47,11 @@ import { getThreadMessagesTool } from "./get-thread-messages.js";
 import { markThreadProcessedTool } from "./mark-thread-processed.js";
 import { listThreadsTool } from "./list-threads.js";
 
+// Orchestrator tools (agent management)
+import { createAgentTool } from "./create-agent.js";
+import { runAgentTool } from "./run-agent.js";
+import { getTaskResultTool } from "./get-task-result.js";
+
 // Memory tools (cron-only — not in main agent's eddaTools)
 export { createMemoryFileTool } from "./create-memory-file.js";
 
@@ -87,4 +92,9 @@ export const eddaTools = [
   getThreadMessagesTool,
   markThreadProcessedTool,
   listThreadsTool,
+
+  // Orchestrator tools (agent management)
+  createAgentTool,
+  runAgentTool,
+  getTaskResultTool,
 ];

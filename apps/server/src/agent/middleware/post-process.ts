@@ -19,7 +19,6 @@ import {
   searchEntities,
   linkItemEntity,
   setThreadMetadata,
-  createAgentLog,
   getSettingsSync,
 } from "@edda/db";
 import type { Settings, SearchResult, EntitySearchResult } from "@edda/db";
@@ -206,8 +205,6 @@ export class EddaPostProcessMiddleware {
    * 7. Regenerate AGENTS.md
    */
   async afterAgent(state: unknown): Promise<unknown> {
-    const startTime = Date.now();
-
     // Validate state shape at runtime instead of blind cast
     if (!isConversationState(state)) {
       return state;
@@ -262,8 +259,7 @@ export class EddaPostProcessMiddleware {
       const createdItemIds = extractCreatedItemIds(messages);
 
       // 4. Process memories with semantic dedup
-      const { itemIds: memoryItemIds } =
-        await this.processMemories(extraction.memories, settings);
+      await this.processMemories(extraction.memories, settings);
 
       // 5. Process entities with semantic dedup
       const { entityIds: allEntityIds, entityNameToId } =
@@ -293,29 +289,8 @@ export class EddaPostProcessMiddleware {
         console.error("[post-process] Failed to hotpatch memory files:", err);
       });
 
-      // 9. Log to agent_log
-      const durationMs = Date.now() - startTime;
-      await createAgentLog({
-        skill: "post_process",
-        trigger: "afterAgent",
-        input_summary: `Transcript: ${transcript.length} chars, ${messages.length} messages`,
-        output_summary: `Extracted ${extraction.memories.length} memories, ${extraction.entities.length} entities`,
-        items_created: memoryItemIds,
-        entities_created: allEntityIds,
-        duration_ms: durationMs,
-      }).catch((err: unknown) => {
-        console.error("[post-process] Failed to create agent log:", err);
-      });
     } catch (err) {
       console.error("[post-process] Error in afterAgent:", err);
-
-      // Log error gracefully
-      await createAgentLog({
-        skill: "post_process",
-        trigger: "afterAgent",
-        output_summary: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        duration_ms: Date.now() - startTime,
-      }).catch(() => {});
 
       // Still mark thread as processed to avoid retry loops
       if (threadId) {
