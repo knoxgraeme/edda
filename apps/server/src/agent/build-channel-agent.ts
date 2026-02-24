@@ -70,12 +70,14 @@ const MEMORY_WRITER_TOOLS = [
 
 function getToolsForDefinition(definition: AgentDefinition) {
   let baseTools;
-  if (definition.skills.some((s) => ["post_process", "memory_extraction"].includes(s))) {
+  if (
+    definition.skills.some((s) =>
+      ["post_process", "memory_extraction", "weekly_reflect"].includes(s),
+    )
+  ) {
     baseTools = MEMORY_WRITER_TOOLS;
   } else if (definition.skills.some((s) => ["daily_digest", "type_evolution"].includes(s))) {
     baseTools = [...REPORTER_TOOLS, createItemTypeTool];
-  } else if (definition.skills.some((s) => ["weekly_reflect"].includes(s))) {
-    baseTools = MEMORY_WRITER_TOOLS;
   } else {
     baseTools = [...eddaTools]; // user-defined agents get full tools
   }
@@ -119,8 +121,8 @@ async function buildAgentPrompt(definition: AgentDefinition, settings: Settings)
     .join("\n\n---\n\n");
 
   const base =
-    definition.system_prompt ??
-    skillContent ??
+    definition.system_prompt ||
+    skillContent ||
     `You are ${definition.name}, an Edda background agent.`;
 
   const agentContext = await getAgentsMdContent(definition.name);
@@ -160,14 +162,30 @@ export function resolveThreadId(definition: AgentDefinition): string {
   }
 }
 
+// -- Model settings key allowlist --
+
+const MODEL_SETTINGS_KEYS = new Set([
+  "default_model",
+  "daily_digest_model",
+  "memory_extraction_model",
+  "weekly_review_model",
+  "type_evolution_model",
+  "context_refresh_model",
+  "user_cron_model",
+  "memory_sync_model",
+]);
+
 // -- Agent builder --
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function buildChannelAgent(definition: AgentDefinition): Promise<any> {
   const settings = await getSettings();
-  const modelName = definition.model_settings_key
-    ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
-    : undefined;
+  const modelName =
+    definition.model_settings_key && MODEL_SETTINGS_KEYS.has(definition.model_settings_key)
+      ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as
+          | string
+          | undefined)
+      : undefined;
 
   const [model, checkpointer, store] = await Promise.all([
     getChatModel(modelName),
