@@ -19,35 +19,20 @@ export interface SkillMetadata {
 
 const _cache = new Map<string, SkillMetadata>();
 
-/**
- * Parse allowed-tools from YAML frontmatter.
- * Handles both list format (- tool_name) and space-delimited format.
- */
+/** Parse allowed-tools list from YAML frontmatter. */
 function parseAllowedTools(raw: string): string[] {
   const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
   if (!fmMatch) return [];
 
-  const frontmatter = fmMatch[1];
-  const toolsMatch = frontmatter.match(/^allowed-tools:\s*$/m);
-  if (!toolsMatch) {
-    // Check inline format: allowed-tools: tool1 tool2
-    const inlineMatch = frontmatter.match(/^allowed-tools:\s*(.+)$/m);
-    if (inlineMatch) {
-      return inlineMatch[1].split(/\s+/).filter(Boolean);
-    }
-    return [];
-  }
+  const lines = fmMatch[1].split("\n");
+  const idx = lines.findIndex((l) => l.startsWith("allowed-tools:"));
+  if (idx === -1) return [];
 
-  // Parse YAML list items after "allowed-tools:"
-  const afterKey = frontmatter.slice(toolsMatch.index! + toolsMatch[0].length);
   const tools: string[] = [];
-  for (const line of afterKey.split("\n")) {
-    const itemMatch = line.match(/^\s+-\s+(.+)$/);
-    if (itemMatch) {
-      tools.push(itemMatch[1].trim());
-    } else if (line.trim() && !line.match(/^\s+-/)) {
-      break; // Next YAML key
-    }
+  for (let i = idx + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^\s+-\s+(.+)$/);
+    if (m) tools.push(m[1].trim());
+    else if (lines[i].trim()) break; // Next YAML key
   }
   return tools;
 }
@@ -68,11 +53,6 @@ function loadAndParse(skillName: string): SkillMetadata {
 /** Load SKILL.md content by skill name. Caches on first read. */
 export function loadSkillContent(skillName: string): string {
   return loadAndParse(skillName).content;
-}
-
-/** Load SKILL.md metadata including allowed-tools. Caches on first read. */
-export function loadSkillMetadata(skillName: string): SkillMetadata {
-  return loadAndParse(skillName);
 }
 
 /**
