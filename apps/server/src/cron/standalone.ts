@@ -1,7 +1,7 @@
 /**
  * Standalone cron runner — uses node-cron for scheduling
  *
- * Reads agent_definitions to register scheduled agents. Each execution creates
+ * Reads agents table to register scheduled agents. Each execution creates
  * a task_run record for observability. Scheduling is data-driven via
  * getScheduledAgents() with task_runs lifecycle tracking.
  *
@@ -13,7 +13,7 @@ import cron from "node-cron";
 import {
   getItemsByType,
   getScheduledAgents,
-  getAgentDefinitionByName,
+  getAgentByName,
   getUnprocessedThreads,
   setThreadMetadata,
   createTaskRun,
@@ -23,7 +23,7 @@ import {
   refreshSettings,
 } from "@edda/db";
 import { sanitizeError } from "../utils/sanitize-error.js";
-import type { AgentDefinition, Item } from "@edda/db";
+import type { Agent, Item } from "@edda/db";
 import { getSharedCheckpointer } from "../checkpointer/index.js";
 import { buildTranscript } from "../agent/message-helpers.js";
 import type { MessageLike } from "../agent/message-helpers.js";
@@ -78,7 +78,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 // Interval constants
 // ---------------------------------------------------------------------------
 
-/** How often to sync agent_definitions for new/changed/disabled schedules. */
+/** How often to sync agents for new/changed/disabled schedules. */
 const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ export class StandaloneCronRunner implements CronRunner {
 
   // ── Agent registration ──────────────────────────────────────────
 
-  private registerAgent(agent: AgentDefinition): void {
+  private registerAgent(agent: Agent): void {
     if (!agent.schedule || !cron.validate(agent.schedule)) {
       console.warn(`  [cron] Skipping ${agent.name} — invalid schedule: ${agent.schedule}`);
       return;
@@ -208,9 +208,9 @@ export class StandaloneCronRunner implements CronRunner {
 
   // ── Agent execution ─────────────────────────────────────────────
 
-  private async executeAgent(definition: AgentDefinition): Promise<void> {
+  private async executeAgent(definition: Agent): Promise<void> {
     // Re-fetch to pick up non-schedule changes (system_prompt, skills, etc.)
-    const freshDef = await getAgentDefinitionByName(definition.name);
+    const freshDef = await getAgentByName(definition.name);
     if (!freshDef || !freshDef.enabled) {
       console.log(`  [cron] Skipping ${definition.name} — not found or disabled`);
       return;
@@ -239,7 +239,7 @@ export class StandaloneCronRunner implements CronRunner {
     const threadId = resolveThreadId(freshDef);
 
     const run = await createTaskRun({
-      agent_definition_id: freshDef.id,
+      agent_id: freshDef.id,
       agent_name: freshDef.name,
       trigger: "cron",
       thread_id: threadId,
@@ -307,11 +307,11 @@ export class StandaloneCronRunner implements CronRunner {
   }
 
   private async executeContextRefresh(
-    definition: AgentDefinition,
+    definition: Agent,
     modelName: string | undefined,
   ): Promise<void> {
     const run = await createTaskRun({
-      agent_definition_id: definition.id,
+      agent_id: definition.id,
       agent_name: definition.name,
       trigger: "cron",
       thread_id: `context-refresh-${new Date().toISOString().split("T")[0]}`,
@@ -339,8 +339,8 @@ export class StandaloneCronRunner implements CronRunner {
 
   // ── Memory extraction (unprocessed thread catchup) ──────────────
 
-  private async executeMemoryExtraction(definition: AgentDefinition): Promise<void> {
-    const postProcessDef = await getAgentDefinitionByName("post_process");
+  private async executeMemoryExtraction(definition: Agent): Promise<void> {
+    const postProcessDef = await getAgentByName("post_process");
     if (!postProcessDef || !postProcessDef.enabled) {
       console.warn("  [cron] post_process agent definition not found or disabled, skipping");
       return;
@@ -392,7 +392,7 @@ export class StandaloneCronRunner implements CronRunner {
 
           const agentThreadId = resolveThreadId(postProcessDef);
           const run = await createTaskRun({
-            agent_definition_id: definition.id,
+            agent_id: definition.id,
             agent_name: definition.name,
             trigger: "cron",
             thread_id: agentThreadId,
@@ -528,7 +528,7 @@ export class StandaloneCronRunner implements CronRunner {
       await startTaskRun(run.id);
       console.log(`  [cron] Executing user cron: ${taskId} — ${metadata.action ?? task.content}`);
 
-      // Build a synthetic AgentDefinition for the user cron.
+      // Build a synthetic Agent for the user cron.
       // skills: [] → gets full eddaTools (same as old createEddaAgent)
       const agent = await buildChannelAgent({
         id: "",
@@ -546,11 +546,12 @@ export class StandaloneCronRunner implements CronRunner {
         skills: [],
         schedule: null,
         context_mode: "daily",
-        output_mode: "items",
+        trigger: null,
+        tools: [],
+        subagents: [],
         scopes: [],
         scope_mode: "boost",
         model_settings_key: "user_cron_model",
-        built_in: false,
         enabled: true,
         metadata: {},
         created_at: "",

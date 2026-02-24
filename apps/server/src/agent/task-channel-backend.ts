@@ -7,7 +7,7 @@
  * directory tree.
  *
  * Orchestrator sees:                    Store namespace:
- * /channels/                            (lists agent_definitions)
+ * /channels/                            (lists agents)
  * /channels/daily_digest/               [daily_digest, filesystem] -> search keys
  * /channels/daily_digest/2026-02-23     [daily_digest, filesystem] -> get "2026-02-23"
  */
@@ -20,7 +20,7 @@ import type {
   GrepMatch,
   WriteResult,
 } from "deepagents";
-import { getAgentDefinitions } from "@edda/db";
+import { getAgents } from "@edda/db";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StoreRef = any;
@@ -123,7 +123,7 @@ export class TaskChannelBackend implements BackendProtocol {
     if (_agentCache && Date.now() - _agentCache.ts < 60_000) {
       return _agentCache.names;
     }
-    const agents = await getAgentDefinitions({ enabled: true });
+    const agents = await getAgents({ enabled: true });
     const names = agents.map((a) => a.name);
     _agentCache = { names, ts: Date.now() };
     return names;
