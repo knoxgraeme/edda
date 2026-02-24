@@ -1,4 +1,4 @@
-import { getAgentDefinitionByName } from "@edda/db";
+import { getAgentByName } from "@edda/db";
 import { NextResponse } from "next/server";
 import { notFound } from "../../../_lib/helpers";
 
@@ -9,7 +9,7 @@ export async function POST(
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
-  const definition = await getAgentDefinitionByName(name);
+  const definition = await getAgentByName(name);
   if (!definition) return notFound("Agent");
 
   const res = await fetch(`${SERVER_URL}/api/agents/${encodeURIComponent(name)}/run`, {

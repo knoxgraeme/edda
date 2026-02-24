@@ -290,16 +290,16 @@ export interface UpsertSkillInput {
 }
 
 // ──────────────────────────────────────────────
-// Agent Definitions
+// Agents
 // ──────────────────────────────────────────────
 
 export type AgentContextMode = "isolated" | "daily" | "persistent";
-export type AgentOutputMode = "channel" | "items" | "both";
+export type AgentTrigger = "schedule" | "post_conversation" | "on_demand";
 export type AgentScopeMode = "boost" | "strict";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent";
 
-export interface AgentDefinition {
+export interface Agent {
   id: string;
   name: string;
   description: string;
@@ -307,11 +307,12 @@ export interface AgentDefinition {
   skills: string[];
   schedule: string | null;
   context_mode: AgentContextMode;
-  output_mode: AgentOutputMode;
+  trigger: AgentTrigger | null;
+  tools: string[];
+  subagents: string[];
   scopes: string[];
   scope_mode: AgentScopeMode;
   model_settings_key: string | null;
-  built_in: boolean;
   enabled: boolean;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -320,7 +321,7 @@ export interface AgentDefinition {
 
 export interface TaskRun {
   id: string;
-  agent_definition_id: string | null;
+  agent_id: string | null;
   agent_name: string;
   trigger: TaskRunTrigger;
   status: TaskRunStatus;

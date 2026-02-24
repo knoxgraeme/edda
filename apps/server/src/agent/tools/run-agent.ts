@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import {
-  getAgentDefinitionByName,
+  getAgentByName,
   createTaskRun,
   startTaskRun,
   completeTaskRun,
@@ -34,13 +34,13 @@ export const runAgentSchema = z.object({
 
 export const runAgentTool = tool(
   async ({ agent_name, input }) => {
-    const definition = await getAgentDefinitionByName(agent_name);
+    const definition = await getAgentByName(agent_name);
     if (!definition) throw new Error(`Agent '${agent_name}' not found`);
     if (!definition.enabled) throw new Error(`Agent '${agent_name}' is disabled`);
 
     const threadId = resolveThreadId(definition);
     const run = await createTaskRun({
-      agent_definition_id: definition.id,
+      agent_id: definition.id,
       agent_name: definition.name,
       trigger: "orchestrator",
       thread_id: threadId,

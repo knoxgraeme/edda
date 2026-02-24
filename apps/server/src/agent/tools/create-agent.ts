@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createAgentDefinition, getAgentDefinitions } from "@edda/db";
+import { createAgent, getAgents } from "@edda/db";
 
 export const createAgentSchema = z.object({
   name: z
@@ -29,10 +29,6 @@ export const createAgentSchema = z.object({
     .enum(["isolated", "daily", "persistent"])
     .default("isolated")
     .describe("Thread ID strategy"),
-  output_mode: z
-    .enum(["channel", "items", "both"])
-    .default("channel")
-    .describe("Where the agent writes output"),
   scopes: z.array(z.string()).optional().describe("Memory scope tags for visibility"),
   scope_mode: z
     .enum(["boost", "strict"])
@@ -48,14 +44,12 @@ export const createAgentTool = tool(
     skills,
     schedule,
     context_mode,
-    output_mode,
     scopes,
     scope_mode,
   }) => {
-    const existing = await getAgentDefinitions();
-    const userAgentCount = existing.filter((a) => !a.built_in).length;
-    if (userAgentCount >= 20) {
-      throw new Error("Maximum number of user-created agents (20) reached. Delete unused agents first.");
+    const existing = await getAgents();
+    if (existing.length >= 30) {
+      throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
     }
 
     if (schedule) {
@@ -73,14 +67,14 @@ export const createAgentTool = tool(
       }
     }
 
-    const agent = await createAgentDefinition({
+    const agent = await createAgent({
       name,
       description,
       system_prompt,
       skills: skills ?? [],
       schedule,
       context_mode,
-      output_mode,
+      trigger: schedule ? "schedule" : "on_demand",
       scopes: scopes ?? [],
       scope_mode,
     });

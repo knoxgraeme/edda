@@ -22,7 +22,7 @@ import {
   pruneAgentsMdVersions,
   getRecentTaskRuns,
 } from "@edda/db";
-import type { AgentDefinition, ItemType } from "@edda/db";
+import type { Agent, ItemType } from "@edda/db";
 import type { AIMessageChunk } from "@langchain/core/messages";
 import { getChatModel } from "../llm/index.js";
 import { saveAgentsMdTool, saveAgentsMdSchema } from "./tools/save-agents-md.js";
@@ -287,7 +287,7 @@ export async function runContextRefreshAgent(): Promise<void> {
  * Build a lightweight context template for a channel agent from its recent task runs.
  * No LLM call — purely deterministic.
  */
-export async function buildAgentTemplate(definition: AgentDefinition): Promise<string> {
+export async function buildAgentTemplate(definition: Agent): Promise<string> {
   const recentRuns = await getRecentTaskRuns({ agent_name: definition.name, limit: 20 });
 
   const sections: string[] = [`# ${definition.name}`, `## Purpose\n${definition.description}`];
@@ -313,7 +313,7 @@ export async function buildAgentTemplate(definition: AgentDefinition): Promise<s
  * Hash-check a channel agent's context and save a new version if changed.
  * Fast path — no LLM call. Called after every cron execution.
  */
-export async function maybeRefreshAgentContext(definition: AgentDefinition): Promise<boolean> {
+export async function maybeRefreshAgentContext(definition: Agent): Promise<boolean> {
   const template = await buildAgentTemplate(definition);
   const hash = sha256(template);
 

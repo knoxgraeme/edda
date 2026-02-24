@@ -17,7 +17,7 @@ export * from "./threads.js";
 export * from "./confirmations.js";
 export * from "./agents-md.js";
 export * from "./skills.js";
-export * from "./agent-definitions.js";
+export * from "./agents.js";
 export * from "./task-runs.js";
 export * from "./migrate.js";
 export * from "./seed-settings.js";
