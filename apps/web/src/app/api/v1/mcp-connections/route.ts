@@ -26,14 +26,14 @@ export async function POST(request: Request) {
     parsed.data as Parameters<typeof createMcpConnection>[0],
   );
 
-  // Probe for available tools and cache them on the connection
-  const discoveredTools = await probeMcpTools(connection);
-  if (discoveredTools.length > 0) {
-    const updated = await updateMcpConnection(connection.id, {
-      discovered_tools: discoveredTools,
-    });
-    if (updated) return NextResponse.json(updated, { status: 201 });
-  }
+  // Fire-and-forget: probe in background, cache results when available
+  probeMcpTools(connection)
+    .then((tools) =>
+      tools.length > 0
+        ? updateMcpConnection(connection.id, { discovered_tools: tools })
+        : null,
+    )
+    .catch((err) => console.warn(`[MCP] Probe failed for "${connection.name}": ${err}`));
 
   return NextResponse.json(connection, { status: 201 });
 }

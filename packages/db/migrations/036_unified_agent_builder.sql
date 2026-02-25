@@ -11,7 +11,13 @@ ALTER TABLE mcp_connections ADD COLUMN discovered_tools text[] NOT NULL DEFAULT 
 ALTER TABLE settings ADD COLUMN default_agent text NOT NULL DEFAULT 'edda';
 
 -- 3. Default agent store access (wildcard = read all agents' stores)
-UPDATE agents SET metadata = jsonb_set(
-  COALESCE(metadata, '{}'), '{stores}',
+--    Uses INSERT ... ON CONFLICT to create the edda agent if it doesn't exist,
+--    or update its metadata.stores if the key is not already set.
+INSERT INTO agents (name, description, skills, trigger, context_mode, enabled, metadata)
+VALUES ('edda', 'Primary orchestrator agent', '{}', 'on_demand', 'persistent', true,
+        '{"stores": {"*": "read"}}'::jsonb)
+ON CONFLICT (name) DO UPDATE SET metadata = jsonb_set(
+  COALESCE(agents.metadata, '{}'), '{stores}',
   '{"*": "read"}'::jsonb
-) WHERE name = 'edda';
+)
+WHERE NOT (COALESCE(agents.metadata, '{}') ? 'stores');
