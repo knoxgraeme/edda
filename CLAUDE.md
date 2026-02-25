@@ -65,8 +65,8 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/agent/prompts/system.ts`** — System prompt builder
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
 - **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
-- **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `post_process`, `recall`, `type_evolution`, `user_crons`, `weekly_reflect`
-- **`src/cron/standalone.ts`** — Standalone cron runner; reads `agent_definitions` for schedules, creates `task_run` records, syncs dynamically
+- **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_catchup`, `post_process`, `recall`, `type_evolution`, `weekly_reflect`
+- **`src/cron/standalone.ts`** — Standalone cron runner; reads `agents` table for schedules, creates `task_run` records, syncs dynamically
 - **`src/cron/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
 - **`src/notifications/index.ts`** — Creates notification items for agent run completions/failures
 - **`src/checkpointer/index.ts`** — State checkpointing backend (postgres, sqlite, or memory)
@@ -93,8 +93,8 @@ Single source of truth for data model and queries.
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
 - **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getScheduled)
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
-- **`migrations/`** — Ordered SQL migration files (001–027); applied via `pnpm migrate`
-- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agent_definitions`, `task_runs`
+- **`migrations/`** — Ordered SQL migration files (001–031); applied via `pnpm migrate`
+- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agents`, `task_runs`
 
 ### Configuration Strategy
 
@@ -125,11 +125,11 @@ Edda uses a multi-agent architecture where the main orchestrator delegates to ba
 | Agent | Schedule | Skills | Context |
 |---|---|---|---|
 | daily_digest | 7am daily | daily_digest | daily |
-| memory_extraction | 10pm daily | memory_extraction | isolated |
+| memory_catchup | 10pm daily | memory_catchup | isolated |
 | weekly_reflect | Sunday 3am | weekly_reflect | daily |
 | type_evolution | on-demand | type_evolution | isolated |
 | context_refresh | 5am daily | context_refresh | isolated |
-| post_process | triggered by memory_extraction | post_process | isolated |
+| post_process | triggered by memory_catchup | post_process | isolated |
 
 ### AGENTS.md (User Context Document)
 
@@ -147,7 +147,7 @@ Memory is entity-based, not file-based. The `post_process` skill extracts knowle
 
 - **`get_entity_profile` tool** — Dynamically assembles a complete entity profile from `entities` + linked `items`; always fresh, no cron needed
 - **`post_process` skill** — Extracts implicit knowledge from conversations; deduplicates via semantic similarity (reinforce ≥0.95, supersede 0.85–0.95, create new otherwise)
-- **`memory_extraction` agent** — Runs nightly; iterates unprocessed threads and invokes `post_process` for each
+- **`memory_catchup` agent** — Runs nightly; iterates unprocessed threads and invokes `post_process` for each
 
 ## Code Style
 

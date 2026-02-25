@@ -47,5 +47,5 @@ If the hash hasn't changed since the last run, the cron is a no-op.
 - **Recall guide** — which tools to use for deeper context
 
 ## Cost
-Uses settings.context_refresh_model (default: same as memory_extraction_model).
+Uses settings.context_refresh_model (default: same as memory_catchup_model).
 Typical cost: ~$0.01-0.05/day. No-op when nothing has changed.

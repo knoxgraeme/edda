@@ -43,9 +43,9 @@ export interface Settings {
   // Checkpointer
   checkpointer_backend: CheckpointerBackend;
 
-  // Memory extraction
-  memory_extraction_cron: string;
-  memory_extraction_model: string;
+  // Memory catchup
+  memory_catchup_cron: string;
+  memory_catchup_model: string;
 
   // Memory dedup thresholds
   memory_reinforce_threshold: number;

@@ -243,21 +243,21 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
           </CardHeader>
           <CardContent className="grid gap-4">
             <FieldGroup
-              label="Extraction schedule"
-              htmlFor="memory_extraction_cron"
+              label="Memory catchup schedule"
+              htmlFor="memory_catchup_cron"
               description="Cron expression (e.g. '0 2 * * *' for 2am daily)"
             >
               <Input
-                id="memory_extraction_cron"
-                value={form.memory_extraction_cron}
-                onChange={(e) => update("memory_extraction_cron", e.target.value)}
+                id="memory_catchup_cron"
+                value={form.memory_catchup_cron}
+                onChange={(e) => update("memory_catchup_cron", e.target.value)}
               />
             </FieldGroup>
-            <FieldGroup label="Extraction model" htmlFor="memory_extraction_model">
+            <FieldGroup label="Memory catchup model" htmlFor="memory_catchup_model">
               <Input
-                id="memory_extraction_model"
-                value={form.memory_extraction_model}
-                onChange={(e) => update("memory_extraction_model", e.target.value)}
+                id="memory_catchup_model"
+                value={form.memory_catchup_model}
+                onChange={(e) => update("memory_catchup_model", e.target.value)}
               />
             </FieldGroup>
             <Separator />

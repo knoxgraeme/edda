@@ -192,7 +192,7 @@ export function resolveThreadId(agent: Agent): string {
 export const MODEL_SETTINGS_KEYS = new Set([
   "default_model",
   "daily_digest_model",
-  "memory_extraction_model",
+  "memory_catchup_model",
   "weekly_review_model",
   "type_evolution_model",
   "context_refresh_model",
