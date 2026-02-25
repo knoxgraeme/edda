@@ -163,7 +163,7 @@ describe("items", () => {
 
       expect(query).toHaveBeenCalledOnce();
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toEqual(expect.stringContaining("1 - (embedding <=> $1::vector)"));
+      expect(sql).toEqual(expect.stringContaining("1 - (i.embedding <=> $1::vector)"));
       expect(sql).toEqual(expect.stringContaining("ORDER BY similarity DESC"));
       expect(params[0]).toBe(JSON.stringify([0.1, 0.2, 0.3])); // embedding
       expect(params[1]).toBe(0.9); // threshold
@@ -209,13 +209,15 @@ describe("items", () => {
 
     // ── Retrieval context ─────────────────────────────────────────
 
-    it("no retrieval_context produces original query (no CASE, no extra WHERE)", async () => {
+    it("no retrieval_context produces original query (no authorship/type CASE, no extra WHERE)", async () => {
       query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
       await searchItems([0.1], { limit: 5 });
 
       const [sql, params] = query.mock.calls[0];
-      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN"));
+      // Decay CASE WHEN is always present; authorship/type boosts should NOT be
+      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN c.metadata->>'created_by'"));
+      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN c.type"));
       expect(sql).not.toEqual(expect.stringContaining("created_by"));
       // params: [embedding, threshold, innerLimit, outerLimit]
       expect(params).toHaveLength(4);
@@ -256,8 +258,8 @@ describe("items", () => {
 
       const [sql, params] = query.mock.calls[0];
       expect(sql).toEqual(expect.stringContaining("metadata->>'created_by' = ANY($3)"));
-      // Should NOT add a CASE boost
-      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN"));
+      // Should NOT add an authorship CASE boost (decay CASE is always present)
+      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN c.metadata->>'created_by'"));
       // params: [embedding, threshold, authors, innerLimit, outerLimit]
       expect(params).toHaveLength(5);
       expect(params[2]).toEqual(["memory_catchup", "memory_writer"]);

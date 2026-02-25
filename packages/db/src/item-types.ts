@@ -16,6 +16,7 @@ const PROTECTED_TYPES = [
   "idea",
   "journal",
   "link",
+  "list",
   "list_item",
   "recommendation",
   "preference",

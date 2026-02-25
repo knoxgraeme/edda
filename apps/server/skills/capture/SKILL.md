@@ -36,8 +36,12 @@ link_item_entity. Just focus on creating items quickly and confirming.
    it as a type evolution candidate in the agent log.
 2. For reminders/tasks: always parse dates to concrete values and confirm them
    back to the user ("Reminder set for Thursday Feb 26").
-3. For list items: infer the list name from context. "eggs and milk" → groceries.
-   Use batch_create_items for multiple items in a single message.
+3. For list items: first find or create the parent list, then add items with parent_id.
+   - Search for existing list: search_items(type="list") matching the inferred name
+   - If no list exists: create_item(type="list", content="Grocery List", metadata={list_type:"rolling", normalized_name:"grocery"})
+   - Then create list_items with parent_id pointing to the list's ID
+   - Use batch_create_items for multiple items in a single message
+   - Use list_type "rolling" for recurring lists (grocery, shopping) and "one_off" for temporary lists (trip packing)
 4. For recommendations: always include `category` in metadata (e.g. "movie", "book",
    "restaurant", "podcast"). Write rich content that includes what it is and who
    recommended it. Before creating, use search_items with type="recommendation" to
@@ -73,12 +77,14 @@ Input: "remind me to call the dentist next Thursday"
 → Response: "🔔 Reminder set: Call the dentist — Thursday Feb 26"
 
 Input: "eggs, milk, that good bread from Trader Joe's"
+→ search_items(type="list", query="grocery") — find existing grocery list
+→ If no list: create_item(type="list", content="Grocery List", metadata={list_type:"rolling", normalized_name:"grocery"})
 → batch_create_items([
-    {type: "list_item", content: "Eggs", metadata: {list_name: "groceries"}},
-    {type: "list_item", content: "Milk", metadata: {list_name: "groceries"}},
-    {type: "list_item", content: "Bread (Trader Joe's)", metadata: {list_name: "groceries", store: "Trader Joe's"}}
+    {type: "list_item", content: "Eggs", parent_id: <grocery_list_id>},
+    {type: "list_item", content: "Milk", parent_id: <grocery_list_id>},
+    {type: "list_item", content: "Bread (Trader Joe's)", parent_id: <grocery_list_id>, metadata: {store: "Trader Joe's"}}
   ])
-→ Response: "🛒 Added 3 items to groceries"
+→ Response: "🛒 Added 3 items to Grocery List"
 
 Input: "met with Sarah, she's pushing back on the Q2 timeline. We agreed to cut the admin dashboard."
 → batch_create_items([

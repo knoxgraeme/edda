@@ -25,9 +25,9 @@ describe("dashboard", () => {
         .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // openItems
         .mockResolvedValueOnce({
           rows: [
-            { id: "l1", type: "list_item", metadata: { list_name: "groceries" } },
-            { id: "l2", type: "list_item", metadata: { list_name: "groceries" } },
-            { id: "l3", type: "list_item", metadata: { list_name: "books" } },
+            { id: "l1", type: "list_item", list_name: "groceries", metadata: {} },
+            { id: "l2", type: "list_item", list_name: "groceries", metadata: {} },
+            { id: "l3", type: "list_item", list_name: "books", metadata: {} },
           ],
           rowCount: 3,
         }) // lists
@@ -38,10 +38,10 @@ describe("dashboard", () => {
       expect(query).toHaveBeenCalledTimes(5);
       expect(result.lists).toEqual({
         groceries: [
-          { id: "l1", type: "list_item", metadata: { list_name: "groceries" } },
-          { id: "l2", type: "list_item", metadata: { list_name: "groceries" } },
+          { id: "l1", type: "list_item", list_name: "groceries", metadata: {} },
+          { id: "l2", type: "list_item", list_name: "groceries", metadata: {} },
         ],
-        books: [{ id: "l3", type: "list_item", metadata: { list_name: "books" } }],
+        books: [{ id: "l3", type: "list_item", list_name: "books", metadata: {} }],
       });
       expect(result.due_today).toEqual([]);
       expect(result.captured_today).toEqual([]);

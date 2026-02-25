@@ -15,10 +15,16 @@ export const updateItemSchema = z.object({
     .describe("New status for the item"),
   content: z.string().optional().describe("Updated content text"),
   metadata: z.record(z.unknown()).optional().describe("Metadata fields to merge/replace"),
+  parent_id: z
+    .string()
+    .uuid()
+    .nullable()
+    .optional()
+    .describe("Parent item ID — set to move item to a different list, or null to unlink"),
 });
 
 export const updateItemTool = tool(
-  async ({ item_id, status, content, metadata }) => {
+  async ({ item_id, status, content, metadata, parent_id }) => {
     const updates: Parameters<typeof updateItem>[1] = {};
 
     if (status !== undefined) {
@@ -40,6 +46,7 @@ export const updateItemTool = tool(
     }
 
     if (metadata !== undefined) updates.metadata = metadata;
+    if (parent_id !== undefined) updates.parent_id = parent_id;
 
     const item = await updateItem(item_id, updates);
 

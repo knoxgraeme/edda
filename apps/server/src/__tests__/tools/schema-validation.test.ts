@@ -304,16 +304,16 @@ describe("listPendingItemsSchema", () => {
 // ---------------------------------------------------------------------------
 describe("getListContentsSchema", () => {
   it("accepts valid input", () => {
-    const result = getListContentsSchema.parse({ list_name: "groceries" });
-    expect(result.list_name).toBe("groceries");
+    const result = getListContentsSchema.parse({ list_id: "550e8400-e29b-41d4-a716-446655440000" });
+    expect(result.list_id).toBe("550e8400-e29b-41d4-a716-446655440000");
   });
 
-  it("rejects missing list_name", () => {
+  it("rejects missing list_id", () => {
     expect(() => getListContentsSchema.parse({})).toThrow(ZodError);
   });
 
-  it("rejects wrong type", () => {
-    expect(() => getListContentsSchema.parse({ list_name: 123 })).toThrow(ZodError);
+  it("rejects non-uuid string", () => {
+    expect(() => getListContentsSchema.parse({ list_id: "not-a-uuid" })).toThrow(ZodError);
   });
 });
 

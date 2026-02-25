@@ -196,6 +196,7 @@ export interface ItemType {
   agent_internal: boolean;
   confirmed: boolean;
   pending_action: string | null;
+  decay_half_life_days: number | null;
   created_at: string;
 }
 

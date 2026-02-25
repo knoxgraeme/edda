@@ -38,9 +38,12 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
       [today],
     ),
     pool.query(
-      `SELECT ${ITEM_COLS} FROM items
-       WHERE confirmed = true AND status = 'active' AND type = 'list_item'
-       ORDER BY metadata->>'list_name', created_at
+      `SELECT p.content AS list_name, ${ITEM_COLS.split(",").map((c) => `li.${c.trim()}`).join(", ")}
+       FROM items p
+       JOIN items li ON li.parent_id = p.id
+       WHERE p.type = 'list' AND p.confirmed = true AND p.status = 'active'
+         AND li.type = 'list_item' AND li.confirmed = true AND li.status = 'active'
+       ORDER BY p.content, li.created_at
        LIMIT 100`,
     ),
     pool.query(
@@ -49,12 +52,12 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
     ),
   ]);
 
-  // Group list items by list_name
+  // Group list items by parent list name
   const listMap: Record<string, Item[]> = {};
-  for (const item of lists.rows as Item[]) {
-    const listName = (item.metadata as Record<string, string>).list_name ?? "other";
+  for (const row of lists.rows as (Item & { list_name: string })[]) {
+    const listName = row.list_name ?? "other";
     if (!listMap[listName]) listMap[listName] = [];
-    listMap[listName].push(item);
+    listMap[listName].push(row);
   }
 
   return {
