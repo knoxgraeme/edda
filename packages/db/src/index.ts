@@ -18,6 +18,7 @@ export * from "./confirmations.js";
 export * from "./agents-md.js";
 export * from "./skills.js";
 export * from "./agents.js";
+export * from "./agent-schedules.js";
 export * from "./task-runs.js";
 export * from "./migrate.js";
 export * from "./seed-settings.js";

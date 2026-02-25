@@ -297,7 +297,25 @@ You can also read your past output via read_file /store/.`;
 - Timezone: ${settings.user_timezone}
 ${settings.user_display_name ? `- User: ${settings.user_display_name}` : ""}`;
 
-  return `${base}${contextSection}${storeSection}${settingsContext}
+  // Delegation guidance — only when agent has both task and run_agent
+  const hasRunAgent =
+    agent.tools.includes("run_agent") || agent.tools.length === 0;
+  const hasSubagents = agent.subagents.length > 0;
+  const delegationSection =
+    hasRunAgent && hasSubagents
+      ? [
+          "\n\n## Delegating Work",
+          "- **`task`** — Synchronous subagent. Use when you need the",
+          "result to continue (research, analysis, extraction). The",
+          "subagent runs inline and returns its output directly to you.",
+          "- **`run_agent`** — Background job. Use to kick off independent",
+          "work you don't need to wait for (scheduled tasks, batch",
+          "processing). Returns a task_run_id; check status with",
+          "list_my_runs.",
+        ].join("\n")
+      : "";
+
+  return `${base}${contextSection}${storeSection}${settingsContext}${delegationSection}
 
 ## Available Item Types
 ${formatItemTypes(itemTypes)}

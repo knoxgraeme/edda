@@ -8,7 +8,6 @@ const CreateAgentSchema = z.object({
   description: z.string().min(1).max(2000),
   system_prompt: z.string().max(50_000).optional(),
   skills: z.array(z.string()).optional(),
-  schedule: z.string().max(100).nullable().optional(),
   context_mode: z.enum(["isolated", "daily", "persistent"]).optional(),
   metadata: z.record(z.unknown()).optional(),
 });

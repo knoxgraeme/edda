@@ -84,8 +84,13 @@ export const runAgentTool = tool(
   },
   {
     name: "run_agent",
-    description:
-      "Trigger an on-demand run of an agent. Returns immediately with a task_run_id you can check later.",
+    description: [
+      "Trigger a BACKGROUND run of a named agent.",
+      "Returns immediately with a task_run_id — the agent runs asynchronously",
+      "and you will NOT receive its output. Use list_my_runs to check status.",
+      "Prefer the `task` tool when you need the result inline",
+      "(e.g. research, analysis, memory extraction).",
+    ].join(" "),
     schema: runAgentSchema,
   },
 );

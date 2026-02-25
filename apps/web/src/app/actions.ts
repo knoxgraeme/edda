@@ -157,21 +157,13 @@ const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
 const AGENT_NAME_MAX_LEN = 100;
 
 const VALID_CONTEXT_MODES = new Set<AgentContextMode>(["isolated", "daily", "persistent"]);
-const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "post_conversation", "on_demand"]);
+const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "on_demand"]);
 
 // System agents seeded by migrations — cannot be deleted from the UI
-const SYSTEM_AGENTS = new Set([
-  "daily_digest",
-  "memory_catchup",
-  "weekly_reflect",
-  "type_evolution",
-  "context_refresh",
-  "memory_writer",
-]);
+const SYSTEM_AGENTS = new Set(["edda", "digest", "maintenance", "memory"]);
 
 const MAX_DESCRIPTION_LEN = 1000;
 const MAX_SYSTEM_PROMPT_LEN = 50_000;
-const MAX_SCHEDULE_LEN = 100;
 const MAX_SKILL_LEN = 100;
 const MAX_TOOL_LEN = 100;
 
@@ -196,11 +188,6 @@ function validateAgentUpdates(updates: Record<string, unknown>): void {
       updates.system_prompt.length > MAX_SYSTEM_PROMPT_LEN
     ) {
       throw new Error(`System prompt must be a string (max ${MAX_SYSTEM_PROMPT_LEN} chars)`);
-    }
-  }
-  if (updates.schedule != null && updates.schedule !== null) {
-    if (typeof updates.schedule !== "string" || updates.schedule.length > MAX_SCHEDULE_LEN) {
-      throw new Error(`Schedule must be a string (max ${MAX_SCHEDULE_LEN} chars)`);
     }
   }
   if (updates.context_mode != null && !VALID_CONTEXT_MODES.has(updates.context_mode as AgentContextMode)) {
@@ -229,7 +216,6 @@ export async function createAgentAction(data: {
   description: string;
   system_prompt?: string;
   skills?: string[];
-  schedule?: string;
   context_mode?: AgentContextMode;
   trigger?: AgentTrigger;
   tools?: string[];
@@ -242,9 +228,6 @@ export async function createAgentAction(data: {
   }
   if (data.system_prompt && data.system_prompt.length > MAX_SYSTEM_PROMPT_LEN) {
     throw new Error(`System prompt too long (max ${MAX_SYSTEM_PROMPT_LEN} chars)`);
-  }
-  if (data.schedule && data.schedule.length > MAX_SCHEDULE_LEN) {
-    throw new Error(`Schedule too long (max ${MAX_SCHEDULE_LEN} chars)`);
   }
 
   const contextMode = data.context_mode ?? "isolated";
@@ -261,7 +244,6 @@ export async function createAgentAction(data: {
       description: data.description,
       system_prompt: data.system_prompt,
       skills: data.skills ?? [],
-      schedule: data.schedule,
       context_mode: contextMode,
       trigger: data.trigger,
       tools: data.tools ?? [],
@@ -286,7 +268,6 @@ export async function updateAgentAction(
     description: string;
     system_prompt: string | null;
     skills: string[];
-    schedule: string | null;
     context_mode: AgentContextMode;
     trigger: AgentTrigger | null;
     tools: string[];

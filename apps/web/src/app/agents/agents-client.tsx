@@ -66,11 +66,6 @@ export function AgentsClient({ agents, lastRuns }: Props) {
                         {agent.trigger && <Badge variant="secondary">{agent.trigger}</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground">{agent.description}</p>
-                      {agent.schedule && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Schedule: {agent.schedule}
-                        </p>
-                      )}
                       {agent.skills.length > 0 && (
                         <div className="flex gap-1 mt-1 flex-wrap">
                           {agent.skills.map((s) => (

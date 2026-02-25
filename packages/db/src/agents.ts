@@ -7,7 +7,7 @@
 import { getPool } from "./connection.js";
 import type { Agent, AgentContextMode, AgentTrigger } from "./types.js";
 
-const AGENT_COLS = `id, name, description, system_prompt, skills, schedule,
+const AGENT_COLS = `id, name, description, system_prompt, skills,
   context_mode, trigger, tools, subagents, model_settings_key,
   enabled, metadata, created_at, updated_at`;
 
@@ -46,22 +46,11 @@ export async function getAgentsByNames(names: string[]): Promise<Agent[]> {
   return rows as Agent[];
 }
 
-export async function getScheduledAgents(): Promise<Agent[]> {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT ${AGENT_COLS} FROM agents
-     WHERE enabled = true AND schedule IS NOT NULL
-     ORDER BY name`,
-  );
-  return rows as Agent[];
-}
-
 export async function createAgent(input: {
   name: string;
   description: string;
   system_prompt?: string;
   skills?: string[];
-  schedule?: string;
   context_mode?: AgentContextMode;
   trigger?: AgentTrigger;
   tools?: string[];
@@ -72,16 +61,15 @@ export async function createAgent(input: {
   const pool = getPool();
   const { rows } = await pool.query(
     `INSERT INTO agents
-       (name, description, system_prompt, skills, schedule, context_mode,
+       (name, description, system_prompt, skills, context_mode,
         trigger, tools, subagents, model_settings_key, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING ${AGENT_COLS}`,
     [
       input.name,
       input.description,
       input.system_prompt ?? null,
       input.skills ?? [],
-      input.schedule ?? null,
       input.context_mode ?? "isolated",
       input.trigger ?? null,
       input.tools ?? [],
@@ -97,7 +85,6 @@ const AGENT_UPDATE_COLUMNS = [
   "description",
   "system_prompt",
   "skills",
-  "schedule",
   "context_mode",
   "trigger",
   "tools",
@@ -115,7 +102,6 @@ export async function updateAgent(
       | "description"
       | "system_prompt"
       | "skills"
-      | "schedule"
       | "context_mode"
       | "trigger"
       | "tools"

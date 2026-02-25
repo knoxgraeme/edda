@@ -11,7 +11,6 @@ export const updateAgentSchema = z.object({
   description: z.string().optional().describe("New description"),
   system_prompt: z.string().optional().describe("New system prompt"),
   skills: z.array(z.string()).optional().describe("New skill list"),
-  schedule: z.string().nullable().optional().describe("New cron schedule (null to remove)"),
   enabled: z.boolean().optional().describe("Enable or disable the agent"),
   context_mode: z
     .enum(["isolated", "daily", "persistent"])
@@ -29,26 +28,18 @@ export const updateAgentTool = tool(
     const definition = await getAgentByName(agent_name);
     if (!definition) throw new Error(`Agent '${agent_name}' not found`);
 
-    if (updates.schedule !== undefined && updates.schedule !== null) {
-      const cron = await import("node-cron");
-      if (!cron.validate(updates.schedule)) {
-        throw new Error(`Invalid cron expression: ${updates.schedule}`);
-      }
-    }
-
     const updated = await updateAgent(definition.id, updates);
 
     return JSON.stringify({
       updated: true,
       name: updated.name,
       enabled: updated.enabled,
-      schedule: updated.schedule,
     });
   },
   {
     name: "update_agent",
     description:
-      "Update an existing agent definition. Can change schedule, description, enabled status, and more.",
+      "Update an existing agent definition. Can change description, enabled status, skills, and more. Schedules are managed separately.",
     schema: updateAgentSchema,
   },
 );

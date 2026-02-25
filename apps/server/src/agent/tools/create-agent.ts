@@ -21,10 +21,10 @@ export const createAgentSchema = z.object({
     .optional()
     .default([])
     .describe("Skill names to use (e.g. ['daily_digest'])"),
-  schedule: z
-    .string()
-    .optional()
-    .describe("Cron expression for scheduled runs (e.g. '0 9 * * *')"),
+  trigger: z
+    .enum(["schedule", "on_demand"])
+    .default("on_demand")
+    .describe("How this agent is triggered"),
   context_mode: z
     .enum(["isolated", "daily", "persistent"])
     .default("isolated")
@@ -41,7 +41,7 @@ export const createAgentTool = tool(
     description,
     system_prompt,
     skills,
-    schedule,
+    trigger,
     context_mode,
     metadata,
   }) => {
@@ -50,29 +50,13 @@ export const createAgentTool = tool(
       throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
     }
 
-    if (schedule) {
-      const cron = await import("node-cron");
-      if (!cron.validate(schedule)) {
-        throw new Error(`Invalid cron expression: ${schedule}`);
-      }
-      // Reject overly frequent schedules (more than once per 5 minutes)
-      const parts = schedule.split(/\s+/);
-      if (parts[0] === "*" || parts[0]?.includes("/")) {
-        const interval = parts[0] === "*" ? 1 : parseInt(parts[0].split("/")[1] ?? "1", 10);
-        if (interval < 5) {
-          throw new Error("Agent schedule cannot run more frequently than every 5 minutes.");
-        }
-      }
-    }
-
     const agent = await createAgent({
       name,
       description,
       system_prompt,
       skills: skills ?? [],
-      schedule,
       context_mode,
-      trigger: schedule ? "schedule" : "on_demand",
+      trigger,
       metadata,
     });
 
@@ -80,13 +64,13 @@ export const createAgentTool = tool(
       created: true,
       agent_id: agent.id,
       name: agent.name,
-      schedule: agent.schedule,
+      trigger: agent.trigger,
     });
   },
   {
     name: "create_agent",
     description:
-      "Create a new agent. It will run on schedule (if cron provided) or on-demand via run_agent.",
+      "Create a new agent. Schedules are managed separately via agent_schedules. Use trigger='schedule' for cron-driven agents.",
     schema: createAgentSchema,
   },
 );
