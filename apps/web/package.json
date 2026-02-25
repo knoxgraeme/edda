@@ -12,6 +12,7 @@
   "dependencies": {
     "@edda/db": "workspace:*",
     "@langchain/langgraph-sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slot": "^1.2.4",
     "class-variance-authority": "^0.7.0",

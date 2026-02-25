@@ -27,7 +27,7 @@ export async function createMcpConnection(input: {
   return rows[0] as McpConnection;
 }
 
-const MCP_UPDATE_COLUMNS = ['name', 'transport', 'config', 'enabled'] as const;
+const MCP_UPDATE_COLUMNS = ['name', 'transport', 'config', 'enabled', 'discovered_tools'] as const;
 
 export async function updateMcpConnection(
   id: string,
@@ -50,6 +50,14 @@ export async function updateMcpConnection(
     [id, ...vals],
   );
   return (rows[0] as McpConnection) ?? null;
+}
+
+export async function getAllMcpTools(): Promise<string[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT unnest(discovered_tools) AS tool FROM mcp_connections WHERE enabled = true",
+  );
+  return rows.map((r: { tool: string }) => r.tool);
 }
 
 export async function deleteMcpConnection(id: string): Promise<void> {

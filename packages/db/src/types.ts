@@ -97,6 +97,9 @@ export interface Settings {
   notification_targets: string[];
   task_max_concurrency: number;
 
+  // Default agent
+  default_agent: string;
+
   // Meta
   created_at: string;
   updated_at: string;
@@ -206,6 +209,7 @@ export interface McpConnection {
   transport: "stdio" | "sse" | "streamable-http";
   config: Record<string, unknown>;
   enabled: boolean;
+  discovered_tools: string[];
   created_at: string;
 }
 
