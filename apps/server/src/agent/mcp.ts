@@ -10,8 +10,18 @@ import type { Connection } from "@langchain/mcp-adapters";
 import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { getMcpConnections, updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
+import { withTimeout } from "../utils/with-timeout.js";
 
 let _client: MultiServerMCPClient | null = null;
+let _initPromise: Promise<DynamicStructuredTool[]> | null = null;
+
+const MCP_INIT_TIMEOUT_MS = parseInt(process.env.MCP_TIMEOUT_MS ?? "30000", 10);
+
+// --- Name sanitization ---
+
+function sanitizeName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+}
 
 // --- Stdio security: command allowlist + env filtering ---
 // NOTE: ALLOWED_STDIO_COMMANDS and BLOCKED_ENV_KEYS are duplicated in apps/web/src/lib/mcp-probe.ts.
@@ -68,7 +78,7 @@ const PRIVATE_IP_PATTERNS = [
   /^0\./, // 0.0.0.0/8
 ];
 
-function validateMcpUrl(raw: string): void {
+function validateMcpUrl(raw: string): string {
   const url = new URL(raw);
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -88,6 +98,8 @@ function validateMcpUrl(raw: string): void {
       throw new Error(`MCP URL hostname "${hostname}" resolves to a private/reserved address.`);
     }
   }
+
+  return url.toString();
 }
 
 // --- Connection config → MultiServerMCPClient format ---
@@ -97,7 +109,10 @@ function toMCPServerConfig(conn: McpConnection): Connection {
 
   switch (conn.transport) {
     case "stdio": {
-      const command = config.command as string;
+      if (typeof config.command !== "string") {
+        throw new Error(`MCP stdio config missing "command" for "${conn.name}"`);
+      }
+      const command = config.command;
       validateStdioCommand(command);
       return {
         transport: "stdio" as const,
@@ -107,8 +122,10 @@ function toMCPServerConfig(conn: McpConnection): Connection {
       };
     }
     case "sse": {
-      const url = config.url as string;
-      validateMcpUrl(url);
+      if (typeof config.url !== "string") {
+        throw new Error(`MCP SSE config missing "url" for "${conn.name}"`);
+      }
+      const url = validateMcpUrl(config.url);
       const authToken = config.auth_env_var
         ? process.env[config.auth_env_var as string]
         : undefined;
@@ -119,8 +136,10 @@ function toMCPServerConfig(conn: McpConnection): Connection {
       };
     }
     case "streamable-http": {
-      const url = config.url as string;
-      validateMcpUrl(url);
+      if (typeof config.url !== "string") {
+        throw new Error(`MCP streamable-http config missing "url" for "${conn.name}"`);
+      }
+      const url = validateMcpUrl(config.url);
       return {
         transport: "http" as const,
         url,
@@ -131,33 +150,31 @@ function toMCPServerConfig(conn: McpConnection): Connection {
   }
 }
 
-// --- Public API ---
+// --- Internal init helper ---
 
-/**
- * Load tools from all enabled MCP connections.
- * Returns cached tools on subsequent calls. Call invalidateMCPClient()
- * when connections change.
- */
-export async function loadMCPTools(): Promise<DynamicStructuredTool[]> {
-  if (_client) return _client.getTools();
-
+async function _initMCPClient(): Promise<DynamicStructuredTool[]> {
   const connections = await getMcpConnections();
   if (connections.length === 0) return [];
 
-  _client = new MultiServerMCPClient({
+  const client = new MultiServerMCPClient({
     prefixToolNameWithServerName: true,
     additionalToolNamePrefix: "mcp",
-    onConnectionError: "ignore",
+    onConnectionError: (err: { serverName: string; error?: unknown }) => {
+      console.warn(`[MCP] Connection failed for "${err.serverName}": ${err.error}`);
+    },
     mcpServers: Object.fromEntries(
-      connections.map((c) => [c.name, toMCPServerConfig(c)]),
+      connections.map((c) => [sanitizeName(c.name), toMCPServerConfig(c)]),
     ),
   });
 
-  const tools = await _client.getTools();
+  const tools = await withTimeout(client.getTools(), MCP_INIT_TIMEOUT_MS, "MCP tool discovery");
+
+  // Only cache the client after getTools() succeeds
+  _client = client;
 
   // Write discovered tool names to DB (for UI display + agent tool scoping)
   for (const conn of connections) {
-    const prefix = `mcp__${conn.name}__`;
+    const prefix = `mcp__${sanitizeName(conn.name)}__`;
     const connTools = tools.filter((t) => t.name.startsWith(prefix)).map((t) => t.name);
     if (connTools.length > 0) {
       updateMcpConnection(conn.id, { discovered_tools: connTools }).catch((err) =>
@@ -173,15 +190,36 @@ export async function loadMCPTools(): Promise<DynamicStructuredTool[]> {
   return tools;
 }
 
+// --- Public API ---
+
+/**
+ * Load tools from all enabled MCP connections.
+ * Returns cached tools on subsequent calls. Call invalidateMCPClient()
+ * when connections change.
+ */
+export async function loadMCPTools(): Promise<DynamicStructuredTool[]> {
+  if (_client) return _client.getTools();
+  if (_initPromise) return _initPromise;
+  _initPromise = _initMCPClient();
+  try {
+    return await _initPromise;
+  } catch (err) {
+    _initPromise = null; // allow retry on failure
+    throw err;
+  }
+}
+
 /**
  * Invalidate the cached MCP client. Call when connections are
  * added, updated, or removed. Next loadMCPTools() call will
  * reconnect to all servers.
  */
 export async function invalidateMCPClient(): Promise<void> {
+  _initPromise = null;
   if (_client) {
-    await _client.close();
+    const client = _client;
     _client = null;
+    await client.close();
   }
 }
 
