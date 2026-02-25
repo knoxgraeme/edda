@@ -63,17 +63,10 @@ export function collectSkillTools(skillNames: string[]): Set<string> {
   const tools = new Set<string>();
   let anyDeclared = false;
   for (const name of skillNames) {
-    try {
-      const meta = loadAndParse(name);
-      if (meta.allowedTools.length > 0) {
-        anyDeclared = true;
-        for (const t of meta.allowedTools) tools.add(t);
-      }
-    } catch (err) {
-      console.warn(
-        `[collectSkillTools] Failed to load skill "${name}":`,
-        err instanceof Error ? err.message : err,
-      );
+    const meta = loadAndParse(name);
+    if (meta.allowedTools.length > 0) {
+      anyDeclared = true;
+      for (const t of meta.allowedTools) tools.add(t);
     }
   }
   // If no skill declared allowed-tools, return empty set (meaning "all tools")

@@ -17,6 +17,7 @@ import {
   refreshSettings,
 } from "@edda/db";
 import { sanitizeError } from "../utils/sanitize-error.js";
+import { withTimeout } from "../utils/with-timeout.js";
 import type { Agent } from "@edda/db";
 
 import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
@@ -56,15 +57,6 @@ function extractLastAssistantMessage(result: {
 // ---------------------------------------------------------------------------
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-    ),
-  ]);
-}
 
 // ---------------------------------------------------------------------------
 // Interval constants
@@ -110,6 +102,7 @@ export class StandaloneCronRunner implements CronRunner {
   private _registeredAgents = new Map<string, { task: cron.ScheduledTask; schedule: string }>();
   private _syncInterval: NodeJS.Timeout | null = null;
   private _running = false;
+  private syncFailures = 0;
 
   async start(): Promise<void> {
     if (this._running) {
@@ -191,8 +184,15 @@ export class StandaloneCronRunner implements CronRunner {
           console.log(`  [cron] Unregistered: ${name}`);
         }
       }
+
+      this.syncFailures = 0;
     } catch (err) {
-      console.error("  [cron] Schedule sync failed:", err);
+      this.syncFailures++;
+      const level = this.syncFailures >= 3 ? "error" : "warn";
+      console[level](
+        `[Cron] syncSchedules failed (${this.syncFailures} consecutive):`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 

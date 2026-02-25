@@ -21,7 +21,25 @@ import {
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { computeSessionToken, COOKIE_NAME, THIRTY_DAYS } from "@/lib/auth";
+
+// Mirrors UpdateSettingsSchema from /api/v1/settings/route.ts — keep in sync
+const UpdateSettingsSchema = z
+  .object({
+    user_display_name: z.string().max(200).optional(),
+    user_timezone: z.string().max(100).optional(),
+    llm_provider: z
+      .enum(["anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock"])
+      .optional(),
+    default_model: z.string().max(100).optional(),
+    embedding_provider: z.enum(["voyage", "openai", "google"]).optional(),
+    embedding_model: z.string().max(100).optional(),
+    notification_targets: z.array(z.string()).optional(),
+    context_refresh_cron: z.string().max(50).optional(),
+    default_agent: z.string().min(1).max(200).optional(),
+  })
+  .strict();
 
 const VALID_TABLES = new Set(["items", "entities", "item_types"] as const);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,7 +66,12 @@ export async function confirmPendingAction(
 ) {
   validateTable(table);
   validateId(id, table);
-  await confirmPending(table, id);
+  try {
+    await confirmPending(table, id);
+  } catch (err: unknown) {
+    console.error("Failed to confirm pending item:", err);
+    throw new Error("Failed to confirm item. Please try again.");
+  }
   revalidatePath("/inbox");
   revalidatePath("/dashboard");
 }
@@ -92,13 +115,19 @@ export async function updateItemStatusAction(
   if (status === "done") {
     updates.completed_at = new Date().toISOString();
   }
-  await updateItem(id, updates);
+  try {
+    await updateItem(id, updates);
+  } catch (err: unknown) {
+    console.error("Failed to update item status:", err);
+    throw new Error("Failed to update item status. Please try again.");
+  }
   revalidatePath("/dashboard");
 }
 
 export async function saveSettingsAction(updates: Partial<Settings>) {
+  const validated = UpdateSettingsSchema.parse(updates);
   try {
-    const saved = await updateSettings(updates);
+    const saved = await updateSettings(validated);
     revalidatePath("/settings");
     return saved;
   } catch (err) {
@@ -226,19 +255,29 @@ export async function createAgentAction(data: {
     throw new Error("Invalid trigger");
   }
 
-  const agent = await createAgent({
-    name: data.name,
-    description: data.description,
-    system_prompt: data.system_prompt,
-    skills: data.skills ?? [],
-    schedule: data.schedule,
-    context_mode: contextMode,
-    trigger: data.trigger,
-    tools: data.tools ?? [],
-    metadata: data.metadata,
-  });
-  revalidatePath("/agents");
-  redirect(`/agents/${agent.name}`);
+  try {
+    const agent = await createAgent({
+      name: data.name,
+      description: data.description,
+      system_prompt: data.system_prompt,
+      skills: data.skills ?? [],
+      schedule: data.schedule,
+      context_mode: contextMode,
+      trigger: data.trigger,
+      tools: data.tools ?? [],
+      metadata: data.metadata,
+    });
+    revalidatePath("/agents");
+    redirect(`/agents/${agent.name}`);
+  } catch (err: unknown) {
+    // Next.js redirect() throws — must re-throw
+    if (err && typeof err === "object" && "digest" in err) throw err;
+    if (err instanceof Error && err.message.includes("duplicate key")) {
+      throw new Error(`An agent named "${data.name}" already exists.`);
+    }
+    console.error("Failed to create agent:", err);
+    throw new Error("Failed to create agent. Please try again.");
+  }
 }
 
 export async function updateAgentAction(
@@ -271,9 +310,16 @@ export async function deleteAgentAction(name: string) {
   if (SYSTEM_AGENTS.has(agent.name)) {
     throw new Error("Cannot delete system agent");
   }
-  await deleteAgent(agent.id);
-  revalidatePath("/agents");
-  redirect("/agents");
+  try {
+    await deleteAgent(agent.id);
+    revalidatePath("/agents");
+    redirect("/agents");
+  } catch (err: unknown) {
+    // Next.js redirect() throws — must re-throw
+    if (err && typeof err === "object" && "digest" in err) throw err;
+    console.error("Failed to delete agent:", err);
+    throw new Error("Failed to delete agent. Please try again.");
+  }
 }
 
 export async function toggleAgentAction(name: string, enabled: boolean) {

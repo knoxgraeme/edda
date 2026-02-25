@@ -1,6 +1,19 @@
 import { getItemById, updateItem, deleteItem } from "@edda/db";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { parseBody, notFound, badRequest, isUUID } from "../../_lib/helpers";
+
+const UpdateItemSchema = z
+  .object({
+    content: z.string().max(50000).optional(),
+    summary: z.string().max(5000).nullable().optional(),
+    status: z.enum(["active", "done", "archived", "snoozed"]).optional(),
+    metadata: z.record(z.unknown()).optional(),
+    day: z.string().max(10).optional(),
+    completed_at: z.string().nullable().optional(),
+    pending_action: z.string().max(200).nullable().optional(),
+  })
+  .strict(); // .strict() rejects unknown keys like embedding, confirmed, superseded_by
 
 export async function GET(
   _request: Request,
@@ -22,7 +35,14 @@ export async function PATCH(
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
 
-  const item = await updateItem(id, body as Record<string, unknown>);
+  let updates;
+  try {
+    updates = UpdateItemSchema.parse(body);
+  } catch {
+    return NextResponse.json({ error: "Invalid update fields" }, { status: 400 });
+  }
+
+  const item = await updateItem(id, updates);
   if (!item) return notFound("Item");
   return NextResponse.json(item);
 }
