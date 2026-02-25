@@ -29,11 +29,10 @@ export const createAgentSchema = z.object({
     .enum(["isolated", "daily", "persistent"])
     .default("isolated")
     .describe("Thread ID strategy"),
-  scopes: z.array(z.string()).optional().describe("Memory scope tags for visibility"),
-  scope_mode: z
-    .enum(["boost", "strict"])
-    .default("boost")
-    .describe("Scope enforcement mode"),
+  metadata: z
+    .record(z.unknown())
+    .optional()
+    .describe("Arbitrary metadata for the agent (e.g. retrieval_context)"),
 });
 
 export const createAgentTool = tool(
@@ -44,8 +43,7 @@ export const createAgentTool = tool(
     skills,
     schedule,
     context_mode,
-    scopes,
-    scope_mode,
+    metadata,
   }) => {
     const existing = await getAgents();
     if (existing.length >= 30) {
@@ -75,8 +73,7 @@ export const createAgentTool = tool(
       schedule,
       context_mode,
       trigger: schedule ? "schedule" : "on_demand",
-      scopes: scopes ?? [],
-      scope_mode,
+      metadata,
     });
 
     return JSON.stringify({

@@ -5,6 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { searchItems } from "@edda/db";
+import type { RetrievalContext } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const searchItemsSchema = z.object({
@@ -27,7 +28,13 @@ export const searchItemsSchema = z.object({
 });
 
 export const searchItemsTool = tool(
-  async ({ query, type, after, limit, agent_knowledge_only, metadata }) => {
+  async ({ query, type, after, limit, agent_knowledge_only, metadata }, config) => {
+    // Retrieval context is resolved once at agent construction time and injected
+    // via config.configurable by the cron runner (see standalone.ts).
+    const retrievalContext = config?.configurable?.retrieval_context as
+      | RetrievalContext
+      | undefined;
+
     // Embed query in the same format used for stored items when type is known,
     // so cosine similarity scores aren't degraded by format mismatch.
     const embeddingText = type ? buildEmbeddingText(type, query) : query;
@@ -38,6 +45,7 @@ export const searchItemsTool = tool(
       after,
       agentKnowledgeOnly: agent_knowledge_only,
       metadata,
+      retrieval_context: retrievalContext,
     });
 
     return JSON.stringify({

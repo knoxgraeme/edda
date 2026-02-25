@@ -10,8 +10,7 @@ const CreateAgentSchema = z.object({
   skills: z.array(z.string()).optional(),
   schedule: z.string().max(100).nullable().optional(),
   context_mode: z.enum(["isolated", "daily", "persistent"]).optional(),
-  scopes: z.array(z.string()).optional(),
-  scope_mode: z.enum(["boost", "strict"]).optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export async function GET() {

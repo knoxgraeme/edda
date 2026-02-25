@@ -25,6 +25,7 @@ import {
   finalizeContextRefresh,
   maybeRefreshAgentContext,
 } from "../agent/generate-agents-md.js";
+import { resolveRetrievalContext } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import { notify } from "../notifications/index.js";
 import type { CronRunner } from "./index.js";
@@ -73,17 +74,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
+// Metadata-driven invocation hooks (closed allowlist)
+// ---------------------------------------------------------------------------
+
+const PRE_HOOKS: Record<string, (agent: Agent) => Promise<string | null>> = {
+  prepareContextRefreshInput: () => prepareContextRefreshInput(),
+};
+
+const POST_HOOKS: Record<string, (agent: Agent) => Promise<void>> = {
+  finalizeContextRefresh: () => finalizeContextRefresh(),
+};
+
+// ---------------------------------------------------------------------------
 // Invocation message builder
 // ---------------------------------------------------------------------------
 
 /**
  * Build the user message for an agent invocation.
- * Most agents get a generic prompt. context_refresh gets its template + diff.
+ * Dispatches to a pre_invoke hook if one is declared in agent.metadata.hooks.
  * Returns null if the agent should be skipped (e.g. no changes for context_refresh).
  */
 async function buildInvocationMessage(agent: Agent): Promise<string | null> {
-  if (agent.name === "context_refresh") {
-    return prepareContextRefreshInput();
+  const hooks = agent.metadata?.hooks as { pre_invoke?: string } | undefined;
+  if (hooks?.pre_invoke && PRE_HOOKS[hooks.pre_invoke]) {
+    return PRE_HOOKS[hooks.pre_invoke](agent);
   }
   return `Execute the ${agent.name} task now.`;
 }
@@ -228,7 +242,13 @@ export class StandaloneCronRunner implements CronRunner {
         const result: any = await withTimeout(
           agent.invoke(
             { messages: [{ role: "user", content: userMessage }] },
-            { configurable: { thread_id: threadId, agent_name: freshDef.name } },
+            {
+              configurable: {
+                thread_id: threadId,
+                agent_name: freshDef.name,
+                retrieval_context: resolveRetrievalContext(freshDef.metadata, freshDef.name),
+              },
+            },
           ),
           AGENT_TIMEOUT_MS,
           freshDef.name,
@@ -251,10 +271,11 @@ export class StandaloneCronRunner implements CronRunner {
           );
         }
 
-        // Post-execution hooks
+        // Post-execution hooks (metadata-driven or default context refresh)
         try {
-          if (freshDef.name === "context_refresh") {
-            await finalizeContextRefresh();
+          const postHooks = freshDef.metadata?.hooks as { post_invoke?: string } | undefined;
+          if (postHooks?.post_invoke && POST_HOOKS[postHooks.post_invoke]) {
+            await POST_HOOKS[postHooks.post_invoke](freshDef);
           } else {
             await maybeRefreshAgentContext(freshDef);
           }

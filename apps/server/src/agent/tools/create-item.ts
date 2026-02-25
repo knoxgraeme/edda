@@ -6,6 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createItem, getSettingsSync, searchItems, updateItem } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
+import { getAgentName } from "../tool-helpers.js";
 
 export const createItemSchema = z.object({
   type: z.string().describe("The item type (e.g. note, task, event, preference)"),
@@ -23,7 +24,11 @@ export const createItemSchema = z.object({
 const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);
 
 export const createItemTool = tool(
-  async ({ type, content, summary, metadata, day, status, parent_id }) => {
+  async ({ type, content, summary, metadata, day, status, parent_id }, config) => {
+    const agentName = getAgentName(config);
+    const finalMetadata = agentName
+      ? { ...(metadata ?? {}), created_by: agentName }
+      : metadata;
     const settings = getSettingsSync();
     const embedding = await embed(buildEmbeddingText(type, content, summary));
 
@@ -54,7 +59,7 @@ export const createItemTool = tool(
       type,
       content,
       summary,
-      metadata,
+      metadata: finalMetadata,
       day,
       status,
       parent_id,
