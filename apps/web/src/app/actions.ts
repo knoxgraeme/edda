@@ -140,11 +140,58 @@ const SYSTEM_AGENTS = new Set([
   "memory_writer",
 ]);
 
+const MAX_DESCRIPTION_LEN = 1000;
+const MAX_SYSTEM_PROMPT_LEN = 50_000;
+const MAX_SCHEDULE_LEN = 100;
+const MAX_SKILL_LEN = 100;
+const MAX_TOOL_LEN = 100;
+
 function validateAgentName(name: string): void {
   if (!name || name.length > AGENT_NAME_MAX_LEN || !AGENT_NAME_RE.test(name)) {
     throw new Error(
       "Agent name must be lowercase alphanumeric with underscores (max 100 chars)",
     );
+  }
+}
+
+function validateAgentUpdates(updates: Record<string, unknown>): void {
+  if (
+    updates.description != null &&
+    (typeof updates.description !== "string" || updates.description.length > MAX_DESCRIPTION_LEN)
+  ) {
+    throw new Error(`Description must be a string (max ${MAX_DESCRIPTION_LEN} chars)`);
+  }
+  if (updates.system_prompt != null && updates.system_prompt !== null) {
+    if (
+      typeof updates.system_prompt !== "string" ||
+      updates.system_prompt.length > MAX_SYSTEM_PROMPT_LEN
+    ) {
+      throw new Error(`System prompt must be a string (max ${MAX_SYSTEM_PROMPT_LEN} chars)`);
+    }
+  }
+  if (updates.schedule != null && updates.schedule !== null) {
+    if (typeof updates.schedule !== "string" || updates.schedule.length > MAX_SCHEDULE_LEN) {
+      throw new Error(`Schedule must be a string (max ${MAX_SCHEDULE_LEN} chars)`);
+    }
+  }
+  if (updates.context_mode != null && !VALID_CONTEXT_MODES.has(updates.context_mode as AgentContextMode)) {
+    throw new Error("Invalid context_mode");
+  }
+  if (updates.trigger != null && updates.trigger !== null && !VALID_TRIGGERS.has(updates.trigger as AgentTrigger)) {
+    throw new Error("Invalid trigger");
+  }
+  if (updates.skills != null) {
+    if (!Array.isArray(updates.skills) || updates.skills.some((s: unknown) => typeof s !== "string" || (s as string).length > MAX_SKILL_LEN)) {
+      throw new Error("Skills must be an array of strings");
+    }
+  }
+  if (updates.tools != null) {
+    if (!Array.isArray(updates.tools) || updates.tools.some((t: unknown) => typeof t !== "string" || (t as string).length > MAX_TOOL_LEN)) {
+      throw new Error("Tools must be an array of strings");
+    }
+  }
+  if (updates.enabled != null && typeof updates.enabled !== "boolean") {
+    throw new Error("enabled must be a boolean");
   }
 }
 
@@ -160,6 +207,16 @@ export async function createAgentAction(data: {
   metadata?: Record<string, unknown>;
 }) {
   validateAgentName(data.name);
+
+  if (!data.description || data.description.length > MAX_DESCRIPTION_LEN) {
+    throw new Error(`Description is required (max ${MAX_DESCRIPTION_LEN} chars)`);
+  }
+  if (data.system_prompt && data.system_prompt.length > MAX_SYSTEM_PROMPT_LEN) {
+    throw new Error(`System prompt too long (max ${MAX_SYSTEM_PROMPT_LEN} chars)`);
+  }
+  if (data.schedule && data.schedule.length > MAX_SCHEDULE_LEN) {
+    throw new Error(`Schedule too long (max ${MAX_SCHEDULE_LEN} chars)`);
+  }
 
   const contextMode = data.context_mode ?? "isolated";
   if (!VALID_CONTEXT_MODES.has(contextMode)) {
@@ -198,6 +255,8 @@ export async function updateAgentAction(
     metadata: Record<string, unknown>;
   }>,
 ) {
+  validateAgentName(name);
+  validateAgentUpdates(updates as Record<string, unknown>);
   const agent = await getAgentByName(name);
   if (!agent) throw new Error("Agent not found");
   await updateAgent(agent.id, updates);
@@ -206,6 +265,7 @@ export async function updateAgentAction(
 }
 
 export async function deleteAgentAction(name: string) {
+  validateAgentName(name);
   const agent = await getAgentByName(name);
   if (!agent) throw new Error("Agent not found");
   if (SYSTEM_AGENTS.has(agent.name)) {
@@ -217,6 +277,8 @@ export async function deleteAgentAction(name: string) {
 }
 
 export async function toggleAgentAction(name: string, enabled: boolean) {
+  validateAgentName(name);
+  if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
   const agent = await getAgentByName(name);
   if (!agent) throw new Error("Agent not found");
   await updateAgent(agent.id, { enabled });
