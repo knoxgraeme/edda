@@ -6,4 +6,13 @@
  * client components use these type aliases for prop typing.
  */
 
-export type { Item, DashboardData, Settings, PendingItem, Entity, EntityType } from "@edda/db";
+export type {
+  Item,
+  DashboardData,
+  Settings,
+  PendingItem,
+  Entity,
+  EntityType,
+  Agent,
+  TaskRun,
+} from "@edda/db";

@@ -236,6 +236,48 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
           </CardContent>
         </Card>
 
+        {/* Agents & Concurrency */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Agents & Concurrency</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <FieldGroup
+              label="Max concurrent tasks"
+              htmlFor="task_max_concurrency"
+              description="Maximum number of agent tasks running in parallel (1–10)"
+            >
+              <Input
+                id="task_max_concurrency"
+                type="number"
+                min={1}
+                max={10}
+                value={form.task_max_concurrency}
+                onChange={(e) => update("task_max_concurrency", Number(e.target.value))}
+              />
+            </FieldGroup>
+            <FieldGroup
+              label="Notification targets"
+              htmlFor="notification_targets"
+              description="Where agent notifications are sent (comma-separated, e.g. inbox)"
+            >
+              <Input
+                id="notification_targets"
+                value={(form.notification_targets ?? []).join(", ")}
+                onChange={(e) =>
+                  update(
+                    "notification_targets",
+                    e.target.value
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  )
+                }
+              />
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
         {/* Crons */}
         <Card>
           <CardHeader>

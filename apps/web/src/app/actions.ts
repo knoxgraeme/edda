@@ -8,9 +8,15 @@ import {
   updateEntity,
   getEntityItems,
   updateSettings,
+  getAgentByName,
+  createAgent,
+  updateAgent,
+  deleteAgent,
   type Settings,
   type Entity,
   type Item,
+  type AgentContextMode,
+  type AgentTrigger,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
@@ -114,6 +120,76 @@ export async function updateEntityAction(
 export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
   if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
   return getEntityItems(entityId);
+}
+
+// ─── Agents ─────────────────────────────────────────────────────────
+
+const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
+
+export async function createAgentAction(data: {
+  name: string;
+  description: string;
+  system_prompt?: string;
+  skills?: string[];
+  schedule?: string;
+  context_mode?: string;
+  trigger?: string;
+  tools?: string[];
+  metadata?: Record<string, unknown>;
+}) {
+  if (!AGENT_NAME_RE.test(data.name)) {
+    throw new Error("Agent name must be lowercase alphanumeric with underscores");
+  }
+  const agent = await createAgent({
+    name: data.name,
+    description: data.description,
+    system_prompt: data.system_prompt,
+    skills: data.skills ?? [],
+    schedule: data.schedule,
+    context_mode: (data.context_mode as AgentContextMode) ?? "isolated",
+    trigger: (data.trigger as AgentTrigger) ?? undefined,
+    tools: data.tools ?? [],
+    metadata: data.metadata,
+  });
+  revalidatePath("/agents");
+  redirect(`/agents/${agent.name}`);
+}
+
+export async function updateAgentAction(
+  name: string,
+  updates: Partial<{
+    description: string;
+    system_prompt: string | null;
+    skills: string[];
+    schedule: string | null;
+    context_mode: AgentContextMode;
+    trigger: AgentTrigger | null;
+    tools: string[];
+    enabled: boolean;
+    metadata: Record<string, unknown>;
+  }>,
+) {
+  const agent = await getAgentByName(name);
+  if (!agent) throw new Error("Agent not found");
+  await updateAgent(agent.id, updates);
+  revalidatePath(`/agents/${name}`);
+  revalidatePath("/agents");
+}
+
+export async function deleteAgentAction(name: string) {
+  const agent = await getAgentByName(name);
+  if (!agent) throw new Error("Agent not found");
+  await deleteAgent(agent.id);
+  revalidatePath("/agents");
+  redirect("/agents");
+}
+
+export async function toggleAgentAction(name: string, enabled: boolean) {
+  const agent = await getAgentByName(name);
+  if (!agent) throw new Error("Agent not found");
+  await updateAgent(agent.id, { enabled });
+  revalidatePath(`/agents/${name}`);
+  revalidatePath("/agents");
 }
 
 // ─── Auth ───────────────────────────────────────────────────────────
