@@ -172,15 +172,30 @@ function createTransport(connection: McpConnection) {
   }
 }
 
+// --- Tool cache (avoids redundant MCP connections across concurrent buildAgent() calls) ---
+
+let _cachedTools: DynamicStructuredTool[] | null = null;
+let _cacheTimestamp = 0;
+const MCP_CACHE_TTL_MS = 60_000; // 1 minute
+
 /**
  * Load tools from all enabled MCP connections.
- * Returns an array of LangChain-compatible tools.
- * Also writes back discovered tool names to the DB as a cache refresh.
+ * Returns cached tools if available and fresh. Also writes back discovered
+ * tool names to the DB as a cache refresh on first load.
  */
 export async function loadMCPTools(): Promise<DynamicStructuredTool[]> {
+  const now = Date.now();
+  if (_cachedTools && now - _cacheTimestamp < MCP_CACHE_TTL_MS) {
+    return _cachedTools;
+  }
+
   const connections = await getMcpConnections();
 
-  if (connections.length === 0) return [];
+  if (connections.length === 0) {
+    _cachedTools = [];
+    _cacheTimestamp = now;
+    return [];
+  }
 
   const results = await Promise.allSettled(
     connections.map((conn) => loadToolsFromConnection(conn)),
@@ -208,7 +223,18 @@ export async function loadMCPTools(): Promise<DynamicStructuredTool[]> {
     console.log(`[MCP] Loaded ${tools.length} tools from ${connections.length} connections`);
   }
 
+  _cachedTools = tools;
+  _cacheTimestamp = now;
   return tools;
+}
+
+/**
+ * Invalidate the MCP tool cache. Call when connections are added, updated,
+ * or removed so the next loadMCPTools() call rediscovers tools.
+ */
+export function invalidateMCPToolCache(): void {
+  _cachedTools = null;
+  _cacheTimestamp = 0;
 }
 
 /**

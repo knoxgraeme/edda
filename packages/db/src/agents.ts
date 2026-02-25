@@ -36,6 +36,16 @@ export async function getAgentByName(name: string): Promise<Agent | null> {
   return (rows[0] as Agent) ?? null;
 }
 
+export async function getAgentsByNames(names: string[]): Promise<Agent[]> {
+  if (names.length === 0) return [];
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT ${AGENT_COLS} FROM agents WHERE name = ANY($1)`,
+    [names],
+  );
+  return rows as Agent[];
+}
+
 export async function getScheduledAgents(): Promise<Agent[]> {
   const pool = getPool();
   const { rows } = await pool.query(

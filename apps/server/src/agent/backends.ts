@@ -20,6 +20,7 @@ import {
 } from "deepagents";
 import type { BackendProtocol, WriteResult, EditResult } from "deepagents";
 import type { BaseStore } from "@langchain/langgraph";
+import { z } from "zod";
 import type { Agent } from "@edda/db";
 import { getAgents } from "@edda/db";
 
@@ -51,6 +52,9 @@ class ReadOnlyStoreBackend implements BackendProtocol {
   async edit(): Promise<EditResult> {
     return { error: "This store is mounted read-only." };
   }
+  async uploadFiles(files: Array<[string, Uint8Array]>) {
+    return files.map(([p]) => ({ path: p, error: "permission_denied" as const }));
+  }
   grepRaw(query: string) {
     return this.inner.grepRaw(query);
   }
@@ -81,6 +85,9 @@ class ReadOnlyFilesystemBackend implements BackendProtocol {
   async edit(): Promise<EditResult> {
     return { error: "This filesystem is mounted read-only." };
   }
+  async uploadFiles(files: Array<[string, Uint8Array]>) {
+    return files.map(([p]) => ({ path: p, error: "permission_denied" as const }));
+  }
   grepRaw(query: string) {
     return this.inner.grepRaw(query);
   }
@@ -103,14 +110,51 @@ class ReadOnlyFilesystemBackend implements BackendProtocol {
  * Closes over `store` so StoreBackend always has access — even when
  * deepagents' SkillsMiddleware calls the factory with only { state }.
  */
+// ---------------------------------------------------------------------------
+// Metadata validation schemas
+// ---------------------------------------------------------------------------
+
+const SAFE_STORE_NAME = /^[a-z][a-z0-9_]*$/;
+
+const StoreConfigSchema = z
+  .record(z.string(), z.enum(["read", "readwrite"]))
+  .optional();
+
+const FsConfigSchema = z
+  .object({
+    path: z.string().max(500).regex(/^[a-zA-Z0-9_\-/.]+$/, "Invalid filesystem path characters"),
+    mode: z.enum(["read", "readwrite"]).optional(),
+  })
+  .optional();
+
+// ---------------------------------------------------------------------------
+// buildBackend
+// ---------------------------------------------------------------------------
+
 export async function buildBackend(
   agent: Agent,
   store: BaseStore,
 ): Promise<(rt: { state: unknown; store?: BaseStore }) => CompositeBackend> {
   // Pre-resolve cross-agent store names (needed for wildcard)
-  const storeConfig = agent.metadata?.stores as
-    | Record<string, "read" | "readwrite">
-    | undefined;
+  const storeParseResult = StoreConfigSchema.safeParse(agent.metadata?.stores);
+  if (!storeParseResult.success && agent.metadata?.stores !== undefined) {
+    throw new Error(
+      `Agent "${agent.name}" has invalid metadata.stores: ${storeParseResult.error.message}`,
+    );
+  }
+  const storeConfig = storeParseResult.success ? storeParseResult.data : undefined;
+
+  // Validate store name keys
+  if (storeConfig) {
+    for (const name of Object.keys(storeConfig)) {
+      if (name !== "*" && !SAFE_STORE_NAME.test(name)) {
+        throw new Error(
+          `Agent "${agent.name}" has invalid store name "${name}". Names must match ${SAFE_STORE_NAME}.`,
+        );
+      }
+    }
+  }
+
   let wildcardAgentNames: string[] | null = null;
   if (storeConfig?.["*"]) {
     const allAgentRows = await getAgents({ enabled: true });
@@ -123,14 +167,22 @@ export async function buildBackend(
   const FILESYSTEM_ROOT = process.env.FILESYSTEM_ROOT;
   const FILESYSTEM_ALLOWED =
     process.env.ALLOW_FILESYSTEM_ACCESS === "true" && !!FILESYSTEM_ROOT;
-  const fsConfig = agent.metadata?.filesystem as
-    | { path: string; mode?: "read" | "readwrite" }
-    | undefined;
+
+  const fsParseResult = FsConfigSchema.safeParse(agent.metadata?.filesystem);
+  if (!fsParseResult.success && agent.metadata?.filesystem !== undefined) {
+    throw new Error(
+      `Agent "${agent.name}" has invalid metadata.filesystem: ${fsParseResult.error.message}`,
+    );
+  }
+  const fsConfig = fsParseResult.success ? fsParseResult.data : undefined;
+
   let resolvedFsRoot: string | null = null;
   let fsMode: "read" | "readwrite" = "read";
   if (FILESYSTEM_ALLOWED && fsConfig?.path && FILESYSTEM_ROOT) {
     const rootDir = path.join(FILESYSTEM_ROOT, fsConfig.path);
-    if (!path.resolve(rootDir).startsWith(path.resolve(FILESYSTEM_ROOT))) {
+    const resolved = path.resolve(rootDir);
+    const root = path.resolve(FILESYSTEM_ROOT);
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) {
       throw new Error(`Agent "${agent.name}" filesystem path escapes FILESYSTEM_ROOT`);
     }
     resolvedFsRoot = rootDir;

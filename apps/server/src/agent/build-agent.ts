@@ -24,10 +24,10 @@ import type { Agent, Settings } from "@edda/db";
 import {
   getSettings,
   getAgentsMdContent,
-  getAgentByName,
+  getAgentsByNames,
   getItemTypes,
   getMcpConnections,
-  getSkillByName,
+  getSkillsByNames,
 } from "@edda/db";
 import type { ItemType, McpConnection } from "@edda/db";
 import { getChatModel } from "../llm/index.js";
@@ -96,29 +96,42 @@ function assertNoDuplicateTools(tools: StructuredTool[]): void {
  * deepagents' SkillsMiddleware discovers them via progressive disclosure.
  */
 async function writeSkillsToStore(agent: Agent, store: BaseStore): Promise<void> {
-  for (const skillName of agent.skills) {
-    try {
-      const skill = await getSkillByName(skillName);
-      if (!skill?.content) continue;
+  if (agent.skills.length === 0) return;
 
-      const now = new Date().toISOString();
-      await store.put(["filesystem"], `/skills/${skillName}/SKILL.md`, {
-        content: skill.content.split("\n"),
-        created_at: now,
-        modified_at: now,
-      });
-    } catch (err) {
-      console.error(
-        `[buildAgent] Failed to load skill "${skillName}" for agent "${agent.name}":`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
+  const skills = await getSkillsByNames(agent.skills);
+  const now = new Date().toISOString();
+
+  await Promise.all(
+    skills
+      .filter((s) => s.content)
+      .map((s) =>
+        store
+          .put(["filesystem"], `/skills/${s.name}/SKILL.md`, {
+            content: s.content.split("\n"),
+            created_at: now,
+            modified_at: now,
+          })
+          .catch((err) =>
+            console.error(
+              `[buildAgent] Failed to write skill "${s.name}" for agent "${agent.name}":`,
+              err instanceof Error ? err.message : err,
+            ),
+          ),
+      ),
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Subagent resolution
 // ---------------------------------------------------------------------------
+
+interface SubagentSpec {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  tools: StructuredTool[];
+  skills: string[];
+}
 
 /**
  * Resolve subagent specs from the DB. Each subagent gets its own scoped
@@ -128,28 +141,22 @@ async function resolveSubagents(
   names: string[],
   available: StructuredTool[],
   store: BaseStore,
-) {
-  const specs = [];
-  for (const name of names) {
-    const row = await getAgentByName(name);
-    if (!row || !row.enabled) continue;
+): Promise<SubagentSpec[]> {
+  if (names.length === 0) return [];
 
-    const tools = scopeTools(row, available);
+  const rows = await getAgentsByNames(names);
+  const enabled = rows.filter((r) => r.enabled);
 
-    // Write subagent's scoped skills into the store
-    await writeSkillsToStore(row, store);
+  // Write all subagent skills in parallel
+  await Promise.all(enabled.map((row) => writeSkillsToStore(row, store)));
 
-    const prompt = row.system_prompt || `You are ${row.name}.`;
-
-    specs.push({
-      name: row.name,
-      description: row.description,
-      systemPrompt: prompt,
-      tools,
-      skills: row.skills.length > 0 ? ["/skills/"] : [],
-    });
-  }
-  return specs;
+  return enabled.map((row) => ({
+    name: row.name,
+    description: row.description,
+    systemPrompt: row.system_prompt || `You are ${row.name}.`,
+    tools: scopeTools(row, available),
+    skills: row.skills.length > 0 ? ["/skills/"] : [],
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +289,7 @@ export const MODEL_SETTINGS_KEYS = new Set([
 // buildAgent — unified entry point
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- DeepAgent's generic type is too complex for tsc
 export async function buildAgent(agent: Agent): Promise<any> {
   const settings = await getSettings();
 
