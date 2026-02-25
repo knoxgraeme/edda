@@ -122,7 +122,7 @@ describe("createItemTypeSchema", () => {
     const result = createItemTypeSchema.parse({
       name: "recipe",
       description: "A cooking recipe",
-      extraction_hint: "Look for ingredients and steps",
+      classification_hint: "Use when the user shares a recipe or cooking instructions.",
     });
     expect(result.name).toBe("recipe");
   });
@@ -131,12 +131,8 @@ describe("createItemTypeSchema", () => {
     const result = createItemTypeSchema.parse({
       name: "recipe",
       description: "A cooking recipe",
-      extraction_hint: "Look for ingredients",
+      classification_hint: "Use when the user shares a recipe or cooking instructions.",
       icon: "🍳",
-      dashboard_section: "captured",
-      completable: true,
-      has_due_date: false,
-      is_list: false,
       metadata_schema: { type: "object" },
     });
     expect(result.icon).toBe("🍳");
@@ -151,7 +147,7 @@ describe("createItemTypeSchema", () => {
       createItemTypeSchema.parse({
         name: 123,
         description: "test",
-        extraction_hint: "test",
+        classification_hint: "test",
       }),
     ).toThrow(ZodError);
   });

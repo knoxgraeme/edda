@@ -31,8 +31,8 @@ Cron: settings.type_evolution_cron (default "0 10 1 * *")
    b. If no → draft a new type definition.
 
 ## New Type Proposal
-Build a complete item_types row: name, description, extraction_hint,
-metadata_schema, behavioral flags, dashboard_section, icon.
+Build a complete item_types row: name, description, classification_hint,
+metadata_schema, icon.
 
 ### If settings.approval_new_type = 'auto':
 - Insert with confirmed=true.

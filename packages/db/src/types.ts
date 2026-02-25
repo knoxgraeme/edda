@@ -190,18 +190,7 @@ export interface ItemType {
   description: string;
   metadata_schema: Record<string, unknown>;
   classification_hint: string;
-  extraction_hint: string;
-  dashboard_section: string;
-  dashboard_priority: number;
-  completable: boolean;
-  has_due_date: boolean;
-  is_list: boolean;
-  include_in_recall: boolean;
-  private: boolean;
   agent_internal: boolean;
-  built_in: boolean;
-  is_user_created: boolean;
-  created_by: string;
   confirmed: boolean;
   pending_action: string | null;
   created_at: string;
@@ -291,7 +280,6 @@ export interface UpsertSkillInput {
 
 export type AgentContextMode = "isolated" | "daily" | "persistent";
 export type AgentTrigger = "schedule" | "post_conversation" | "on_demand";
-export type AgentScopeMode = "boost" | "strict";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent";
 
@@ -306,8 +294,6 @@ export interface Agent {
   trigger: AgentTrigger | null;
   tools: string[];
   subagents: string[];
-  scopes: string[];
-  scope_mode: AgentScopeMode;
   model_settings_key: string | null;
   enabled: boolean;
   metadata: Record<string, unknown>;
