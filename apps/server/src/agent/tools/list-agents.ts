@@ -23,7 +23,6 @@ export const listAgentsTool = tool(
       agents.map((a) => ({
         name: a.name,
         description: a.description,
-        schedule: a.schedule,
         enabled: a.enabled,
         trigger: a.trigger,
         context_mode: a.context_mode,

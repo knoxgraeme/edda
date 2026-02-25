@@ -1,14 +1,15 @@
 /**
  * Local cron runner — uses node-cron for scheduling
  *
- * Reads agents table to register scheduled agents. Each execution creates
- * a task_run record for observability. One execution path for ALL agents.
+ * Reads agent_schedules table to register per-schedule cron tasks. Each
+ * execution creates a task_run record for observability.
  */
 
 import cron from "node-cron";
 
 import {
-  getScheduledAgents,
+  getEnabledSchedules,
+  getScheduleById,
   getAgentByName,
   createTaskRun,
   startTaskRun,
@@ -16,6 +17,7 @@ import {
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
+import type { EnabledSchedule } from "@edda/db";
 import { sanitizeError } from "../utils/sanitize-error.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import type { Agent } from "@edda/db";
@@ -35,10 +37,6 @@ import type { CronRunner } from "./index.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Extract the last assistant message content from an agent invocation result.
- * Returns undefined if no assistant message is found.
- */
 function extractLastAssistantMessage(result: {
   messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }>;
 }): string | undefined {
@@ -53,16 +51,10 @@ function extractLastAssistantMessage(result: {
 }
 
 // ---------------------------------------------------------------------------
-// Timeout helpers
+// Constants
 // ---------------------------------------------------------------------------
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-// ---------------------------------------------------------------------------
-// Interval constants
-// ---------------------------------------------------------------------------
-
-/** How often to sync agents for new/changed/disabled schedules. */
 const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
@@ -82,16 +74,19 @@ const POST_HOOKS: Record<string, (agent: Agent) => Promise<void>> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the user message for an agent invocation.
- * Dispatches to a pre_invoke hook if one is declared in agent.metadata.hooks.
- * Returns null if the agent should be skipped (e.g. no changes for context_refresh).
+ * Build the user message for a schedule execution.
+ * Dispatches to a pre_invoke hook if one is declared in the schedule's hooks,
+ * otherwise uses the schedule's prompt directly.
  */
-async function buildInvocationMessage(agent: Agent): Promise<string | null> {
-  const hooks = agent.metadata?.hooks as { pre_invoke?: string } | undefined;
+async function buildInvocationMessage(
+  schedule: EnabledSchedule,
+  agent: Agent,
+): Promise<string | null> {
+  const hooks = schedule.hooks as { pre_invoke?: string } | undefined;
   if (hooks?.pre_invoke && PRE_HOOKS[hooks.pre_invoke]) {
     return PRE_HOOKS[hooks.pre_invoke](agent);
   }
-  return `Execute the ${agent.name} task now.`;
+  return schedule.prompt;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +94,8 @@ async function buildInvocationMessage(agent: Agent): Promise<string | null> {
 // ---------------------------------------------------------------------------
 
 export class LocalCronRunner implements CronRunner {
-  private _registeredAgents = new Map<string, { task: cron.ScheduledTask; schedule: string }>();
+  /** Keyed by schedule ID */
+  private _registered = new Map<string, { task: cron.ScheduledTask; cron: string }>();
   private _syncInterval: NodeJS.Timeout | null = null;
   private _running = false;
   private syncFailures = 0;
@@ -112,25 +108,24 @@ export class LocalCronRunner implements CronRunner {
     this._running = true;
 
     await refreshSettings();
-    const agents = await getScheduledAgents();
+    const schedules = await getEnabledSchedules();
 
-    for (const agent of agents) {
-      this.registerAgent(agent);
+    for (const schedule of schedules) {
+      this.registerSchedule(schedule);
     }
 
-    // Dynamic schedule sync — picks up new/changed/disabled agents
     this._syncInterval = setInterval(() => this.syncSchedules(), SCHEDULE_SYNC_INTERVAL_MS);
 
-    console.log(`  Standalone cron runner started (${this._registeredAgents.size} agent(s))`);
+    console.log(`  Standalone cron runner started (${this._registered.size} schedule(s))`);
   }
 
   async stop(): Promise<void> {
     if (!this._running) return;
 
-    for (const entry of this._registeredAgents.values()) {
+    for (const entry of this._registered.values()) {
       entry.task.stop();
     }
-    this._registeredAgents.clear();
+    this._registered.clear();
 
     if (this._syncInterval) {
       clearInterval(this._syncInterval);
@@ -141,47 +136,47 @@ export class LocalCronRunner implements CronRunner {
     console.log("  Standalone cron runner stopped");
   }
 
-  // ── Agent registration ──────────────────────────────────────────
+  // ── Schedule registration ──────────────────────────────────────
 
-  private registerAgent(agent: Agent): void {
-    if (!agent.schedule || !cron.validate(agent.schedule)) {
-      console.warn(`  [cron] Skipping ${agent.name} — invalid schedule: ${agent.schedule}`);
+  private registerSchedule(schedule: EnabledSchedule): void {
+    if (!cron.validate(schedule.cron)) {
+      console.warn(
+        `  [cron] Skipping ${schedule.agent_name}/${schedule.name} — invalid cron: ${schedule.cron}`,
+      );
       return;
     }
 
-    // If already registered with the same schedule, skip
-    const existing = this._registeredAgents.get(agent.name);
-    if (existing && existing.schedule === agent.schedule) return;
+    const existing = this._registered.get(schedule.id);
+    if (existing && existing.cron === schedule.cron) return;
 
-    // If schedule changed, stop the old task first
     if (existing) {
       existing.task.stop();
       console.log(
-        `  [cron] Schedule changed for ${agent.name}: ${existing.schedule} → ${agent.schedule}`,
+        `  [cron] Schedule changed for ${schedule.agent_name}/${schedule.name}: ${existing.cron} → ${schedule.cron}`,
       );
     }
 
-    const task = cron.schedule(agent.schedule, () => this.executeAgent(agent));
-    this._registeredAgents.set(agent.name, { task, schedule: agent.schedule });
-    console.log(`  [cron] Registered: ${agent.name} (${agent.schedule})`);
+    const task = cron.schedule(schedule.cron, () => this.executeSchedule(schedule));
+    this._registered.set(schedule.id, { task, cron: schedule.cron });
+    console.log(
+      `  [cron] Registered: ${schedule.agent_name}/${schedule.name} (${schedule.cron})`,
+    );
   }
 
   private async syncSchedules(): Promise<void> {
     try {
-      const currentAgents = await getScheduledAgents();
-      const currentNames = new Set(currentAgents.map((a) => a.name));
+      const current = await getEnabledSchedules();
+      const currentIds = new Set(current.map((s) => s.id));
 
-      // Register new agents and detect schedule changes on existing ones
-      for (const agent of currentAgents) {
-        this.registerAgent(agent);
+      for (const schedule of current) {
+        this.registerSchedule(schedule);
       }
 
-      // Stop removed/disabled agents
-      for (const [name, entry] of this._registeredAgents) {
-        if (!currentNames.has(name)) {
+      for (const [id, entry] of this._registered) {
+        if (!currentIds.has(id)) {
           entry.task.stop();
-          this._registeredAgents.delete(name);
-          console.log(`  [cron] Unregistered: ${name}`);
+          this._registered.delete(id);
+          console.log(`  [cron] Unregistered schedule: ${id}`);
         }
       }
 
@@ -196,20 +191,32 @@ export class LocalCronRunner implements CronRunner {
     }
   }
 
-  // ── Agent execution (single path for ALL agents) ──────────────
+  // ── Schedule execution ─────────────────────────────────────────
 
-  private async executeAgent(definition: Agent): Promise<void> {
-    // Re-fetch to pick up non-schedule changes (system_prompt, skills, etc.)
-    const freshDef = await getAgentByName(definition.name);
+  private async executeSchedule(schedule: EnabledSchedule): Promise<void> {
+    // Re-fetch agent and schedule to pick up changes since registration
+    const freshDef = await getAgentByName(schedule.agent_name);
     if (!freshDef || !freshDef.enabled) {
-      console.log(`  [cron] Skipping ${definition.name} — not found or disabled`);
+      console.log(`  [cron] Skipping ${schedule.agent_name} — not found or disabled`);
       return;
     }
 
-    // Build the invocation message (may return null to skip)
-    const userMessage = await buildInvocationMessage(freshDef);
+    const freshSchedule = await getScheduleById(schedule.id);
+    if (!freshSchedule || !freshSchedule.enabled) {
+      console.log(
+        `  [cron] Skipping ${schedule.agent_name}/${schedule.name} — schedule disabled`,
+      );
+      return;
+    }
+
+    const userMessage = await buildInvocationMessage(
+      { ...freshSchedule, agent_name: schedule.agent_name },
+      freshDef,
+    );
     if (!userMessage) {
-      console.log(`  [cron] Skipping ${freshDef.name} — no work to do`);
+      console.log(
+        `  [cron] Skipping ${freshDef.name}/${schedule.name} — no work to do`,
+      );
       return;
     }
 
@@ -221,13 +228,18 @@ export class LocalCronRunner implements CronRunner {
           ] as string)
         : undefined;
 
-    const threadId = resolveThreadId(freshDef);
+    // Use schedule's context_mode override if set, otherwise fall back to agent's
+    const contextAgent = freshSchedule.context_mode
+      ? { ...freshDef, context_mode: freshSchedule.context_mode }
+      : freshDef;
+    const threadId = resolveThreadId(contextAgent);
 
     const run = await createTaskRun({
       agent_id: freshDef.id,
       agent_name: freshDef.name,
       trigger: "cron",
       thread_id: threadId,
+      schedule_id: freshSchedule.id,
       model: modelName,
     });
 
@@ -235,7 +247,7 @@ export class LocalCronRunner implements CronRunner {
       const startTime = Date.now();
       try {
         await startTaskRun(run.id);
-        console.log(`  [cron] Executing: ${freshDef.name}`);
+        console.log(`  [cron] Executing: ${freshDef.name}/${schedule.name}`);
 
         const agent = await buildAgent(freshDef);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -271,9 +283,9 @@ export class LocalCronRunner implements CronRunner {
           );
         }
 
-        // Post-execution hooks (metadata-driven or default context refresh)
+        // Post-execution hooks (schedule-driven or default context refresh)
         try {
-          const postHooks = freshDef.metadata?.hooks as { post_invoke?: string } | undefined;
+          const postHooks = freshSchedule.hooks as { post_invoke?: string } | undefined;
           if (postHooks?.post_invoke && POST_HOOKS[postHooks.post_invoke]) {
             await POST_HOOKS[postHooks.post_invoke](freshDef);
           } else {
@@ -286,9 +298,9 @@ export class LocalCronRunner implements CronRunner {
           );
         }
 
-        console.log(`  [cron] ${freshDef.name} completed in ${duration}ms`);
+        console.log(`  [cron] ${freshDef.name}/${schedule.name} completed in ${duration}ms`);
       } catch (err) {
-        console.error(`  [cron] ${freshDef.name} error:`, err);
+        console.error(`  [cron] ${freshDef.name}/${schedule.name} error:`, err);
         try {
           await failTaskRun(run.id, sanitizeError(err));
         } catch (dbErr) {

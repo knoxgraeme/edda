@@ -6,7 +6,7 @@ import { getPool } from "./connection.js";
 import type { TaskRun, TaskRunStatus, TaskRunTrigger } from "./types.js";
 
 const TASK_RUN_COLS = `id, agent_id, agent_name, trigger, status,
-  thread_id, input_summary, output_summary, model, tokens_used,
+  thread_id, schedule_id, input_summary, output_summary, model, tokens_used,
   duration_ms, error, started_at, completed_at, created_at`;
 
 export async function createTaskRun(input: {
@@ -14,19 +14,21 @@ export async function createTaskRun(input: {
   agent_name: string;
   trigger: TaskRunTrigger;
   thread_id?: string;
+  schedule_id?: string;
   input_summary?: string;
   model?: string;
 }): Promise<TaskRun> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO task_runs (agent_id, agent_name, trigger, thread_id, input_summary, model)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO task_runs (agent_id, agent_name, trigger, thread_id, schedule_id, input_summary, model)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING ${TASK_RUN_COLS}`,
     [
       input.agent_id ?? null,
       input.agent_name,
       input.trigger,
       input.thread_id ?? null,
+      input.schedule_id ?? null,
       input.input_summary ?? null,
       input.model ?? null,
     ],

@@ -304,7 +304,7 @@ export interface UpsertSkillInput {
 // ──────────────────────────────────────────────
 
 export type AgentContextMode = "isolated" | "daily" | "persistent";
-export type AgentTrigger = "schedule" | "post_conversation" | "on_demand";
+export type AgentTrigger = "schedule" | "on_demand";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent";
 
@@ -314,7 +314,6 @@ export interface Agent {
   description: string;
   system_prompt: string | null;
   skills: string[];
-  schedule: string | null;
   context_mode: AgentContextMode;
   trigger: AgentTrigger | null;
   tools: string[];
@@ -333,6 +332,7 @@ export interface TaskRun {
   trigger: TaskRunTrigger;
   status: TaskRunStatus;
   thread_id: string | null;
+  schedule_id: string | null;
   input_summary: string | null;
   output_summary: string | null;
   model: string | null;
@@ -341,5 +341,21 @@ export interface TaskRun {
   error: string | null;
   started_at: string | null;
   completed_at: string | null;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Agent Schedules
+// ──────────────────────────────────────────────
+
+export interface AgentSchedule {
+  id: string;
+  agent_id: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  context_mode: AgentContextMode | null;
+  hooks: Record<string, unknown>;
+  enabled: boolean;
   created_at: string;
 }

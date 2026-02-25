@@ -18,7 +18,6 @@ export function NewAgentClient() {
   const [description, setDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [skills, setSkills] = useState("");
-  const [schedule, setSchedule] = useState("");
   const [contextMode, setContextMode] = useState("isolated");
   const [trigger, setTrigger] = useState("on_demand");
   const [tools, setTools] = useState("");
@@ -41,9 +40,8 @@ export function NewAgentClient() {
               .map((s) => s.trim())
               .filter(Boolean)
           : [],
-        schedule: schedule || undefined,
         context_mode: contextMode as "isolated" | "daily" | "persistent",
-        trigger: trigger as "on_demand" | "schedule" | "post_conversation",
+        trigger: trigger as "on_demand" | "schedule",
         tools: tools
           ? tools
               .split(",")
@@ -116,8 +114,8 @@ export function NewAgentClient() {
               placeholder="capture, recall, daily_digest (comma-separated)"
             />
             <p className="text-xs text-muted-foreground">
-              Available: capture, context_refresh, daily_digest, manage, memory_catchup,
-              post_process, recall, type_evolution, weekly_reflect
+              Available: admin, capture, context_refresh, daily_digest, manage,
+              memory_extraction, recall, type_evolution, weekly_reflect
             </p>
           </div>
 
@@ -140,19 +138,8 @@ export function NewAgentClient() {
               <Select id="trigger" value={trigger} onChange={(e) => setTrigger(e.target.value)}>
                 <option value="on_demand">On Demand</option>
                 <option value="schedule">Schedule</option>
-                <option value="post_conversation">Post Conversation</option>
               </Select>
             </div>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="schedule">Schedule</Label>
-            <Input
-              id="schedule"
-              value={schedule}
-              onChange={(e) => setSchedule(e.target.value)}
-              placeholder="0 7 * * * (cron expression, optional)"
-            />
           </div>
 
           <div className="grid gap-2">

@@ -176,12 +176,6 @@ export function AgentDetailClient({ agent, runs: initialRuns }: { agent: Agent; 
                 <Badge variant="outline">{agent.trigger}</Badge>
               </div>
             )}
-            {agent.schedule && (
-              <div>
-                <span className="text-muted-foreground">Schedule:</span>{" "}
-                <code className="text-xs">{agent.schedule}</code>
-              </div>
-            )}
             {agent.model_settings_key && (
               <div>
                 <span className="text-muted-foreground">Model:</span>{" "}
