@@ -117,8 +117,7 @@ export async function buildDeterministicTemplate(): Promise<{
         Object.keys(t.metadata_schema).length > 0
           ? ` | metadata: ${JSON.stringify(t.metadata_schema)}`
           : "";
-      const hint = t.extraction_hint ? ` | extract: ${t.extraction_hint}` : "";
-      return `- ${t.icon} **${t.name}**: ${t.classification_hint}${meta}${hint}`;
+      return `- ${t.icon} **${t.name}**: ${t.classification_hint}${meta}`;
     });
     sections.push(`## Item Types\n${typeLines.join("\n")}`);
   }

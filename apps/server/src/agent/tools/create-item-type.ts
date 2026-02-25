@@ -9,33 +9,26 @@ import { createItemType, confirmPending, getSettingsSync } from "@edda/db";
 export const createItemTypeSchema = z.object({
   name: z.string().describe("Unique type name (snake_case)"),
   description: z.string().describe("What this type represents"),
-  extraction_hint: z.string().describe("Hint for the classifier to identify this type"),
+  classification_hint: z
+    .string()
+    .describe(
+      "When to use this type and what metadata to extract. Follow the pattern: behavioral trigger + signal phrases + boundary with similar types.",
+    ),
   metadata_schema: z.record(z.unknown()).optional().describe("JSON schema for metadata fields"),
   icon: z.string().optional().describe("Emoji icon for the type"),
-  dashboard_section: z
-    .string()
-    .optional()
-    .describe("Dashboard section to display this type in (e.g. 'actionable', 'captured', 'lists')"),
-  completable: z.boolean().optional().describe("Whether items of this type can be marked done"),
-  has_due_date: z.boolean().optional().describe("Whether items of this type have a due date"),
-  is_list: z.boolean().optional().describe("Whether this type represents a list"),
 });
 
 export const createItemTypeTool = tool(
-  async ({ name, description, extraction_hint, metadata_schema, icon, dashboard_section, completable, has_due_date, is_list }) => {
+  async ({ name, description, classification_hint, metadata_schema, icon }) => {
     const settings = getSettingsSync();
     const autoConfirm = settings.approval_new_type === "auto";
 
     const itemType = await createItemType({
       name,
       description,
-      classification_hint: extraction_hint,
+      classification_hint,
       metadata_schema,
       icon: icon ?? "📦",
-      dashboard_section,
-      completable,
-      has_due_date,
-      is_list,
     });
 
     if (autoConfirm) {
