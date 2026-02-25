@@ -1,5 +1,5 @@
 /**
- * Edda tools — single flat pool used by orchestrator, background agents, and subagents.
+ * Edda tools — single flat pool used by all agents and subagents.
  *
  * Tool scoping is handled by SKILL.md `allowed-tools` frontmatter + agent.tools[],
  * not by maintaining separate tool lists. All tools live in one pool; each agent's
@@ -65,10 +65,10 @@ import { saveAgentsMdTool } from "./save-agents-md.js";
 import { getMyHistoryTool } from "./get-my-history.js";
 
 /**
- * All Edda tools — single pool shared by orchestrator and background agents.
+ * All Edda tools — single pool shared by all agents.
  *
- * The orchestrator passes this full set (plus MCP/search tools added at runtime).
- * Background agents and subagents filter this pool via SKILL.md `allowed-tools`.
+ * buildAgent() passes this full set (plus MCP/search tools added at runtime).
+ * Each agent's tools are scoped via SKILL.md `allowed-tools` + agent.tools[].
  */
 export const allTools = [
   // Item tools

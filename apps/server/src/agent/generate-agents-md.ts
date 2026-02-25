@@ -252,10 +252,10 @@ export async function finalizeContextRefresh(): Promise<void> {
   await pruneAgentsMdVersions(settings.agents_md_max_versions);
 }
 
-// ── Per-agent context (background agents) ───────────────────────
+// ── Per-agent context ────────────────────────────────────────────
 
 /**
- * Build a lightweight context template for a background agent from its recent task runs.
+ * Build a lightweight context template for an agent from its recent task runs.
  * No LLM call — purely deterministic.
  */
 export async function buildAgentTemplate(definition: Agent): Promise<string> {
@@ -281,7 +281,7 @@ export async function buildAgentTemplate(definition: Agent): Promise<string> {
 }
 
 /**
- * Hash-check a background agent's context and save a new version if changed.
+ * Hash-check an agent's context and save a new version if changed.
  * Fast path — no LLM call. Called after every cron execution.
  */
 export async function maybeRefreshAgentContext(definition: Agent): Promise<boolean> {

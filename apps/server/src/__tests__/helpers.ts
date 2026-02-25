@@ -44,6 +44,7 @@ export const DEFAULT_TEST_SETTINGS: Settings = {
   user_timezone: "America/New_York",
   context_refresh_cron: "0 5 * * *",
   context_refresh_model: "claude-sonnet-4-20250514",
+  default_agent: "edda",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };

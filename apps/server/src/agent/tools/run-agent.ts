@@ -1,5 +1,5 @@
 /**
- * Tool: run_agent — Trigger an on-demand run of a background agent.
+ * Tool: run_agent — Trigger an on-demand run of an agent.
  */
 
 import { tool } from "@langchain/core/tools";
@@ -93,7 +93,7 @@ export const runAgentTool = tool(
   {
     name: "run_agent",
     description:
-      "Trigger an on-demand run of a background agent. Returns immediately with a task_run_id you can check later.",
+      "Trigger an on-demand run of an agent. Returns immediately with a task_run_id you can check later.",
     schema: runAgentSchema,
   },
 );

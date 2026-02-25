@@ -191,7 +191,7 @@ function formatMcpConnections(connections: McpConnection[]): string {
  * Skill content is NOT injected — deepagents handles skill discovery via
  * the /skills/ store mount and progressive disclosure.
  */
-async function buildPrompt(agent: Agent, settings: Settings): Promise<string> {
+export async function buildPrompt(agent: Agent, settings: Settings): Promise<string> {
   const [agentContext, itemTypes, connections] = await Promise.all([
     getAgentsMdContent(agent.name),
     getItemTypes(),
@@ -215,7 +215,7 @@ async function buildPrompt(agent: Agent, settings: Settings): Promise<string> {
 
   // Base prompt: agent's system_prompt field, or a sensible default
   const base =
-    agent.system_prompt || `You are ${agent.name}, an Edda background agent.`;
+    agent.system_prompt || `You are ${agent.name}, an Edda agent.`;
 
   const contextSection = agentContext ? `\n\n## About This User\n\n${agentContext}` : "";
 
@@ -231,12 +231,7 @@ You can also read your past output via read_file /store/.`;
 - Timezone: ${settings.user_timezone}
 ${settings.user_display_name ? `- User: ${settings.user_display_name}` : ""}`;
 
-  // Orchestrator-specific sections (item types, approvals, integrations, etc.)
-  // These are included for the default agent and any agent with all tools (empty tools[]).
-  const isOrchestrator = agent.tools.length === 0;
-  let orchestratorSections = "";
-  if (isOrchestrator) {
-    orchestratorSections = `
+  return `${base}${contextSection}${storeSection}${settingsContext}
 
 ## Available Item Types
 ${formatItemTypes(itemTypes)}
@@ -246,9 +241,6 @@ ${formatApprovalSettings(settings)}
 
 ## External Integrations
 ${formatMcpConnections(connections)}`;
-  }
-
-  return `${base}${contextSection}${storeSection}${settingsContext}${orchestratorSections}`;
 }
 
 // ---------------------------------------------------------------------------

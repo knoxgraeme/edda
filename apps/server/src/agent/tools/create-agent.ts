@@ -1,5 +1,5 @@
 /**
- * Tool: create_agent — Create a new background agent definition.
+ * Tool: create_agent — Create a new agent definition.
  */
 
 import { tool } from "@langchain/core/tools";
@@ -86,7 +86,7 @@ export const createAgentTool = tool(
   {
     name: "create_agent",
     description:
-      "Create a new background agent. It will run on schedule (if cron provided) or on-demand via run_agent.",
+      "Create a new agent. It will run on schedule (if cron provided) or on-demand via run_agent.",
     schema: createAgentSchema,
   },
 );
