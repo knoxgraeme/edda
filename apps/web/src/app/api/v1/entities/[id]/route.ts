@@ -1,6 +1,14 @@
 import { getEntityById, updateEntity, getEntityItems } from "@edda/db";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { parseBody, notFound, badRequest, isUUID } from "../../_lib/helpers";
+
+const UpdateEntitySchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(5000).optional(),
+  })
+  .strict();
 
 export async function GET(
   request: Request,
@@ -30,7 +38,14 @@ export async function PATCH(
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
 
-  const entity = await updateEntity(id, body as { name?: string; description?: string });
+  let updates;
+  try {
+    updates = UpdateEntitySchema.parse(body);
+  } catch {
+    return NextResponse.json({ error: "Invalid update fields" }, { status: 400 });
+  }
+
+  const entity = await updateEntity(id, updates);
   if (!entity) return notFound("Entity");
   return NextResponse.json(entity);
 }

@@ -105,18 +105,11 @@ async function writeSkillsToStore(agent: Agent, store: BaseStore): Promise<void>
     skills
       .filter((s) => s.content)
       .map((s) =>
-        store
-          .put(["filesystem"], `/skills/${s.name}/SKILL.md`, {
-            content: s.content.split("\n"),
-            created_at: now,
-            modified_at: now,
-          })
-          .catch((err) =>
-            console.error(
-              `[buildAgent] Failed to write skill "${s.name}" for agent "${agent.name}":`,
-              err instanceof Error ? err.message : err,
-            ),
-          ),
+        store.put(["filesystem"], `/skills/${s.name}/SKILL.md`, {
+          content: s.content.split("\n"),
+          created_at: now,
+          modified_at: now,
+        }),
       ),
   );
 }
@@ -191,11 +184,15 @@ function formatMcpConnections(connections: McpConnection[]): string {
  * Skill content is NOT injected — deepagents handles skill discovery via
  * the /skills/ store mount and progressive disclosure.
  */
-export async function buildPrompt(agent: Agent, settings: Settings): Promise<string> {
+export async function buildPrompt(
+  agent: Agent,
+  settings: Settings,
+  prefetched?: { itemTypes?: ItemType[]; connections?: McpConnection[] },
+): Promise<string> {
   const [agentContext, itemTypes, connections] = await Promise.all([
     getAgentsMdContent(agent.name),
-    getItemTypes(),
-    getMcpConnections(),
+    prefetched?.itemTypes ?? getItemTypes(),
+    prefetched?.connections ?? getMcpConnections(),
   ]);
 
   const now = new Date();
@@ -293,14 +290,17 @@ export async function buildAgent(agent: Agent): Promise<any> {
           | undefined)
       : undefined;
 
-  // 2. Gather ALL available tools (built-in + MCP + search)
-  const [model, searchTool, checkpointer, store, mcpTools] = await Promise.all([
-    getChatModel(modelName),
-    getSearchTool(),
-    getCheckpointer(),
-    getStore(),
-    loadMCPTools(),
-  ]);
+  // 2. Gather ALL available tools + prompt data in one parallel batch
+  const [model, searchTool, checkpointer, store, mcpTools, itemTypes, connections] =
+    await Promise.all([
+      getChatModel(modelName),
+      getSearchTool(),
+      getCheckpointer(),
+      getStore(),
+      loadMCPTools(),
+      getItemTypes(),
+      getMcpConnections(),
+    ]);
 
   const allAvailable = [
     ...allTools,
@@ -324,7 +324,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
   await writeSkillsToStore(agent, store);
 
   // 7. System prompt — unified builder (no skill content injection)
-  const systemPrompt = await buildPrompt(agent, settings);
+  const systemPrompt = await buildPrompt(agent, settings, { itemTypes, connections });
 
   // 8. Backend — closes over store for SkillsMiddleware compatibility
   const backend = await buildBackend(agent, store);

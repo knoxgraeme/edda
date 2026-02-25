@@ -15,17 +15,9 @@ import {
 import { buildAgent, resolveThreadId } from "../build-agent.js";
 import { runWithConcurrencyLimit } from "../../cron/semaphore.js";
 import { sanitizeError } from "../../utils/sanitize-error.js";
+import { withTimeout } from "../../utils/with-timeout.js";
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-    ),
-  ]);
-}
 
 export const runAgentSchema = z.object({
   agent_name: z.string().describe("Name of the agent to run"),

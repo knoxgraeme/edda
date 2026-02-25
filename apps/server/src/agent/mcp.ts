@@ -14,6 +14,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMcpConnections, updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
+import { withTimeout } from "../utils/with-timeout.js";
 
 /** Active MCP clients, keyed by connection ID. Used for lifecycle management. */
 const activeClients = new Map<string, Client>();
@@ -38,6 +39,8 @@ const streamableHttpConfigSchema = z.object({
 });
 
 // --- Stdio security: command allowlist + env filtering ---
+// NOTE: ALLOWED_STDIO_COMMANDS and BLOCKED_ENV_KEYS are duplicated in apps/web/src/lib/mcp-probe.ts.
+// Keep both copies in sync. See todo #175 for shared module extraction.
 
 const ALLOWED_STDIO_COMMANDS = new Set(["node", "npx", "python", "python3", "uvx", "deno"]);
 
@@ -66,6 +69,43 @@ const BLOCKED_ENV_KEYS = new Set([
 function sanitizeEnv(env?: Record<string, string>): Record<string, string> | undefined {
   if (!env) return undefined;
   return Object.fromEntries(Object.entries(env).filter(([k]) => !BLOCKED_ENV_KEYS.has(k)));
+}
+
+// --- URL security: SSRF prevention ---
+// NOTE: validateMcpUrl is duplicated in apps/web/src/lib/mcp-probe.ts.
+// Keep both copies in sync. See todo #175 for shared module extraction.
+
+const PRIVATE_IP_PATTERNS = [
+  /^127\./, // loopback
+  /^10\./, // 10.0.0.0/8
+  /^192\.168\./, // 192.168.0.0/16
+  /^172\.(1[6-9]|2[0-9]|3[01])\./, // 172.16.0.0/12
+  /^169\.254\./, // link-local / cloud metadata
+  /^0\./, // 0.0.0.0/8
+];
+
+function validateMcpUrl(raw: string): URL {
+  const url = new URL(raw);
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(
+      `MCP URL scheme "${url.protocol}" is not allowed. Only http: and https: are permitted.`,
+    );
+  }
+
+  const hostname = url.hostname;
+
+  if (hostname === "localhost" || hostname === "::1" || hostname === "[::1]") {
+    throw new Error(`MCP URL hostname "${hostname}" resolves to a private/reserved address.`);
+  }
+
+  for (const pattern of PRIVATE_IP_PATTERNS) {
+    if (pattern.test(hostname)) {
+      throw new Error(`MCP URL hostname "${hostname}" resolves to a private/reserved address.`);
+    }
+  }
+
+  return url;
 }
 
 // --- JSON Schema → Zod conversion ---
@@ -108,18 +148,6 @@ function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
   return z.object(shape);
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label}: timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer!);
-  }
-}
-
 function createTransport(connection: McpConnection) {
   const config = connection.config;
 
@@ -133,7 +161,7 @@ function createTransport(connection: McpConnection) {
         );
       }
       return new StdioClientTransport({
-        command: parsed.command,
+        command: command,
         args: parsed.args,
         env: sanitizeEnv(parsed.env),
       });
@@ -141,11 +169,12 @@ function createTransport(connection: McpConnection) {
 
     case "sse": {
       const parsed = sseConfigSchema.parse(config);
+      const validatedUrl = validateMcpUrl(parsed.url);
       const authToken = parsed.auth_env_var
         ? process.env[parsed.auth_env_var]
         : undefined;
       if (authToken) {
-        return new SSEClientTransport(new URL(parsed.url), {
+        return new SSEClientTransport(validatedUrl, {
           requestInit: { headers: { Authorization: `Bearer ${authToken}` } },
           eventSourceInit: {
             fetch: (url, init) =>
@@ -159,12 +188,13 @@ function createTransport(connection: McpConnection) {
           },
         });
       }
-      return new SSEClientTransport(new URL(parsed.url));
+      return new SSEClientTransport(validatedUrl);
     }
 
     case "streamable-http": {
       const parsed = streamableHttpConfigSchema.parse(config);
-      return new StreamableHTTPClientTransport(new URL(parsed.url));
+      const validatedUrl = validateMcpUrl(parsed.url);
+      return new StreamableHTTPClientTransport(validatedUrl);
     }
 
     default:
@@ -259,6 +289,13 @@ async function loadToolsFromConnection(
   const client = new Client({ name: "edda", version: "1.0.0" });
 
   await withTimeout(client.connect(transport), MCP_TIMEOUT_MS, connection.name);
+
+  const existing = activeClients.get(connection.id);
+  if (existing) {
+    await existing.close().catch((err) =>
+      console.warn(`[MCP] Failed to close old client for "${connection.name}":`, err),
+    );
+  }
   activeClients.set(connection.id, client);
 
   const { tools: mcpTools } = await withTimeout(

@@ -30,6 +30,8 @@ const streamableHttpConfigSchema = z.object({
 });
 
 // --- Stdio security: command allowlist + env filtering ---
+// NOTE: ALLOWED_STDIO_COMMANDS and BLOCKED_ENV_KEYS are duplicated in apps/server/src/agent/mcp.ts.
+// Keep both copies in sync. See todo #175 for shared module extraction.
 
 const ALLOWED_STDIO_COMMANDS = new Set(["node", "npx", "python", "python3", "uvx", "deno"]);
 
@@ -128,7 +130,7 @@ export async function probeMcpTools(connection: McpConnection): Promise<string[]
         );
       }
       transport = new StdioClientTransport({
-        command: parsed.command,
+        command: command,
         args: parsed.args,
         env: sanitizeEnv(parsed.env),
       });
