@@ -5,10 +5,10 @@
  */
 
 import { getPool } from "./connection.js";
-import type { Agent, AgentContextMode, AgentScopeMode, AgentTrigger } from "./types.js";
+import type { Agent, AgentContextMode, AgentTrigger } from "./types.js";
 
 const AGENT_COLS = `id, name, description, system_prompt, skills, schedule,
-  context_mode, trigger, tools, subagents, scopes, scope_mode, model_settings_key,
+  context_mode, trigger, tools, subagents, model_settings_key,
   enabled, metadata, created_at, updated_at`;
 
 export async function getAgents(opts?: { enabled?: boolean }): Promise<Agent[]> {
@@ -56,8 +56,6 @@ export async function createAgent(input: {
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
-  scopes?: string[];
-  scope_mode?: AgentScopeMode;
   model_settings_key?: string;
   metadata?: Record<string, unknown>;
 }): Promise<Agent> {
@@ -65,8 +63,8 @@ export async function createAgent(input: {
   const { rows } = await pool.query(
     `INSERT INTO agents
        (name, description, system_prompt, skills, schedule, context_mode,
-        trigger, tools, subagents, scopes, scope_mode, model_settings_key, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        trigger, tools, subagents, model_settings_key, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING ${AGENT_COLS}`,
     [
       input.name,
@@ -78,8 +76,6 @@ export async function createAgent(input: {
       input.trigger ?? null,
       input.tools ?? [],
       input.subagents ?? [],
-      input.scopes ?? [],
-      input.scope_mode ?? "boost",
       input.model_settings_key ?? null,
       JSON.stringify(input.metadata ?? {}),
     ],
@@ -96,8 +92,6 @@ const AGENT_UPDATE_COLUMNS = [
   "trigger",
   "tools",
   "subagents",
-  "scopes",
-  "scope_mode",
   "model_settings_key",
   "enabled",
   "metadata",
@@ -116,8 +110,6 @@ export async function updateAgent(
       | "trigger"
       | "tools"
       | "subagents"
-      | "scopes"
-      | "scope_mode"
       | "model_settings_key"
       | "enabled"
       | "metadata"

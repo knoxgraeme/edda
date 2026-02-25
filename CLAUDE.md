@@ -93,7 +93,7 @@ Single source of truth for data model and queries.
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
 - **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getScheduled)
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
-- **`migrations/`** — Ordered SQL migration files (001–031); applied via `pnpm migrate`
+- **`migrations/`** — Ordered SQL migration files (001–032); applied via `pnpm migrate`
 - Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agents`, `task_runs`
 
 ### Configuration Strategy
@@ -116,7 +116,7 @@ Notable DB settings (in `settings` table):
 
 Edda uses a multi-agent architecture where the main orchestrator delegates to background agents that run on schedules or on-demand.
 
-- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], schedule (cron expression), context_mode, trigger, scopes, scope_mode, model_settings_key, enabled flag, metadata
+- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], schedule (cron expression), context_mode, trigger, model_settings_key, enabled flag, metadata. Agents can declare `metadata.hooks` (`pre_invoke`/`post_invoke`) to customize cron runner behavior via a closed allowlist.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Context modes**: `isolated` (unique thread per run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
@@ -129,7 +129,7 @@ Edda uses a multi-agent architecture where the main orchestrator delegates to ba
 | weekly_reflect | Sunday 3am | weekly_reflect | daily |
 | type_evolution | on-demand | type_evolution | isolated |
 | context_refresh | 5am daily | context_refresh | isolated |
-| post_process | triggered by memory_catchup | post_process | isolated |
+| memory_writer | subagent (orchestrator) | post_process | isolated |
 
 ### AGENTS.md (User Context Document)
 

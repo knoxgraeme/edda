@@ -17,8 +17,6 @@ export const updateAgentSchema = z.object({
     .enum(["isolated", "daily", "persistent"])
     .optional()
     .describe("New thread ID strategy"),
-  scopes: z.array(z.string()).optional().describe("Entity/topic scopes for search boosting"),
-  scope_mode: z.enum(["boost", "strict"]).optional().describe("How scopes affect search results"),
   model_settings_key: z
     .string()
     .optional()

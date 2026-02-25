@@ -5,7 +5,7 @@ import { jsonList, parseBody, badRequest } from "../_lib/helpers";
 
 const CreateMcpConnectionSchema = z.object({
   name: z.string().min(1).max(200),
-  transport: z.enum(["stdio", "sse"]),
+  transport: z.enum(["stdio", "sse", "streamable-http"]),
   config: z.record(z.unknown()),
 });
 

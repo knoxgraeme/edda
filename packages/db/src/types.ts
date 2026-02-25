@@ -222,6 +222,26 @@ export interface DashboardData {
 }
 
 // ──────────────────────────────────────────────
+// Retrieval Context (search-time affinity)
+// ──────────────────────────────────────────────
+
+export interface RetrievalContext {
+  /** Agent names to match against metadata->>'created_by' on items.
+   *  Defaults to [self] when authorship_mode is set but authors is omitted. */
+  authors?: string[];
+  /** "boost" = prefer these authors' items. "filter" = only these authors' items. */
+  authorship_mode?: "boost" | "filter";
+  /** Score multiplier for authorship boost (e.g. 1.3 = 30% boost). Ignored in filter mode. */
+  authorship_boost?: number;
+  /** Item types to prefer or restrict to. */
+  types?: string[];
+  /** "boost" = prefer these types. "filter" = only these types. */
+  type_mode?: "boost" | "filter";
+  /** Score multiplier for type boost (e.g. 1.2 = 20% boost). Ignored in filter mode. */
+  type_boost?: number;
+}
+
+// ──────────────────────────────────────────────
 // Search
 // ──────────────────────────────────────────────
 

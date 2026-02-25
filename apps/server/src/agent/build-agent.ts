@@ -18,58 +18,9 @@ import { getChatModel } from "../llm/index.js";
 import { getCheckpointer } from "../checkpointer/index.js";
 import { getStore } from "../store/index.js";
 import { loadSkillContent, collectSkillTools } from "./skill-loader.js";
-import { getMyHistoryTool } from "./tools/get-my-history.js";
+import { allTools } from "./tools/index.js";
 
-// -- All available data tools --
-import { createItemTool } from "./tools/create-item.js";
-import { batchCreateItemsTool } from "./tools/batch-create-items.js";
-import { updateItemTool } from "./tools/update-item.js";
-import { deleteItemTool } from "./tools/delete-item.js";
-import { getItemByIdTool } from "./tools/get-item-by-id.js";
-import { searchItemsTool } from "./tools/search-items.js";
-import { getDashboardTool } from "./tools/get-dashboard.js";
-import { getListItemsTool } from "./tools/get-list-items.js";
-import { getTimelineTool } from "./tools/get-timeline.js";
-import { getAgentKnowledgeTool } from "./tools/get-agent-knowledge.js";
-import { upsertEntityTool } from "./tools/upsert-entity.js";
-import { linkItemEntityTool } from "./tools/link-item-entity.js";
-import { getEntityItemsTool } from "./tools/get-entity-items.js";
-import { getEntityProfileTool } from "./tools/get-entity-profile.js";
-import { listEntitiesTool } from "./tools/list-entities.js";
-import { createItemTypeTool } from "./tools/create-item-type.js";
-import { getUnprocessedThreadsTool } from "./tools/get-unprocessed-threads.js";
-import { getThreadMessagesTool } from "./tools/get-thread-messages.js";
-import { markThreadProcessedTool } from "./tools/mark-thread-processed.js";
-import { listThreadsTool } from "./tools/list-threads.js";
-import { saveAgentsMdTool } from "./tools/save-agents-md.js";
-
-/** All tools available to background agents, keyed by name for fast lookup. */
-const ALL_TOOLS: StructuredTool[] = [
-  searchItemsTool,
-  getItemByIdTool,
-  getEntityItemsTool,
-  getEntityProfileTool,
-  listEntitiesTool,
-  getAgentKnowledgeTool,
-  getDashboardTool,
-  getTimelineTool,
-  getListItemsTool,
-  createItemTool,
-  batchCreateItemsTool,
-  updateItemTool,
-  deleteItemTool,
-  upsertEntityTool,
-  linkItemEntityTool,
-  getUnprocessedThreadsTool,
-  getThreadMessagesTool,
-  markThreadProcessedTool,
-  listThreadsTool,
-  createItemTypeTool,
-  saveAgentsMdTool,
-  getMyHistoryTool,
-];
-
-const ALL_TOOLS_BY_NAME = new Map(ALL_TOOLS.map((t) => [t.name, t]));
+const TOOLS_BY_NAME = new Map<string, StructuredTool>(allTools.map((t) => [t.name, t]));
 
 // -- Tool selection --
 
@@ -79,7 +30,7 @@ const ALL_TOOLS_BY_NAME = new Map(ALL_TOOLS.map((t) => [t.name, t]));
  * Tool resolution (additive):
  * 1. Collect allowed-tools from all of the agent's skills (union)
  * 2. Add any individual tool names from agent.tools[]
- * 3. Filter ALL_TOOLS to only those in the resolved set
+ * 3. Filter allTools to only those in the resolved set
  * 4. Always include get_my_history
  *
  * If no tools are declared (no skill declares allowed-tools AND agent.tools is empty),
@@ -94,14 +45,14 @@ function getToolsForAgent(agent: Agent): StructuredTool[] {
   }
 
   // No restrictions declared — return all tools
-  if (resolved.size === 0) return ALL_TOOLS;
+  if (resolved.size === 0) return allTools;
 
   // Always include get_my_history
   resolved.add("get_my_history");
 
   const tools: StructuredTool[] = [];
   for (const name of resolved) {
-    const tool = ALL_TOOLS_BY_NAME.get(name);
+    const tool = TOOLS_BY_NAME.get(name);
     if (tool) tools.push(tool);
   }
   return tools;

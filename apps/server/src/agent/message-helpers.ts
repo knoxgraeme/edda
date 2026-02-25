@@ -1,5 +1,5 @@
 /**
- * Shared message utilities — used by post-process middleware and memory extraction cron.
+ * Shared message utilities — used by memory extraction and transcript building.
  */
 
 export interface MessageLike {

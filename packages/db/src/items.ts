@@ -3,7 +3,7 @@
  */
 
 import { getPool } from "./connection.js";
-import type { Item, CreateItemInput, SearchResult } from "./types.js";
+import type { Item, CreateItemInput, SearchResult, RetrievalContext } from "./types.js";
 
 // ── Search re-ranking constants ──────────────────────────────────────────────
 
@@ -13,12 +13,6 @@ export const DECAY_HALF_LIFE_DAYS = 30;
 
 /** ln(2) — used in exponential decay formula: exp(-LN2 * age / half_life) */
 export const LN2 = 0.693;
-
-/** Scope boost multiplier when an item belongs to the querying agent */
-export const SCOPE_BOOST_OWN_AGENT = 1.3;
-
-/** Scope boost multiplier when an item shares a scope with the querying agent */
-export const SCOPE_BOOST_SHARED_SCOPE = 1.15;
 
 /** Inner-to-outer limit multiplier — fetch N*RERANK_MULTIPLIER candidates for re-ranking */
 export const RERANK_MULTIPLIER = 3;
@@ -116,9 +110,7 @@ export async function searchItems(
     confirmedOnly?: boolean;
     excludeSuperseded?: boolean;
     metadata?: Record<string, string>;
-    agent_name?: string;
-    agent_scopes?: string[];
-    scope_mode?: "boost" | "strict";
+    retrieval_context?: RetrievalContext;
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
@@ -131,9 +123,7 @@ export async function searchItems(
     confirmedOnly,
     excludeSuperseded,
     metadata,
-    agent_name,
-    agent_scopes,
-    scope_mode = "boost",
+    retrieval_context: rc,
   } = options;
 
   // ── Build WHERE conditions for the inner CTE (ANN retrieval) ──
@@ -171,14 +161,14 @@ export async function searchItems(
     }
   }
 
-  // Strict scope filtering — hard WHERE clause excluding items outside agent's scope
-  if (scope_mode === "strict" && agent_scopes?.length) {
-    const nameIdx = paramIdx++;
-    const scopesIdx = paramIdx++;
-    conditions.push(
-      `(metadata->>'agent' = $${nameIdx} OR metadata->'scopes' ?| $${scopesIdx}::text[])`,
-    );
-    params.push(agent_name ?? null, agent_scopes);
+  // ── Retrieval context: filter-mode conditions (inner CTE) ──
+  if (rc?.authorship_mode === "filter" && rc.authors?.length) {
+    conditions.push(`metadata->>'created_by' = ANY($${paramIdx++})`);
+    params.push(rc.authors);
+  }
+  if (rc?.type_mode === "filter" && rc.types?.length) {
+    conditions.push(`type = ANY($${paramIdx++})`);
+    params.push(rc.types);
   }
 
   // Inner limit: fetch extra candidates for re-ranking headroom
@@ -186,24 +176,33 @@ export async function searchItems(
   const innerLimitIdx = paramIdx++;
   params.push(innerLimit);
 
-  // Build scope boost CASE expression when agent params are provided
-  const hasAgentParams = agent_name || agent_scopes?.length;
-  let scopeBoost: string;
-  if (hasAgentParams) {
-    const nameIdx = paramIdx++;
-    const scopesIdx = paramIdx++;
-    scopeBoost = `* CASE
-              WHEN c.metadata->>'agent' = $${nameIdx} THEN ${SCOPE_BOOST_OWN_AGENT}
-              WHEN c.metadata->'scopes' ?| $${scopesIdx}::text[] THEN ${SCOPE_BOOST_SHARED_SCOPE}
-              ELSE 1.0
-            END`;
-    params.push(agent_name ?? null, agent_scopes ?? []);
-  } else {
-    scopeBoost = "";
-  }
-
   const outerLimitIdx = paramIdx++;
   params.push(limit);
+
+  // ── Retrieval context: boost-mode multipliers (outer SELECT) ──
+  const boostClauses: string[] = [];
+
+  if (rc?.authorship_mode === "boost" && rc.authors?.length && rc.authorship_boost) {
+    const authorsIdx = paramIdx++;
+    const boostIdx = paramIdx++;
+    params.push(rc.authors, rc.authorship_boost);
+    boostClauses.push(
+      `CASE WHEN c.metadata->>'created_by' = ANY($${authorsIdx}) THEN $${boostIdx}::float ELSE 1 END`,
+    );
+  }
+
+  if (rc?.type_mode === "boost" && rc.types?.length && rc.type_boost) {
+    const typesIdx = paramIdx++;
+    const boostIdx = paramIdx++;
+    params.push(rc.types, rc.type_boost);
+    boostClauses.push(
+      `CASE WHEN c.type = ANY($${typesIdx}) THEN $${boostIdx}::float ELSE 1 END`,
+    );
+  }
+
+  const boostExpr = boostClauses.length > 0
+    ? boostClauses.map((c) => `\n              * ${c}`).join("")
+    : "";
 
   const { rows } = await pool.query(
     `WITH candidates AS (
@@ -217,8 +216,7 @@ export async function searchItems(
      SELECT ${ITEM_COLS.split(",").map((c) => `c.${c.trim()}`).join(", ")},
             c.raw_similarity,
             c.raw_similarity
-              * EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_reinforced_at, c.created_at))) / (${DECAY_HALF_LIFE_DAYS} * 86400))
-              ${scopeBoost}
+              * EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_reinforced_at, c.created_at))) / (${DECAY_HALF_LIFE_DAYS} * 86400))${boostExpr}
             AS similarity
      FROM candidates c
      ORDER BY similarity DESC

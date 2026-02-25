@@ -6,6 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { batchCreateItems, getSettingsSync } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
+import { getAgentName } from "../tool-helpers.js";
 
 const batchItemSchema = z.object({
   content: z.string().describe("The item content text"),
@@ -22,7 +23,8 @@ export const batchCreateItemsSchema = z.object({
 });
 
 export const batchCreateItemsTool = tool(
-  async ({ items }) => {
+  async ({ items }, config) => {
+    const agentName = getAgentName(config);
     const settings = getSettingsSync();
     const today = new Date().toISOString().split("T")[0];
 
@@ -35,7 +37,9 @@ export const batchCreateItemsTool = tool(
       embedding: embeddings[i],
       embedding_model: settings.embedding_model,
       day: item.day ?? today,
-      metadata: item.metadata ?? {},
+      metadata: agentName
+        ? { ...(item.metadata ?? {}), created_by: agentName }
+        : (item.metadata ?? {}),
       parent_id: item.parent_id,
       confirmed: item.confirmed ?? true,
       source: "chat" as const,

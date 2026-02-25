@@ -14,7 +14,7 @@ const UpdateSettingsSchema = z
     user_display_name: z.string().max(200).optional(),
     user_timezone: z.string().max(100).optional(),
     llm_provider: z.enum(LLM_PROVIDERS as [string, ...string[]]).optional(),
-    llm_model: z.string().max(100).optional(),
+    default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),
     embedding_model: z.string().max(100).optional(),
     notification_targets: z.array(z.string()).optional(),
