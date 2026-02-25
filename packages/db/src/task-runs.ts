@@ -116,6 +116,16 @@ export async function getTaskRunById(id: string): Promise<TaskRun | null> {
   return (rows[0] as TaskRun) ?? null;
 }
 
+export async function getLatestRunPerAgent(): Promise<Record<string, TaskRun>> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (agent_name) ${TASK_RUN_COLS}
+     FROM task_runs
+     ORDER BY agent_name, created_at DESC`,
+  );
+  return Object.fromEntries((rows as TaskRun[]).map((r) => [r.agent_name, r]));
+}
+
 export async function getRunningTaskCount(): Promise<number> {
   const pool = getPool();
   const { rows } = await pool.query(

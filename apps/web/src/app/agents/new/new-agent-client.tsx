@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,30 +29,28 @@ export function NewAgentClient() {
   const handleSubmit = () => {
     if (!canSubmit) return;
     startTransition(async () => {
-      try {
-        await createAgentAction({
-          name,
-          description,
-          system_prompt: systemPrompt || undefined,
-          skills: skills
-            ? skills
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : [],
-          schedule: schedule || undefined,
-          context_mode: contextMode,
-          trigger,
-          tools: tools
-            ? tools
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean)
-            : [],
-        });
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to create agent");
-      }
+      // createAgentAction calls redirect() on success which throws NEXT_REDIRECT.
+      // Don't wrap in try/catch — let Next.js handle the redirect.
+      await createAgentAction({
+        name,
+        description,
+        system_prompt: systemPrompt || undefined,
+        skills: skills
+          ? skills
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [],
+        schedule: schedule || undefined,
+        context_mode: contextMode as "isolated" | "daily" | "persistent",
+        trigger: trigger as "on_demand" | "schedule" | "post_conversation",
+        tools: tools
+          ? tools
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean)
+          : [],
+      });
     });
   };
 

@@ -27,7 +27,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
 }
 
 function formatDuration(ms: number | null): string {
-  if (ms == null) return "—";
+  if (ms == null) return "\u2014";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
@@ -35,17 +35,21 @@ function formatDuration(ms: number | null): string {
 export function AgentDetailClient({ agent, runs: initialRuns }: { agent: Agent; runs: TaskRun[] }) {
   const [isPending, startTransition] = useTransition();
   const [runs, setRuns] = useState(initialRuns);
+  const [enabled, setEnabled] = useState(agent.enabled);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  const [isTriggering, setIsTriggering] = useState(false);
 
-  // Poll for run updates every 30s
+  // Poll for run updates every 30s (only when tab is visible)
   const fetchRuns = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/agents/${agent.name}/runs?limit=20`);
+      const res = await fetch(
+        `/api/v1/agents/${encodeURIComponent(agent.name)}/runs?limit=20`,
+      );
       if (res.ok) {
         const data = await res.json();
-        setRuns(data.data ?? data);
+        setRuns(Array.isArray(data) ? data : data.data);
       }
     } catch {
       // Silently ignore polling errors
@@ -53,27 +57,46 @@ export function AgentDetailClient({ agent, runs: initialRuns }: { agent: Agent; 
   }, [agent.name]);
 
   useEffect(() => {
-    const interval = setInterval(fetchRuns, 30_000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchRuns();
+    }, 30_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") fetchRuns();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [fetchRuns]);
 
-  const triggerRun = async () => {
-    const res = await fetch(`/api/v1/agents/${agent.name}/run`, { method: "POST" });
-    if (res.ok) {
-      toast.success(`${agent.name} triggered`);
-      // Refresh runs after a short delay
-      setTimeout(fetchRuns, 2000);
-    } else {
-      toast.error(`Failed to trigger ${agent.name}`);
+  const triggerRun = useCallback(async () => {
+    if (isTriggering) return;
+    setIsTriggering(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agent.name)}/run`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        toast.success(`${agent.name} triggered`);
+        setTimeout(fetchRuns, 2000);
+      } else {
+        toast.error(`Failed to trigger ${agent.name}`);
+      }
+    } finally {
+      setIsTriggering(false);
     }
-  };
+  }, [agent.name, fetchRuns, isTriggering]);
 
-  const handleToggle = (enabled: boolean) => {
+  const handleToggle = (newEnabled: boolean) => {
+    setEnabled(newEnabled); // optimistic
     startTransition(async () => {
       try {
-        await toggleAgentAction(agent.name, enabled);
-        toast.success(enabled ? "Agent enabled" : "Agent disabled");
+        await toggleAgentAction(agent.name, newEnabled);
       } catch (err) {
+        setEnabled(!newEnabled); // revert on failure
         toast.error(err instanceof Error ? err.message : "Failed to toggle agent");
       }
     });
@@ -82,11 +105,9 @@ export function AgentDetailClient({ agent, runs: initialRuns }: { agent: Agent; 
   const handleDelete = () => {
     if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
     startTransition(async () => {
-      try {
-        await deleteAgentAction(agent.name);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to delete agent");
-      }
+      // deleteAgentAction calls redirect() which throws NEXT_REDIRECT.
+      // Don't wrap in try/catch — let Next.js handle the redirect.
+      await deleteAgentAction(agent.name);
     });
   };
 
@@ -101,11 +122,11 @@ export function AgentDetailClient({ agent, runs: initialRuns }: { agent: Agent; 
         <h1 className="text-2xl font-bold flex-1">{agent.name}</h1>
         <div className="flex items-center gap-2">
           <Label htmlFor="agent-enabled" className="text-sm text-muted-foreground">
-            {agent.enabled ? "Enabled" : "Disabled"}
+            {enabled ? "Enabled" : "Disabled"}
           </Label>
           <Switch
             id="agent-enabled"
-            checked={agent.enabled}
+            checked={enabled}
             onCheckedChange={handleToggle}
             disabled={isPending}
           />
@@ -118,9 +139,15 @@ export function AgentDetailClient({ agent, runs: initialRuns }: { agent: Agent; 
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Configuration</CardTitle>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="gap-1" onClick={triggerRun}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={triggerRun}
+                disabled={isTriggering}
+              >
                 <Play className="h-3.5 w-3.5" />
-                Run Now
+                {isTriggering ? "Triggering..." : "Run Now"}
               </Button>
               <Button
                 variant="ghost"
