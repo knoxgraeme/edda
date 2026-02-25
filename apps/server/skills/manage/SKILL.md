@@ -7,18 +7,17 @@ description: >
 allowed-tools:
   - search_items
   - get_item_by_id
-  - get_entity_items
+  - list_entity_items
   - get_entity_profile
   - list_entities
-  - get_agent_knowledge
-  - get_dashboard
+  - get_daily_summary
   - get_timeline
-  - get_list_items
+  - get_list_contents
   - update_item
   - delete_item
   - confirm_pending
   - reject_pending
-  - get_pending_items
+  - list_pending_items
   - get_settings
 ---
 
@@ -45,7 +44,7 @@ allowed-tools:
 
 ## Bulk Operations
 "I got everything on the grocery list", "clear the packing list"
-→ get_list_items(list_name) → update_item for each active item → status='done'
+→ get_list_contents(list_name) → update_item for each active item → status='done'
 
 ## Confirm / Reject Pending Items
 "yes do it", "approve the recipe type", "no don't archive those"

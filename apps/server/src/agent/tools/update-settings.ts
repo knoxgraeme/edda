@@ -7,11 +7,17 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { updateSettings } from "@edda/db";
+import { updateSettings, getAgentByName } from "@edda/db";
 
 export const updateSettingsSchema = z.object({
   updates: z
     .object({
+      default_agent: z
+        .string()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Name of the agent to use as the default conversational agent"),
       user_display_name: z.string().optional(),
       user_timezone: z.string().optional(),
       daily_digest_time: z
@@ -54,6 +60,17 @@ export const updateSettingsTool = tool(
         rejected_keys: rejected,
         message: "None of the provided keys are agent-mutable.",
       });
+    }
+
+    // Validate default_agent exists before updating
+    if (typeof safeUpdates.default_agent === "string") {
+      const agent = await getAgentByName(safeUpdates.default_agent);
+      if (!agent) {
+        return JSON.stringify({
+          status: "error",
+          message: `Agent "${safeUpdates.default_agent}" does not exist. Use list_agents to see available agents.`,
+        });
+      }
     }
 
     await updateSettings(safeUpdates);

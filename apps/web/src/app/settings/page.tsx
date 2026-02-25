@@ -5,13 +5,16 @@
  * Client component renders the form with save action.
  */
 
-import { getSettings } from "@edda/db";
+import { getSettings, getAgents } from "@edda/db";
 import { SettingsClient } from "./settings-client";
 
 export default async function SettingsPage() {
   let settings;
+  let agentNames: string[] = [];
   try {
     settings = await getSettings();
+    const agents = await getAgents({ enabled: true });
+    agentNames = agents.map((a) => a.name);
   } catch (err) {
     console.error("Failed to load settings:", err);
     return (
@@ -26,5 +29,5 @@ export default async function SettingsPage() {
   }
 
   const authEnabled = !!process.env.EDDA_PASSWORD;
-  return <SettingsClient initial={settings} authEnabled={authEnabled} />;
+  return <SettingsClient initial={settings} authEnabled={authEnabled} agentNames={agentNames} />;
 }

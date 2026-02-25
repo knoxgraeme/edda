@@ -18,15 +18,14 @@ import { updateItemTool } from "./update-item.js";
 import { deleteItemTool } from "./delete-item.js";
 import { getItemByIdTool } from "./get-item-by-id.js";
 import { searchItemsTool } from "./search-items.js";
-import { getDashboardTool } from "./get-dashboard.js";
-import { getListItemsTool } from "./get-list-items.js";
+import { getDailySummaryTool } from "./get-daily-summary.js";
+import { getListContentsTool } from "./list-contents.js";
 import { getTimelineTool } from "./get-timeline.js";
-import { getAgentKnowledgeTool } from "./get-agent-knowledge.js";
 
 // Entity tools
 import { upsertEntityTool } from "./upsert-entity.js";
 import { linkItemEntityTool } from "./link-item-entity.js";
-import { getEntityItemsTool } from "./get-entity-items.js";
+import { listEntityItemsTool } from "./list-entity-items.js";
 import { getEntityProfileTool } from "./get-entity-profile.js";
 import { listEntitiesTool } from "./list-entities.js";
 
@@ -34,7 +33,7 @@ import { listEntitiesTool } from "./list-entities.js";
 import { createItemTypeTool } from "./create-item-type.js";
 
 // Thread tools
-import { getUnprocessedThreadsTool } from "./get-unprocessed-threads.js";
+import { listUnprocessedThreadsTool } from "./list-unprocessed-threads.js";
 import { getThreadMessagesTool } from "./get-thread-messages.js";
 import { markThreadProcessedTool } from "./mark-thread-processed.js";
 import { listThreadsTool } from "./list-threads.js";
@@ -50,19 +49,19 @@ import { removeMcpConnectionTool } from "./remove-mcp-connection.js";
 // Confirmation tools
 import { confirmPendingTool } from "./confirm-pending.js";
 import { rejectPendingTool } from "./reject-pending.js";
-import { getPendingItemsTool } from "./get-pending-items.js";
+import { listPendingItemsTool } from "./list-pending-items.js";
 
 // Agent management tools
 import { createAgentTool } from "./create-agent.js";
 import { runAgentTool } from "./run-agent.js";
-import { getTaskResultTool } from "./get-task-result.js";
+import { getTaskRunTool } from "./get-task-run.js";
 import { listAgentsTool } from "./list-agents.js";
 import { updateAgentTool } from "./update-agent.js";
 import { deleteAgentTool } from "./delete-agent.js";
 
 // Agent self-awareness tools
 import { saveAgentsMdTool } from "./save-agents-md.js";
-import { getMyHistoryTool } from "./get-my-history.js";
+import { listMyRunsTool } from "./list-my-runs.js";
 
 /**
  * All Edda tools — single pool shared by all agents.
@@ -78,15 +77,14 @@ export const allTools = [
   deleteItemTool,
   getItemByIdTool,
   searchItemsTool,
-  getDashboardTool,
-  getListItemsTool,
+  getDailySummaryTool,
+  getListContentsTool,
   getTimelineTool,
-  getAgentKnowledgeTool,
 
   // Entity tools
   upsertEntityTool,
   linkItemEntityTool,
-  getEntityItemsTool,
+  listEntityItemsTool,
   getEntityProfileTool,
   listEntitiesTool,
 
@@ -94,7 +92,7 @@ export const allTools = [
   createItemTypeTool,
 
   // Thread tools
-  getUnprocessedThreadsTool,
+  listUnprocessedThreadsTool,
   getThreadMessagesTool,
   markThreadProcessedTool,
   listThreadsTool,
@@ -110,17 +108,17 @@ export const allTools = [
   // Confirmation tools
   confirmPendingTool,
   rejectPendingTool,
-  getPendingItemsTool,
+  listPendingItemsTool,
 
   // Agent management tools
   createAgentTool,
   runAgentTool,
-  getTaskResultTool,
+  getTaskRunTool,
   listAgentsTool,
   updateAgentTool,
   deleteAgentTool,
 
   // Agent self-awareness tools
   saveAgentsMdTool,
-  getMyHistoryTool,
+  listMyRunsTool,
 ];

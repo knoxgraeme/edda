@@ -65,11 +65,10 @@ import { updateItemTool } from "../../agent/tools/update-item.js";
 import { deleteItemTool } from "../../agent/tools/delete-item.js";
 import { searchItemsTool } from "../../agent/tools/search-items.js";
 import { getItemByIdTool } from "../../agent/tools/get-item-by-id.js";
-import { getDashboardTool } from "../../agent/tools/get-dashboard.js";
-import { getListItemsTool } from "../../agent/tools/get-list-items.js";
+import { getDailySummaryTool } from "../../agent/tools/get-daily-summary.js";
+import { getListContentsTool } from "../../agent/tools/list-contents.js";
 import { getTimelineTool } from "../../agent/tools/get-timeline.js";
-import { getAgentKnowledgeTool } from "../../agent/tools/get-agent-knowledge.js";
-import { getPendingItemsTool } from "../../agent/tools/get-pending-items.js";
+import { listPendingItemsTool } from "../../agent/tools/list-pending-items.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -140,7 +139,10 @@ describe("updateItemTool", () => {
     const fakeItem = { id: "00000000-0000-4000-8000-000000000101", status: "done" };
     vi.mocked(updateItem).mockResolvedValueOnce(fakeItem as never);
 
-    const result = await updateItemTool.invoke({ item_id: "00000000-0000-4000-8000-000000000101", status: "done" });
+    const result = await updateItemTool.invoke({
+      item_id: "00000000-0000-4000-8000-000000000101",
+      status: "done",
+    });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(updateItem)).toHaveBeenCalledWith(
@@ -162,7 +164,10 @@ describe("updateItemTool", () => {
     vi.mocked(getItemById).mockResolvedValueOnce(fakeItem as never);
     vi.mocked(updateItem).mockResolvedValueOnce(fakeItem as never);
 
-    await updateItemTool.invoke({ item_id: "00000000-0000-4000-8000-000000000102", content: "new text" });
+    await updateItemTool.invoke({
+      item_id: "00000000-0000-4000-8000-000000000102",
+      content: "new text",
+    });
 
     expect(vi.mocked(buildEmbeddingText)).toHaveBeenCalledWith("note", "new text", "a summary");
     expect(vi.mocked(embed)).toHaveBeenCalledWith("note: new text. a summary");
@@ -181,7 +186,9 @@ describe("deleteItemTool", () => {
   it("calls deleteItem with the provided ID", async () => {
     vi.mocked(deleteItem).mockResolvedValueOnce(true as never);
 
-    const result = await deleteItemTool.invoke({ item_id: "00000000-0000-4000-8000-000000000201" });
+    const result = await deleteItemTool.invoke({
+      item_id: "00000000-0000-4000-8000-000000000201",
+    });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(deleteItem)).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000201");
@@ -191,7 +198,9 @@ describe("deleteItemTool", () => {
   it("returns not_found when deleteItem returns false", async () => {
     vi.mocked(deleteItem).mockResolvedValueOnce(false as never);
 
-    const result = await deleteItemTool.invoke({ item_id: "00000000-0000-4000-8000-000000000202" });
+    const result = await deleteItemTool.invoke({
+      item_id: "00000000-0000-4000-8000-000000000202",
+    });
     const parsed = JSON.parse(result);
 
     expect(parsed.status).toBe("not_found");
@@ -220,6 +229,34 @@ describe("searchItemsTool", () => {
     expect(parsed.count).toBe(1);
     expect(parsed.results[0].id).toBe("s-1");
   });
+
+  it("falls back to listing mode when no query + agent_knowledge_only", async () => {
+    vi.mocked(getAgentKnowledge).mockResolvedValueOnce([
+      { id: "ak-1", type: "preference", content: "likes dark mode" },
+    ] as never);
+
+    const result = await searchItemsTool.invoke({
+      agent_knowledge_only: true,
+      order_by: "reinforced",
+      limit: 10,
+    });
+    const parsed = JSON.parse(result);
+
+    expect(vi.mocked(getAgentKnowledge)).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: "reinforced", limit: 10 }),
+    );
+    expect(vi.mocked(embed)).not.toHaveBeenCalled();
+    expect(parsed.count).toBe(1);
+  });
+
+  it("returns error when no query and not in listing mode", async () => {
+    const result = await searchItemsTool.invoke({});
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBeDefined();
+    expect(parsed.count).toBe(0);
+    expect(vi.mocked(embed)).not.toHaveBeenCalled();
+  });
 });
 
 describe("read-only item tools", () => {
@@ -230,7 +267,9 @@ describe("read-only item tools", () => {
       content: "content",
     } as never);
 
-    const result = await getItemByIdTool.invoke({ item_id: "00000000-0000-4000-8000-000000000301" });
+    const result = await getItemByIdTool.invoke({
+      item_id: "00000000-0000-4000-8000-000000000301",
+    });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(getItemById)).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000301");
@@ -238,20 +277,20 @@ describe("read-only item tools", () => {
     expect(parsed.item.id).toBe("00000000-0000-4000-8000-000000000301");
   });
 
-  it("getDashboardTool calls getDashboard", async () => {
+  it("getDailySummaryTool calls getDashboard", async () => {
     vi.mocked(getDashboard).mockResolvedValueOnce({ items: [] } as never);
 
-    await getDashboardTool.invoke({ date: "2026-02-21" });
+    await getDailySummaryTool.invoke({ date: "2026-02-21" });
 
     expect(vi.mocked(getDashboard)).toHaveBeenCalledWith("2026-02-21");
   });
 
-  it("getListItemsTool calls getListItems", async () => {
+  it("getListContentsTool calls getListItems", async () => {
     vi.mocked(getListItems).mockResolvedValueOnce([
       { id: "li-1", content: "buy milk" },
     ] as never);
 
-    const result = await getListItemsTool.invoke({ list_name: "groceries" });
+    const result = await getListContentsTool.invoke({ list_name: "groceries" });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(getListItems)).toHaveBeenCalledWith("groceries");
@@ -272,18 +311,6 @@ describe("read-only item tools", () => {
       "2026-02-28",
       undefined,
       undefined,
-    );
-    expect(parsed.count).toBe(1);
-  });
-
-  it("getAgentKnowledgeTool calls getAgentKnowledge", async () => {
-    vi.mocked(getAgentKnowledge).mockResolvedValueOnce([{ id: "ak-1" }] as never);
-
-    const result = await getAgentKnowledgeTool.invoke({});
-    const parsed = JSON.parse(result);
-
-    expect(vi.mocked(getAgentKnowledge)).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: undefined, limit: undefined }),
     );
     expect(parsed.count).toBe(1);
   });
@@ -315,7 +342,10 @@ describe("createItemTool — dedup", () => {
     vi.mocked(searchItems).mockResolvedValueOnce([existingItem] as never);
     vi.mocked(updateItem).mockResolvedValueOnce(existingItem as never);
 
-    const result = await createItemTool.invoke({ type: "preference", content: "likes dark mode" });
+    const result = await createItemTool.invoke({
+      type: "preference",
+      content: "likes dark mode",
+    });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(searchItems)).toHaveBeenCalledWith(
@@ -346,7 +376,10 @@ describe("createItemTool — dedup", () => {
     };
     vi.mocked(createItem).mockResolvedValueOnce(fakeItem as never);
 
-    const result = await createItemTool.invoke({ type: "preference", content: "likes dark mode" });
+    const result = await createItemTool.invoke({
+      type: "preference",
+      content: "likes dark mode",
+    });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(updateItem)).not.toHaveBeenCalled();
@@ -371,7 +404,7 @@ describe("updateItemTool — edge cases", () => {
   });
 });
 
-describe("getPendingItemsTool", () => {
+describe("listPendingItemsTool", () => {
   it("returns all pending items when table is 'all'", async () => {
     const fakePending = [
       {
@@ -393,7 +426,7 @@ describe("getPendingItemsTool", () => {
     ];
     vi.mocked(getPendingItems).mockResolvedValueOnce(fakePending as never);
 
-    const result = await getPendingItemsTool.invoke({});
+    const result = await listPendingItemsTool.invoke({});
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(getPendingItems)).toHaveBeenCalled();
@@ -421,7 +454,7 @@ describe("getPendingItemsTool", () => {
     ];
     vi.mocked(getPendingItems).mockResolvedValueOnce(fakePending as never);
 
-    const result = await getPendingItemsTool.invoke({ table: "items" });
+    const result = await listPendingItemsTool.invoke({ table: "items" });
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(1);

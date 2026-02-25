@@ -7,13 +7,12 @@ description: >
 allowed-tools:
   - search_items
   - get_item_by_id
-  - get_entity_items
+  - list_entity_items
   - get_entity_profile
   - list_entities
-  - get_agent_knowledge
-  - get_dashboard
+  - get_daily_summary
   - get_timeline
-  - get_list_items
+  - get_list_contents
   - create_item
   - batch_create_items
 ---

@@ -13,7 +13,7 @@
  * - Optional /store/{name}/ cross-agent mounts (from metadata.stores)
  * - Optional /workspace/ FilesystemBackend (env-gated, from metadata.filesystem)
  * - AGENTS.md context, store instructions, settings context
- * - get_my_history tool (always included)
+ * - list_my_runs tool (always included)
  */
 
 import { randomUUID } from "node:crypto";
@@ -29,15 +29,54 @@ import {
   getMcpConnections,
   getSkillsByNames,
 } from "@edda/db";
-import type { ItemType, McpConnection } from "@edda/db";
+import type { ItemType, McpConnection, Skill } from "@edda/db";
 import { getChatModel } from "../llm/index.js";
 import { getCheckpointer } from "../checkpointer/index.js";
 import { getStore } from "../store/index.js";
 import { getSearchTool } from "../search/index.js";
 import { loadMCPTools } from "./mcp.js";
-import { collectSkillTools } from "./skill-loader.js";
 import { allTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
+
+// ---------------------------------------------------------------------------
+// Skill frontmatter parsing (DB-backed, no disk reads)
+// ---------------------------------------------------------------------------
+
+/** Parse allowed-tools list from YAML frontmatter in SKILL.md content. */
+function parseAllowedTools(raw: string): string[] {
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return [];
+
+  const lines = fmMatch[1].split("\n");
+  const idx = lines.findIndex((l) => l.startsWith("allowed-tools:"));
+  if (idx === -1) return [];
+
+  const tools: string[] = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^\s+-\s+(.+)$/);
+    if (m) tools.push(m[1].trim());
+    else if (lines[i].trim()) break;
+  }
+  return tools;
+}
+
+/**
+ * Collect the union of allowed-tools from pre-fetched Skill rows.
+ * Returns an empty set if no skills declare allowed-tools.
+ */
+function collectSkillTools(skills: Skill[]): Set<string> {
+  const tools = new Set<string>();
+  let anyDeclared = false;
+  for (const skill of skills) {
+    if (!skill.content) continue;
+    const allowed = parseAllowedTools(skill.content);
+    if (allowed.length > 0) {
+      anyDeclared = true;
+      for (const t of allowed) tools.add(t);
+    }
+  }
+  return anyDeclared ? tools : new Set();
+}
 
 // ---------------------------------------------------------------------------
 // Tool scoping
@@ -49,18 +88,17 @@ import { buildBackend } from "./backends.js";
  * Resolution (additive):
  * 1. Collect allowed-tools from all of the agent's skills (union)
  * 2. Add any individual tool names from agent.tools[]
- * 3. Filter available tools to only those in the resolved set
- * 4. Always include get_my_history
+ * 3. Always include list_my_runs
+ * 4. Filter available tools to only those in the resolved set
  *
- * Empty declared set = all tools (backward compatible).
+ * Every agent must explicitly declare its tools via skills or agent.tools[].
+ * An agent with no skills and no tools receives only list_my_runs.
  */
-function scopeTools(agent: Agent, available: StructuredTool[]): StructuredTool[] {
-  const declared = collectSkillTools(agent.skills);
+function scopeTools(agent: Agent, available: StructuredTool[], skills: Skill[]): StructuredTool[] {
+  const declared = collectSkillTools(skills);
   for (const t of agent.tools) declared.add(t);
 
-  if (declared.size === 0) return available; // empty = all
-
-  declared.add("get_my_history"); // always included
+  declared.add("list_my_runs"); // always included
 
   const byName = new Map(available.map((t) => [t.name, t]));
   const tools: StructuredTool[] = [];
@@ -92,13 +130,13 @@ function assertNoDuplicateTools(tools: StructuredTool[]): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Write an agent's declared skills from the DB into the PostgresStore.
- * deepagents' SkillsMiddleware discovers them via progressive disclosure.
+ * Write pre-fetched skills into the PostgresStore for deepagents
+ * progressive disclosure. Skills are fetched once in buildAgent() and
+ * shared with both collectSkillTools() (tool scoping) and this function.
  */
-async function writeSkillsToStore(agent: Agent, store: BaseStore): Promise<void> {
-  if (agent.skills.length === 0) return;
+async function writeSkillsToStore(skills: Skill[], store: BaseStore): Promise<void> {
+  if (skills.length === 0) return;
 
-  const skills = await getSkillsByNames(agent.skills);
   const now = new Date().toISOString();
 
   await Promise.all(
@@ -140,14 +178,22 @@ async function resolveSubagents(
   const rows = await getAgentsByNames(names);
   const enabled = rows.filter((r) => r.enabled);
 
+  // Fetch all subagent skills from DB in one batch
+  const allSkillNames = [...new Set(enabled.flatMap((r) => r.skills))];
+  const allSkills = allSkillNames.length > 0 ? await getSkillsByNames(allSkillNames) : [];
+  const skillsByName = new Map(allSkills.map((s) => [s.name, s]));
+
+  const getRowSkills = (row: Agent): Skill[] =>
+    row.skills.map((n) => skillsByName.get(n)).filter(Boolean) as Skill[];
+
   // Write all subagent skills in parallel
-  await Promise.all(enabled.map((row) => writeSkillsToStore(row, store)));
+  await Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store)));
 
   return enabled.map((row) => ({
     name: row.name,
     description: row.description,
     systemPrompt: row.system_prompt || `You are ${row.name}.`,
-    tools: scopeTools(row, available),
+    tools: scopeTools(row, available, getRowSkills(row)),
     skills: row.skills.length > 0 ? ["/skills/"] : [],
   }));
 }
@@ -290,8 +336,8 @@ export async function buildAgent(agent: Agent): Promise<any> {
           | undefined)
       : undefined;
 
-  // 2. Gather ALL available tools + prompt data in one parallel batch
-  const [model, searchTool, checkpointer, store, mcpTools, itemTypes, connections] =
+  // 2. Gather ALL available tools + prompt data + skills in one parallel batch
+  const [model, searchTool, checkpointer, store, mcpTools, itemTypes, connections, skills] =
     await Promise.all([
       getChatModel(modelName),
       getSearchTool(),
@@ -300,6 +346,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
       loadMCPTools(),
       getItemTypes(),
       getMcpConnections(),
+      agent.skills.length > 0 ? getSkillsByNames(agent.skills) : ([] as Skill[]),
     ]);
 
   const allAvailable = [
@@ -309,7 +356,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
   ];
 
   // 3. Scope tools (empty agent.tools[] = all tools, otherwise filter by name)
-  const tools = scopeTools(agent, allAvailable);
+  const tools = scopeTools(agent, allAvailable, skills);
 
   // 4. Duplicate check
   assertNoDuplicateTools(tools);
@@ -321,7 +368,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
       : [];
 
   // 6. Write this agent's scoped SKILL.md files into the store
-  await writeSkillsToStore(agent, store);
+  await writeSkillsToStore(skills, store);
 
   // 7. System prompt — unified builder (no skill content injection)
   const systemPrompt = await buildPrompt(agent, settings, { itemTypes, connections });

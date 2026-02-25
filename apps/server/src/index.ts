@@ -13,7 +13,7 @@ import {
   finalizeContextRefresh,
 } from "./agent/generate-agents-md.js";
 import { createCronRunner } from "./cron/index.js";
-import { setAgent, startHealthServer } from "./server/health.js";
+import { setAgent, startHealthServer } from "./server/index.js";
 
 async function main() {
   console.log("🧠 Edda starting...");

@@ -1,5 +1,5 @@
 /**
- * Cron runner factory — standalone (node-cron) or platform (LangGraph)
+ * Cron runner factory — local (node-cron) or langgraph (LangGraph Platform)
  */
 
 import { getSettingsSync } from "@edda/db";
@@ -13,10 +13,10 @@ export async function createCronRunner(): Promise<CronRunner> {
   const settings = getSettingsSync();
 
   if (settings.cron_runner === "platform") {
-    const { PlatformCronRunner } = await import("./platform.js");
-    return new PlatformCronRunner();
+    const { LangGraphCronRunner } = await import("./langgraph.js");
+    return new LangGraphCronRunner();
   }
 
-  const { StandaloneCronRunner } = await import("./standalone.js");
-  return new StandaloneCronRunner();
+  const { LocalCronRunner } = await import("./local.js");
+  return new LocalCronRunner();
 }

@@ -1,12 +1,12 @@
 /**
- * Tool: get_task_result — Check status and results of recent agent runs.
+ * Tool: get_task_run — Check status and results of recent agent runs.
  */
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getRecentTaskRuns, getTaskRunById } from "@edda/db";
 
-export const getTaskResultSchema = z.object({
+export const getTaskRunSchema = z.object({
   task_run_id: z.string().uuid().optional().describe("Look up a specific task run by ID"),
   agent_name: z.string().optional().describe("Filter by agent name"),
   limit: z
@@ -18,7 +18,7 @@ export const getTaskResultSchema = z.object({
     .describe("Number of runs to return"),
 });
 
-export const getTaskResultTool = tool(
+export const getTaskRunTool = tool(
   async ({ task_run_id, agent_name, limit }) => {
     if (task_run_id) {
       const run = await getTaskRunById(task_run_id);
@@ -41,9 +41,9 @@ export const getTaskResultTool = tool(
     );
   },
   {
-    name: "get_task_result",
+    name: "get_task_run",
     description:
       "Check the status and results of recent agent runs. Use after run_agent to see if the task completed.",
-    schema: getTaskResultSchema,
+    schema: getTaskRunSchema,
   },
 );

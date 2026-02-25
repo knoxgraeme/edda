@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { DEFAULT_SETTINGS } = vi.hoisted(() => ({
   DEFAULT_SETTINGS: {
+    default_agent: "edda",
     user_display_name: null,
     user_timezone: "America/New_York",
     web_search_enabled: false,
@@ -20,6 +21,9 @@ const { DEFAULT_SETTINGS } = vi.hoisted(() => ({
     agents_md_max_versions: 3,
     agents_md_max_entities: 10,
     llm_provider: "anthropic",
+    default_model: "claude-sonnet-4-20250514",
+    task_max_concurrency: 3,
+    notification_targets: ["inbox"],
     embedding_model: "voyage-3",
   },
 }));
@@ -62,8 +66,10 @@ describe("getSettingsTool", () => {
     // Should include agent-visible keys
     expect(parsed).toHaveProperty("user_timezone");
     expect(parsed).toHaveProperty("web_search_enabled");
+    // Should include operational keys added for agent parity
+    expect(parsed).toHaveProperty("llm_provider");
+    expect(parsed).toHaveProperty("default_agent");
     // Should NOT include infrastructure keys
-    expect(parsed).not.toHaveProperty("llm_provider");
     expect(parsed).not.toHaveProperty("embedding_model");
   });
 });

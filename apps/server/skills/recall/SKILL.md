@@ -7,13 +7,12 @@ description: >
 allowed-tools:
   - search_items
   - get_item_by_id
-  - get_entity_items
+  - list_entity_items
   - get_entity_profile
   - list_entities
-  - get_agent_knowledge
-  - get_dashboard
+  - get_daily_summary
   - get_timeline
-  - get_list_items
+  - get_list_contents
   - update_item
 ---
 
@@ -21,7 +20,7 @@ allowed-tools:
 
 ## Dashboard Triggers
 "what's today", "my day", "what's on my plate", "dashboard", "morning briefing"
-→ Call get_dashboard for today. Format with icons from type definitions.
+→ Call get_daily_summary for today. Format with icons from type definitions.
 → Include the pending_confirmations section if any exist.
 → Use a clean, scannable format. Group by section (due today, captured, open, lists).
 
@@ -35,7 +34,7 @@ Topic questions, "what did I say about...", "that thing about...", "anything abo
 "everything about X", "when did I mention X", "what's happening with project Y"
 → Resolve entity by searching entities table.
 → Call get_entity_profile for a rich summary (description, linked items, activity).
-→ If deeper detail is needed, call get_entity_items for all linked items.
+→ If deeper detail is needed, call list_entity_items for all linked items.
 → Summarize the arc — first mention, key events, recent activity.
 
 ## Temporal Triggers
@@ -46,7 +45,7 @@ Topic questions, "what did I say about...", "that thing about...", "anything abo
 
 ## List Triggers
 "grocery list", "what's on my reading list", "show me my packing list"
-→ Call get_list_items with the list name.
+→ Call get_list_contents with the list name.
 → Show active items only (not completed/archived).
 
 ## Memory Transparency

@@ -38,7 +38,15 @@ function FieldGroup({
   );
 }
 
-export function SettingsClient({ initial, authEnabled }: { initial: Settings; authEnabled: boolean }) {
+export function SettingsClient({
+  initial,
+  authEnabled,
+  agentNames,
+}: {
+  initial: Settings;
+  authEnabled: boolean;
+  agentNames: string[];
+}) {
   const [form, setForm] = useState<SettingsForm>(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, created_at, updated_at, ...rest } = initial;
@@ -242,6 +250,23 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
             <CardTitle className="text-base">Agents & Concurrency</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
+            <FieldGroup
+              label="Default Agent"
+              htmlFor="default_agent"
+              description="The agent used as the primary conversational interface"
+            >
+              <Select
+                id="default_agent"
+                value={form.default_agent}
+                onChange={(e) => update("default_agent", e.target.value)}
+              >
+                {agentNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </FieldGroup>
             <FieldGroup
               label="Max concurrent tasks"
               htmlFor="task_max_concurrency"

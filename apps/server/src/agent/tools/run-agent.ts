@@ -13,7 +13,7 @@ import {
   refreshSettings,
 } from "@edda/db";
 import { buildAgent, resolveThreadId } from "../build-agent.js";
-import { runWithConcurrencyLimit } from "../../cron/semaphore.js";
+import { runWithConcurrencyLimit } from "../../utils/semaphore.js";
 import { sanitizeError } from "../../utils/sanitize-error.js";
 import { withTimeout } from "../../utils/with-timeout.js";
 
