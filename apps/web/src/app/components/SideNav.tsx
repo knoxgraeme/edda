@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageSquare, LayoutDashboard, Inbox, Users, Settings } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Inbox, Users, Bot, Settings } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Chat", icon: MessageSquare },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/entities", label: "Entities", icon: Users },
+  { href: "/agents", label: "Agents", icon: Bot },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
