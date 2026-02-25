@@ -13,7 +13,7 @@ BEGIN;
 -- Rename memory_extraction → memory_catchup and update skills array
 UPDATE agents
 SET name = 'memory_catchup',
-    skills = '["memory_catchup"]'::jsonb
+    skills = ARRAY['memory_catchup']
 WHERE name = 'memory_extraction';
 
 -- Migrate active scheduled_task items → agents rows
@@ -22,8 +22,8 @@ INSERT INTO agents (name, description, skills, tools, trigger, schedule, context
 SELECT
   'user_cron_' || REPLACE(id::text, '-', '_'),
   content,
-  '{}',
-  '["search_items", "create_item", "get_dashboard", "get_entity_profile", "get_timeline"]',
+  ARRAY[]::text[],
+  ARRAY['search_items', 'create_item', 'get_dashboard', 'get_entity_profile', 'get_timeline'],
   'schedule',
   metadata->>'cron',
   'daily',
