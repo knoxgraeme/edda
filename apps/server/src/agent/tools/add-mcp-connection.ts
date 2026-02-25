@@ -5,6 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createMcpConnection } from "@edda/db";
+import { invalidateMCPToolCache } from "../mcp.js";
 
 export const addMcpConnectionSchema = z.object({
   name: z.string().describe("User-facing label"),
@@ -29,6 +30,8 @@ export const addMcpConnectionTool = tool(
       transport: "sse",
       config,
     });
+
+    invalidateMCPToolCache();
 
     return JSON.stringify({
       id: connection.id,
