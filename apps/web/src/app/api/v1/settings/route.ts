@@ -1,4 +1,4 @@
-import { getSettings, updateSettings } from "@edda/db";
+import { getSettings, updateSettings, getAgentByName } from "@edda/db";
 import type { LlmProvider, EmbeddingProvider, Settings } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -34,6 +34,11 @@ export async function PATCH(request: Request) {
 
   const parsed = UpdateSettingsSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error.issues[0].message);
+
+  if (parsed.data.default_agent) {
+    const agent = await getAgentByName(parsed.data.default_agent);
+    if (!agent) return badRequest(`Agent "${parsed.data.default_agent}" does not exist`);
+  }
 
   const settings = await updateSettings(parsed.data as Partial<Settings>);
   return NextResponse.json(settings);

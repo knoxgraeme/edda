@@ -28,11 +28,11 @@ export async function PATCH(
   const connection = await updateMcpConnection(id, parsed.data);
   if (!connection) return notFound("MCP connection");
 
-  // Re-probe tools if transport or config changed
+  // Fire-and-forget: re-probe in background if transport or config changed
   if (parsed.data.transport || parsed.data.config) {
-    const discoveredTools = await probeMcpTools(connection);
-    const updated = await updateMcpConnection(id, { discovered_tools: discoveredTools });
-    if (updated) return NextResponse.json(updated);
+    probeMcpTools(connection)
+      .then((tools) => updateMcpConnection(id, { discovered_tools: tools }))
+      .catch((err) => console.warn(`[MCP] Re-probe failed for "${connection.name}": ${err}`));
   }
 
   return NextResponse.json(connection);

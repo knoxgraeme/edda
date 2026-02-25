@@ -173,23 +173,6 @@ function createTransport(connection: McpConnection) {
 }
 
 /**
- * Probe an MCP server and return its tool names (without keeping the connection).
- * Called after creating/updating an mcp_connection.
- */
-export async function probeMcpTools(connection: McpConnection): Promise<string[]> {
-  const transport = createTransport(connection);
-  const client = new Client({ name: "edda", version: "1.0.0" });
-
-  try {
-    await withTimeout(client.connect(transport), MCP_TIMEOUT_MS, connection.name);
-    const { tools } = await withTimeout(client.listTools(), MCP_TIMEOUT_MS, connection.name);
-    return tools.map((t) => `mcp_${sanitizeName(connection.name)}_${sanitizeName(t.name)}`);
-  } finally {
-    await client.close().catch(() => {});
-  }
-}
-
-/**
  * Load tools from all enabled MCP connections.
  * Returns an array of LangChain-compatible tools.
  * Also writes back discovered tool names to the DB as a cache refresh.
@@ -211,7 +194,7 @@ export async function loadMCPTools(): Promise<DynamicStructuredTool[]> {
 
       // Write back discovered tool names as a cache refresh
       const toolNames = result.value.map((t) => t.name);
-      updateMcpConnection(connections[i].id, { discovered_tools: toolNames } as Partial<McpConnection>).catch((err) =>
+      updateMcpConnection(connections[i].id, { discovered_tools: toolNames }).catch((err) =>
         console.warn(`[MCP] Failed to cache tools for "${connections[i].name}": ${err}`),
       );
     } else {
