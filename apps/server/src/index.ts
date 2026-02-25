@@ -8,6 +8,7 @@
 import { refreshSettings, getLatestAgentsMd, getAgentByName } from "@edda/db";
 import { seedSkills } from "./agent/seed-skills.js";
 import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
+import { resolveRetrievalContext } from "./agent/tool-helpers.js";
 import {
   prepareContextRefreshInput,
   finalizeContextRefresh,
@@ -35,7 +36,10 @@ async function main() {
     );
   }
   const agent = await buildAgent(agentRow);
-  setAgent(agent);
+  setAgent(agent, {
+    agentName: agentRow.name,
+    retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
+  });
   console.log(`  Agent ready (${agentRow.name})`);
 
   // 4. Bootstrap AGENTS.md if empty (first boot only)

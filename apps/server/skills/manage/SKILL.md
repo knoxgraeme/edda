@@ -44,7 +44,33 @@ allowed-tools:
 
 ## Bulk Operations
 "I got everything on the grocery list", "clear the packing list"
-→ get_list_contents(list_name) → update_item for each active item → status='done'
+→ search_items(type="list", query="grocery") to find the list
+→ get_list_contents(list_id) → update_item for each active item → status='done'
+→ For one-off lists (e.g. packing list): also update_item on the list itself → status='done'
+
+## Rename List
+"rename the grocery list to 'weekly groceries'"
+→ search_items(type="list", query="grocery") to find the list
+→ update_item(id, content="Weekly Groceries", metadata={...existing, normalized_name: "weekly groceries"})
+→ "Renamed list to Weekly Groceries."
+
+## Archive List
+"remove the packing list", "delete the grocery list"
+→ search_items(type="list", query="packing") to find the list
+→ get_list_contents(list_id) → update_item(status='archived') for EACH active child item
+→ THEN update_item on the list itself → status='archived'
+→ "Archived packing list and its 5 items."
+⚠️ Always archive children BEFORE the parent to prevent orphaned items.
+
+## Remove List Item
+"take eggs off the grocery list", "remove milk"
+→ search_items(type="list", query="grocery") to find the list
+→ get_list_contents(list_id) to find the specific item
+→ update_item(id, status='archived')
+
+## Discover Lists
+To find all lists including empty ones: search_items(type="list")
+The daily summary only shows lists with active items. Use search_items for a complete inventory.
 
 ## Confirm / Reject Pending Items
 "yes do it", "approve the recipe type", "no don't archive those"

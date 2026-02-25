@@ -5,16 +5,26 @@
 import { randomUUID } from "crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { getPool, listThreads, upsertThread, setThreadTitle, searchItems } from "@edda/db";
+import type { RetrievalContext } from "@edda/db";
 import { HumanMessage } from "@langchain/core/messages";
 import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod";
 import { getSharedCheckpointer } from "../checkpointer/index.js";
 import { embed } from "../embed/index.js";
 
-let agent: Runnable | null = null;
+interface AgentState {
+  agent: Runnable;
+  agentName: string;
+  retrievalContext?: RetrievalContext;
+}
 
-export function setAgent(a: Runnable) {
-  agent = a;
+let agentState: AgentState | null = null;
+
+export function setAgent(
+  agent: Runnable,
+  opts: { agentName: string; retrievalContext?: RetrievalContext },
+) {
+  agentState = { agent, ...opts };
 }
 
 const StreamRequestSchema = z.object({
@@ -57,7 +67,7 @@ async function handleHealth(res: ServerResponse) {
 }
 
 async function handleStream(req: IncomingMessage, res: ServerResponse) {
-  if (!agent) {
+  if (!agentState) {
     res.writeHead(503, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Agent not ready" }));
     return;
@@ -90,9 +100,16 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       Connection: "keep-alive",
     });
 
-    const stream = agent.streamEvents(
+    const stream = agentState.agent.streamEvents(
       { messages: [new HumanMessage(userContent)] },
-      { configurable: { thread_id }, version: "v2" },
+      {
+        configurable: {
+          thread_id,
+          agent_name: agentState.agentName,
+          retrieval_context: agentState.retrievalContext,
+        },
+        version: "v2",
+      },
     );
 
     for await (const event of stream) {

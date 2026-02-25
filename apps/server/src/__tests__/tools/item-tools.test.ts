@@ -286,14 +286,15 @@ describe("read-only item tools", () => {
   });
 
   it("getListContentsTool calls getListItems", async () => {
+    const listId = "550e8400-e29b-41d4-a716-446655440000";
     vi.mocked(getListItems).mockResolvedValueOnce([
       { id: "li-1", content: "buy milk" },
     ] as never);
 
-    const result = await getListContentsTool.invoke({ list_name: "groceries" });
+    const result = await getListContentsTool.invoke({ list_id: listId });
     const parsed = JSON.parse(result);
 
-    expect(vi.mocked(getListItems)).toHaveBeenCalledWith("groceries");
+    expect(vi.mocked(getListItems)).toHaveBeenCalledWith(listId);
     expect(parsed.count).toBe(1);
   });
 

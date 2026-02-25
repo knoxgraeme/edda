@@ -18,6 +18,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createDeepAgent } from "deepagents";
+import type { LanguageModelLike } from "@langchain/core/language_models/base";
 import type { StructuredTool } from "@langchain/core/tools";
 import type { BaseStore } from "@langchain/langgraph";
 import type { Agent, Settings } from "@edda/db";
@@ -162,16 +163,19 @@ interface SubagentSpec {
   systemPrompt: string;
   tools: StructuredTool[];
   skills: string[];
+  model?: LanguageModelLike;
 }
 
 /**
  * Resolve subagent specs from the DB. Each subagent gets its own scoped
- * tools and skills written to the store.
+ * tools, skills, system prompt (with AGENTS.md context), and model.
  */
 async function resolveSubagents(
   names: string[],
   available: StructuredTool[],
   store: BaseStore,
+  settings: Settings,
+  prefetched: { itemTypes: ItemType[]; connections: McpConnection[] },
 ): Promise<SubagentSpec[]> {
   if (names.length === 0) return [];
 
@@ -186,16 +190,35 @@ async function resolveSubagents(
   const getRowSkills = (row: Agent): Skill[] =>
     row.skills.map((n) => skillsByName.get(n)).filter(Boolean) as Skill[];
 
-  // Write all subagent skills in parallel
-  await Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store)));
+  // Write all subagent skills + build prompts + resolve models in parallel
+  const [, ...specs] = await Promise.all([
+    Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
+    ...enabled.map(async (row) => {
+      // Resolve per-subagent model (if configured)
+      const modelName =
+        row.model_settings_key && MODEL_SETTINGS_KEYS.has(row.model_settings_key)
+          ? ((settings as unknown as Record<string, unknown>)[row.model_settings_key] as
+              | string
+              | undefined)
+          : undefined;
 
-  return enabled.map((row) => ({
-    name: row.name,
-    description: row.description,
-    systemPrompt: row.system_prompt || `You are ${row.name}.`,
-    tools: scopeTools(row, available, getRowSkills(row)),
-    skills: row.skills.length > 0 ? ["/skills/"] : [],
-  }));
+      const [systemPrompt, model] = await Promise.all([
+        buildPrompt(row, settings, prefetched),
+        modelName ? getChatModel(modelName) : Promise.resolve(undefined),
+      ]);
+
+      return {
+        name: row.name,
+        description: row.description,
+        systemPrompt,
+        tools: scopeTools(row, available, getRowSkills(row)),
+        skills: row.skills.length > 0 ? ["/skills/"] : [],
+        ...(model ? { model } : {}),
+      } satisfies SubagentSpec;
+    }),
+  ]);
+
+  return specs;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +387,10 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 5. Subagents (any agent can have them)
   const subagents =
     agent.subagents.length > 0
-      ? await resolveSubagents(agent.subagents, allAvailable, store)
+      ? await resolveSubagents(agent.subagents, allAvailable, store, settings, {
+          itemTypes,
+          connections,
+        })
       : [];
 
   // 6. Write this agent's scoped SKILL.md files into the store

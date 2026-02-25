@@ -7,8 +7,7 @@ import type { Item, CreateItemInput, SearchResult, RetrievalContext } from "./ty
 
 // ── Search re-ranking constants ──────────────────────────────────────────────
 
-/** Temporal decay half-life in days. 30 days is aggressive for a memory system — tune up if
- *  older memories lose relevance too quickly. */
+/** Default fallback decay half-life (days) for item types without a configured value */
 export const DECAY_HALF_LIFE_DAYS = 30;
 
 /** ln(2) — used in exponential decay formula: exp(-LN2 * age / half_life) */
@@ -21,6 +20,9 @@ export const RERANK_MULTIPLIER = 3;
 export const ITEM_COLS = `id, type, content, summary, metadata, status, source, day, confirmed,
   parent_id, embedding_model, superseded_by, completed_at, pending_action,
   last_reinforced_at, created_at, updated_at`;
+
+/** ITEM_COLS qualified with "i." prefix for use in JOINs where items is aliased as "i" */
+export const QUALIFIED_ITEM_COLS = ITEM_COLS.split(",").map((c) => `i.${c.trim()}`).join(", ");
 
 export async function createItem(input: CreateItemInput): Promise<Item> {
   const pool = getPool();
@@ -127,28 +129,29 @@ export async function searchItems(
   } = options;
 
   // ── Build WHERE conditions for the inner CTE (ANN retrieval) ──
-  const conditions = ["1 - (embedding <=> $1::vector) > $2"];
+  // All conditions are qualified with "i." since the CTE JOINs item_types.
+  const conditions = ["1 - (i.embedding <=> $1::vector) > $2"];
   if (excludeSuperseded !== false) {
-    conditions.push("superseded_by IS NULL");
+    conditions.push("i.superseded_by IS NULL");
   }
   if (confirmedOnly !== false) {
-    conditions.push("confirmed = true");
+    conditions.push("i.confirmed = true");
   }
   const params: unknown[] = [JSON.stringify(embedding), threshold];
   let paramIdx = 3;
 
   if (type) {
-    conditions.push(`type = $${paramIdx++}`);
+    conditions.push(`i.type = $${paramIdx++}`);
     params.push(type);
   }
 
   if (after) {
-    conditions.push(`day >= $${paramIdx++}::date`);
+    conditions.push(`i.day >= $${paramIdx++}::date`);
     params.push(after);
   }
 
   if (agentKnowledgeOnly) {
-    conditions.push(`type IN ('preference', 'learned_fact', 'pattern')`);
+    conditions.push(`i.type IN ('preference', 'learned_fact', 'pattern')`);
   }
 
   if (metadata) {
@@ -156,18 +159,18 @@ export async function searchItems(
       if (!SAFE_KEY_RE.test(key)) {
         throw new Error(`Invalid metadata key: ${key}`);
       }
-      conditions.push(`metadata->>'${key}' = $${paramIdx++}`);
+      conditions.push(`i.metadata->>'${key}' = $${paramIdx++}`);
       params.push(value);
     }
   }
 
   // ── Retrieval context: filter-mode conditions (inner CTE) ──
   if (rc?.authorship_mode === "filter" && rc.authors?.length) {
-    conditions.push(`metadata->>'created_by' = ANY($${paramIdx++})`);
+    conditions.push(`i.metadata->>'created_by' = ANY($${paramIdx++})`);
     params.push(rc.authors);
   }
   if (rc?.type_mode === "filter" && rc.types?.length) {
-    conditions.push(`type = ANY($${paramIdx++})`);
+    conditions.push(`i.type = ANY($${paramIdx++})`);
     params.push(rc.types);
   }
 
@@ -206,17 +209,21 @@ export async function searchItems(
 
   const { rows } = await pool.query(
     `WITH candidates AS (
-       SELECT ${ITEM_COLS},
-              1 - (embedding <=> $1::vector) AS raw_similarity
-       FROM items
+       SELECT ${QUALIFIED_ITEM_COLS},
+              1 - (i.embedding <=> $1::vector) AS raw_similarity,
+              COALESCE(it.decay_half_life_days, ${DECAY_HALF_LIFE_DAYS}) AS decay_days
+       FROM items i
+       LEFT JOIN item_types it ON it.name = i.type
        WHERE ${conditions.join(" AND ")}
-       ORDER BY embedding <=> $1::vector
+       ORDER BY i.embedding <=> $1::vector
        LIMIT $${innerLimitIdx}
      )
      SELECT ${ITEM_COLS.split(",").map((c) => `c.${c.trim()}`).join(", ")},
             c.raw_similarity,
             c.raw_similarity
-              * EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_reinforced_at, c.created_at))) / (${DECAY_HALF_LIFE_DAYS} * 86400))${boostExpr}
+              * CASE WHEN c.decay_days = 0 THEN 1.0
+                     ELSE EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_reinforced_at, c.created_at))) / (c.decay_days * 86400))
+                END${boostExpr}
             AS similarity
      FROM candidates c
      ORDER BY similarity DESC
@@ -280,18 +287,31 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
   }
 }
 
-export async function getListItems(listName: string, limit: number = 200): Promise<Item[]> {
+export async function getListItems(listId: string, limit: number = 200): Promise<Item[]> {
   const pool = getPool();
   const { rows } = await pool.query(
     `SELECT ${ITEM_COLS}
      FROM items
      WHERE confirmed = true AND status = 'active' AND type = 'list_item'
-       AND metadata->>'list_name' = $1
+       AND parent_id = $1
      ORDER BY created_at
      LIMIT $2`,
-    [listName, limit],
+    [listId, limit],
   );
   return rows as Item[];
+}
+
+export async function getListByName(name: string): Promise<Item | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT ${ITEM_COLS}
+     FROM items
+     WHERE type = 'list' AND confirmed = true AND status = 'active'
+       AND metadata->>'normalized_name' = lower(trim($1))
+     LIMIT 1`,
+    [name],
+  );
+  return (rows[0] as Item) ?? null;
 }
 
 export async function getTimeline(
