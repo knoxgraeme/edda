@@ -97,10 +97,6 @@ function validateMcpUrl(raw: string): URL {
 
 // --- Helpers ---
 
-function sanitizeName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
-}
-
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
@@ -157,7 +153,7 @@ export async function probeMcpTools(connection: McpConnection): Promise<string[]
   try {
     await withTimeout(client.connect(transport), MCP_TIMEOUT_MS, connection.name);
     const { tools } = await withTimeout(client.listTools(), MCP_TIMEOUT_MS, connection.name);
-    return tools.map((t) => `mcp_${sanitizeName(connection.name)}_${sanitizeName(t.name)}`);
+    return tools.map((t) => `mcp__${connection.name}__${t.name}`);
   } catch (err) {
     console.warn(`[MCP Probe] Failed to probe "${connection.name}": ${err}`);
     return [];
