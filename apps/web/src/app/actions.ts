@@ -125,6 +125,28 @@ export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
 // ─── Agents ─────────────────────────────────────────────────────────
 
 const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
+const AGENT_NAME_MAX_LEN = 100;
+
+const VALID_CONTEXT_MODES = new Set<AgentContextMode>(["isolated", "daily", "persistent"]);
+const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "post_conversation", "on_demand"]);
+
+// System agents seeded by migrations — cannot be deleted from the UI
+const SYSTEM_AGENTS = new Set([
+  "daily_digest",
+  "memory_catchup",
+  "weekly_reflect",
+  "type_evolution",
+  "context_refresh",
+  "memory_writer",
+]);
+
+function validateAgentName(name: string): void {
+  if (!name || name.length > AGENT_NAME_MAX_LEN || !AGENT_NAME_RE.test(name)) {
+    throw new Error(
+      "Agent name must be lowercase alphanumeric with underscores (max 100 chars)",
+    );
+  }
+}
 
 export async function createAgentAction(data: {
   name: string;
@@ -132,22 +154,29 @@ export async function createAgentAction(data: {
   system_prompt?: string;
   skills?: string[];
   schedule?: string;
-  context_mode?: string;
-  trigger?: string;
+  context_mode?: AgentContextMode;
+  trigger?: AgentTrigger;
   tools?: string[];
   metadata?: Record<string, unknown>;
 }) {
-  if (!AGENT_NAME_RE.test(data.name)) {
-    throw new Error("Agent name must be lowercase alphanumeric with underscores");
+  validateAgentName(data.name);
+
+  const contextMode = data.context_mode ?? "isolated";
+  if (!VALID_CONTEXT_MODES.has(contextMode)) {
+    throw new Error("Invalid context_mode");
   }
+  if (data.trigger && !VALID_TRIGGERS.has(data.trigger)) {
+    throw new Error("Invalid trigger");
+  }
+
   const agent = await createAgent({
     name: data.name,
     description: data.description,
     system_prompt: data.system_prompt,
     skills: data.skills ?? [],
     schedule: data.schedule,
-    context_mode: (data.context_mode as AgentContextMode) ?? "isolated",
-    trigger: (data.trigger as AgentTrigger) ?? undefined,
+    context_mode: contextMode,
+    trigger: data.trigger,
     tools: data.tools ?? [],
     metadata: data.metadata,
   });
@@ -179,6 +208,9 @@ export async function updateAgentAction(
 export async function deleteAgentAction(name: string) {
   const agent = await getAgentByName(name);
   if (!agent) throw new Error("Agent not found");
+  if (SYSTEM_AGENTS.has(agent.name)) {
+    throw new Error("Cannot delete system agent");
+  }
   await deleteAgent(agent.id);
   revalidatePath("/agents");
   redirect("/agents");

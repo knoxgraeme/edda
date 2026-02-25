@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Bot } from "lucide-react";
@@ -14,11 +15,24 @@ interface Props {
 }
 
 export function AgentsClient({ agents, lastRuns }: Props) {
-  const triggerRun = async (name: string) => {
-    const res = await fetch(`/api/v1/agents/${name}/run`, { method: "POST" });
-    if (res.ok) toast.success(`${name} triggered`);
-    else toast.error(`Failed to trigger ${name}`);
-  };
+  const [triggeringAgent, setTriggeringAgent] = useState<string | null>(null);
+
+  const triggerRun = useCallback(
+    async (name: string) => {
+      if (triggeringAgent) return;
+      setTriggeringAgent(name);
+      try {
+        const res = await fetch(`/api/v1/agents/${encodeURIComponent(name)}/run`, {
+          method: "POST",
+        });
+        if (res.ok) toast.success(`${name} triggered`);
+        else toast.error(`Failed to trigger ${name}`);
+      } finally {
+        setTriggeringAgent(null);
+      }
+    },
+    [triggeringAgent],
+  );
 
   return (
     <main className="max-w-4xl mx-auto p-6">
@@ -78,12 +92,13 @@ export function AgentsClient({ agents, lastRuns }: Props) {
                       <Button
                         variant="outline"
                         size="sm"
+                        disabled={triggeringAgent === agent.name}
                         onClick={(e) => {
                           e.preventDefault();
                           triggerRun(agent.name);
                         }}
                       >
-                        Run Now
+                        {triggeringAgent === agent.name ? "Triggering..." : "Run Now"}
                       </Button>
                     </div>
                   </div>
