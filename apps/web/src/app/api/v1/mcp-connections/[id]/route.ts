@@ -1,6 +1,17 @@
 import { updateMcpConnection, deleteMcpConnection } from "@edda/db";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { parseBody, notFound, badRequest, isUUID } from "../../_lib/helpers";
+import { probeMcpTools } from "@/lib/mcp-probe";
+
+const UpdateMcpConnectionSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    transport: z.enum(["stdio", "sse", "streamable-http"]).optional(),
+    config: z.record(z.unknown()).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
 
 export async function PATCH(
   request: Request,
@@ -11,8 +22,19 @@ export async function PATCH(
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
 
-  const connection = await updateMcpConnection(id, body as Record<string, unknown>);
+  const parsed = UpdateMcpConnectionSchema.safeParse(body);
+  if (!parsed.success) return badRequest(parsed.error.issues[0].message);
+
+  const connection = await updateMcpConnection(id, parsed.data);
   if (!connection) return notFound("MCP connection");
+
+  // Re-probe tools if transport or config changed
+  if (parsed.data.transport || parsed.data.config) {
+    const discoveredTools = await probeMcpTools(connection);
+    const updated = await updateMcpConnection(id, { discovered_tools: discoveredTools });
+    if (updated) return NextResponse.json(updated);
+  }
+
   return NextResponse.json(connection);
 }
 

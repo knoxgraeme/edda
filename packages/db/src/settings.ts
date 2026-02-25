@@ -70,6 +70,7 @@ const SETTINGS_UPDATE_COLUMNS = [
   "user_timezone",
   "notification_targets",
   "task_max_concurrency",
+  "default_agent",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {
