@@ -6,7 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
-import { invalidateMCPToolCache } from "../mcp.js";
+import { invalidateMCPClient } from "../mcp.js";
 
 export const updateMcpConnectionSchema = z.object({
   id: z.string().describe("MCP connection ID"),
@@ -25,7 +25,7 @@ export const updateMcpConnectionTool = tool(
       return JSON.stringify({ status: "not_found", id });
     }
 
-    invalidateMCPToolCache();
+    await invalidateMCPClient();
 
     return JSON.stringify({ status: "updated", connection });
   },
