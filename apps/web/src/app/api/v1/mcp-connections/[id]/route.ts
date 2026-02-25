@@ -1,7 +1,12 @@
-import { updateMcpConnection, deleteMcpConnection } from "@edda/db";
+import {
+  updateMcpConnection,
+  deleteMcpConnection,
+  getMcpConnectionById,
+} from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { parseBody, notFound, badRequest, isUUID } from "../../_lib/helpers";
+import { validateMcpConfig } from "../../_lib/mcp-config-schema";
 import { probeMcpTools } from "@/lib/mcp-probe";
 
 const UpdateMcpConnectionSchema = z
@@ -24,6 +29,19 @@ export async function PATCH(
 
   const parsed = UpdateMcpConnectionSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error.issues[0].message);
+
+  // Transport-specific config validation (when config is provided)
+  if (parsed.data.config) {
+    let transport = parsed.data.transport;
+    if (!transport) {
+      const existing = await getMcpConnectionById(id);
+      if (!existing) return notFound("MCP connection");
+      transport = existing.transport as "stdio" | "sse" | "streamable-http";
+    }
+    const configResult = validateMcpConfig(transport, parsed.data.config);
+    if ("error" in configResult) return badRequest(configResult.error);
+    parsed.data.config = configResult.config;
+  }
 
   const connection = await updateMcpConnection(id, parsed.data);
   if (!connection) return notFound("MCP connection");

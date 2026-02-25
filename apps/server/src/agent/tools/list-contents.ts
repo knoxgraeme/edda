@@ -1,16 +1,16 @@
 /**
- * Tool: get_list_items — Retrieve items belonging to a named list.
+ * Tool: get_list_contents — Retrieve items belonging to a named list.
  */
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getListItems } from "@edda/db";
 
-export const getListItemsSchema = z.object({
+export const getListContentsSchema = z.object({
   list_name: z.string().describe("Name of the list to retrieve"),
 });
 
-export const getListItemsTool = tool(
+export const getListContentsTool = tool(
   async ({ list_name }) => {
     const items = await getListItems(list_name);
     return JSON.stringify({
@@ -27,8 +27,8 @@ export const getListItemsTool = tool(
     });
   },
   {
-    name: "get_list_items",
+    name: "get_list_contents",
     description: "Retrieve all active items in a named list.",
-    schema: getListItemsSchema,
+    schema: getListContentsSchema,
   },
 );

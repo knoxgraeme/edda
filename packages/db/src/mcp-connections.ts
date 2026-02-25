@@ -13,6 +13,12 @@ export async function getMcpConnections(): Promise<McpConnection[]> {
   return rows as McpConnection[];
 }
 
+export async function getMcpConnectionById(id: string): Promise<McpConnection | null> {
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM mcp_connections WHERE id = $1", [id]);
+  return (rows[0] as McpConnection) ?? null;
+}
+
 export async function createMcpConnection(input: {
   name: string;
   transport: McpConnection["transport"];

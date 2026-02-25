@@ -1,5 +1,5 @@
 /**
- * Standalone cron runner — uses node-cron for scheduling
+ * Local cron runner — uses node-cron for scheduling
  *
  * Reads agents table to register scheduled agents. Each execution creates
  * a task_run record for observability. One execution path for ALL agents.
@@ -27,8 +27,8 @@ import {
   maybeRefreshAgentContext,
 } from "../agent/generate-agents-md.js";
 import { resolveRetrievalContext } from "../agent/tool-helpers.js";
-import { runWithConcurrencyLimit } from "./semaphore.js";
-import { notify } from "../notifications/index.js";
+import { runWithConcurrencyLimit } from "../utils/semaphore.js";
+import { notify } from "../utils/notify.js";
 import type { CronRunner } from "./index.js";
 
 // ---------------------------------------------------------------------------
@@ -95,10 +95,10 @@ async function buildInvocationMessage(agent: Agent): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// StandaloneCronRunner class
+// LocalCronRunner class
 // ---------------------------------------------------------------------------
 
-export class StandaloneCronRunner implements CronRunner {
+export class LocalCronRunner implements CronRunner {
   private _registeredAgents = new Map<string, { task: cron.ScheduledTask; schedule: string }>();
   private _syncInterval: NodeJS.Timeout | null = null;
   private _running = false;

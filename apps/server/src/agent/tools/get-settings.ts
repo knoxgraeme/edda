@@ -11,6 +11,11 @@ import type { Settings } from "@edda/db";
 
 /** Fields the agent legitimately needs to read. Explicit allowlist — secure by default. */
 const AGENT_VISIBLE_KEYS: (keyof Settings)[] = [
+  "default_agent",
+  "llm_provider",
+  "default_model",
+  "task_max_concurrency",
+  "notification_targets",
   "user_display_name",
   "user_timezone",
   "web_search_enabled",

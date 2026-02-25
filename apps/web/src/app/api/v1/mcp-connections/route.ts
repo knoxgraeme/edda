@@ -2,6 +2,7 @@ import { getMcpConnections, createMcpConnection, updateMcpConnection } from "@ed
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jsonList, parseBody, badRequest } from "../_lib/helpers";
+import { validateMcpConfig } from "../_lib/mcp-config-schema";
 import { probeMcpTools } from "@/lib/mcp-probe";
 
 const CreateMcpConnectionSchema = z.object({
@@ -21,6 +22,11 @@ export async function POST(request: Request) {
 
   const parsed = CreateMcpConnectionSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error.issues[0].message);
+
+  // Transport-specific config validation
+  const configResult = validateMcpConfig(parsed.data.transport, parsed.data.config);
+  if ("error" in configResult) return badRequest(configResult.error);
+  parsed.data.config = configResult.config;
 
   const connection = await createMcpConnection(
     parsed.data as Parameters<typeof createMcpConnection>[0],

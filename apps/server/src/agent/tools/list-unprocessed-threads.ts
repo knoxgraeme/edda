@@ -1,12 +1,12 @@
 /**
- * Tool: get_unprocessed_threads — Retrieve threads not yet processed by the memory extraction hook.
+ * Tool: list_unprocessed_threads — Retrieve threads not yet processed by the memory extraction hook.
  */
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getUnprocessedThreads } from "@edda/db";
 
-export const getUnprocessedThreadsSchema = z.object({
+export const listUnprocessedThreadsSchema = z.object({
   limit: z
     .number()
     .int()
@@ -16,15 +16,15 @@ export const getUnprocessedThreadsSchema = z.object({
     .describe("Maximum number of threads to return"),
 });
 
-export const getUnprocessedThreadsTool = tool(
+export const listUnprocessedThreadsTool = tool(
   async ({ limit }) => {
     const threads = await getUnprocessedThreads(limit);
     return JSON.stringify(threads);
   },
   {
-    name: "get_unprocessed_threads",
+    name: "list_unprocessed_threads",
     description:
-      "Get conversation threads that haven't been processed by the memory extraction hook yet.",
-    schema: getUnprocessedThreadsSchema,
+      "List conversation threads that haven't been processed by the memory extraction hook yet.",
+    schema: listUnprocessedThreadsSchema,
   },
 );

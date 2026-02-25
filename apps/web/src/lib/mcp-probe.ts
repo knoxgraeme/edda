@@ -22,7 +22,10 @@ const stdioConfigSchema = z.object({
 
 const sseConfigSchema = z.object({
   url: z.string(),
-  auth_env_var: z.string().optional(),
+  auth_env_var: z
+    .string()
+    .regex(/^MCP_AUTH_[A-Z0-9_]+$/, "auth_env_var must match MCP_AUTH_* pattern")
+    .optional(),
 });
 
 const streamableHttpConfigSchema = z.object({
@@ -63,6 +66,14 @@ function sanitizeEnv(env?: Record<string, string>): Record<string, string> | und
 }
 
 // --- URL security: SSRF prevention ---
+// NOTE: validateMcpUrl is duplicated in apps/server/src/agent/mcp.ts.
+// Keep both copies in sync. See todo #175 for shared module extraction.
+//
+// NOTE on DNS rebinding: A domain could resolve to a public IP during validation
+// but to a private IP when the actual connection is made. Full mitigation requires
+// async DNS resolution pinning (resolve, validate, connect to the resolved IP),
+// which is complex for a synchronous URL validation function. The practical
+// mitigation is that MCP connections require authenticated access to create.
 
 const PRIVATE_IP_PATTERNS = [
   /^127\./, // loopback
@@ -73,6 +84,81 @@ const PRIVATE_IP_PATTERNS = [
   /^0\./, // 0.0.0.0/8
 ];
 
+/**
+ * Check whether an IPv6 address (without brackets) is private/reserved.
+ * Covers ULA (fc00::/7), link-local (fe80::/10), loopback (::1),
+ * and IPv4-mapped addresses (::ffff:x.x.x.x).
+ */
+function isPrivateIPv6(addr: string): boolean {
+  const lower = addr.toLowerCase();
+
+  // Loopback
+  if (lower === "::1") return true;
+
+  // ULA — fc00::/7 covers fc00:: through fdff::
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
+
+  // Link-local — fe80::/10
+  if (lower.startsWith("fe80")) return true;
+
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d) — extract the IPv4 part and check it
+  const v4MappedMatch = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (v4MappedMatch) {
+    const ipv4 = v4MappedMatch[1];
+    if (isPrivateIPv4(ipv4)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check whether an IPv4 string matches known private/reserved ranges.
+ */
+function isPrivateIPv4(ip: string): boolean {
+  for (const pattern of PRIVATE_IP_PATTERNS) {
+    if (pattern.test(ip)) return true;
+  }
+  return false;
+}
+
+/**
+ * Detect and normalize decimal/octal encoded IPv4 addresses.
+ * Returns the normalized dotted-decimal IP, or null if not an encoded IP.
+ *
+ * Handles:
+ *   - Pure decimal: "2130706433" -> "127.0.0.1"
+ *   - Octal octets: "0177.0.0.1" -> "127.0.0.1"
+ */
+function normalizeEncodedIP(hostname: string): string | null {
+  // Pure decimal IP (single integer) e.g. 2130706433 = 127.0.0.1
+  if (/^\d+$/.test(hostname) && !hostname.includes(".")) {
+    const num = Number(hostname);
+    if (num >= 0 && num <= 0xffffffff) {
+      return [
+        (num >>> 24) & 0xff,
+        (num >>> 16) & 0xff,
+        (num >>> 8) & 0xff,
+        num & 0xff,
+      ].join(".");
+    }
+  }
+
+  // Dotted notation — check for octal octets (leading zero)
+  const parts = hostname.split(".");
+  if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
+    const hasOctal = parts.some((p) => p.length > 1 && p.startsWith("0"));
+    if (hasOctal) {
+      // Parse each octet: leading 0 means octal in many network stacks
+      const octets = parts.map((p) => (p.startsWith("0") ? parseInt(p, 8) : parseInt(p, 10)));
+      if (octets.every((o) => o >= 0 && o <= 255)) {
+        return octets.join(".");
+      }
+    }
+  }
+
+  return null;
+}
+
 function validateMcpUrl(raw: string): URL {
   const url = new URL(raw);
 
@@ -82,12 +168,41 @@ function validateMcpUrl(raw: string): URL {
 
   const hostname = url.hostname;
 
-  if (hostname === "localhost" || hostname === "::1" || hostname === "[::1]") {
+  if (hostname === "localhost") {
     throw new Error(`MCP URL hostname "${hostname}" resolves to a private/reserved address.`);
   }
 
+  // Strip brackets from IPv6 addresses (URL parser may include them)
+  const bare = hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
+
+  // IPv6 private range check
+  if (bare.includes(":")) {
+    if (isPrivateIPv6(bare)) {
+      throw new Error(`MCP URL hostname "${hostname}" resolves to a private/reserved address.`);
+    }
+    // If it's an IPv6 address that passed, allow it
+    return url;
+  }
+
+  // Decimal/octal encoded IP detection
+  const normalized = normalizeEncodedIP(bare);
+  if (normalized) {
+    if (isPrivateIPv4(normalized)) {
+      throw new Error(
+        `MCP URL hostname "${hostname}" resolves to a private/reserved address (decoded: ${normalized}).`,
+      );
+    }
+    // Even if the decoded IP is public, block encoded forms as they suggest evasion
+    throw new Error(
+      `MCP URL hostname "${hostname}" uses an encoded IP representation which is not allowed.`,
+    );
+  }
+
+  // Standard IPv4 private range check
   for (const pattern of PRIVATE_IP_PATTERNS) {
-    if (pattern.test(hostname)) {
+    if (pattern.test(bare)) {
       throw new Error(`MCP URL hostname "${hostname}" resolves to a private/reserved address.`);
     }
   }

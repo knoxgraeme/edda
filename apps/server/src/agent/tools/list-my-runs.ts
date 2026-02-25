@@ -1,5 +1,5 @@
 /**
- * get_my_history — lets agents query their own past task runs.
+ * list_my_runs — lets agents query their own past task runs.
  *
  * An isolated-context agent can still know "I ran 3 times this week
  * and failed once" regardless of context_mode.
@@ -9,7 +9,7 @@ import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import { getRecentTaskRuns } from "@edda/db";
 
-export const getMyHistorySchema = z.object({
+export const listMyRunsSchema = z.object({
   limit: z
     .number()
     .int()
@@ -19,7 +19,7 @@ export const getMyHistorySchema = z.object({
     .describe("Maximum number of past runs to return"),
 });
 
-export const getMyHistoryTool = tool(
+export const listMyRunsTool = tool(
   async ({ limit }, config) => {
     const agentName = config?.configurable?.agent_name as string | undefined;
     if (!agentName) throw new Error("agent_name required in configurable");
@@ -36,9 +36,9 @@ export const getMyHistoryTool = tool(
     );
   },
   {
-    name: "get_my_history",
+    name: "list_my_runs",
     description:
       "Get your own recent execution history — status, output summaries, timing, and errors from past runs.",
-    schema: getMyHistorySchema,
+    schema: listMyRunsSchema,
   },
 );
