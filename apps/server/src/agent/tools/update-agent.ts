@@ -39,7 +39,7 @@ export const updateAgentTool = tool(
   {
     name: "update_agent",
     description:
-      "Update an existing agent definition. Can change description, enabled status, skills, and more. Schedules are managed separately.",
+      "Update an existing agent definition. Can change description, enabled status, skills, and more.",
     schema: updateAgentSchema,
   },
 );

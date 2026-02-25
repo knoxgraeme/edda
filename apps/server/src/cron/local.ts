@@ -156,7 +156,7 @@ export class LocalCronRunner implements CronRunner {
       );
     }
 
-    const task = cron.schedule(schedule.cron, () => this.executeSchedule(schedule));
+    const task = cron.schedule(schedule.cron, () => this.executeScheduleById(schedule.id, schedule.agent_name));
     this._registered.set(schedule.id, { task, cron: schedule.cron });
     console.log(
       `  [cron] Registered: ${schedule.agent_name}/${schedule.name} (${schedule.cron})`,
@@ -193,29 +193,27 @@ export class LocalCronRunner implements CronRunner {
 
   // ── Schedule execution ─────────────────────────────────────────
 
-  private async executeSchedule(schedule: EnabledSchedule): Promise<void> {
-    // Re-fetch agent and schedule to pick up changes since registration
-    const freshDef = await getAgentByName(schedule.agent_name);
-    if (!freshDef || !freshDef.enabled) {
-      console.log(`  [cron] Skipping ${schedule.agent_name} — not found or disabled`);
+  private async executeScheduleById(scheduleId: string, agentNameHint: string): Promise<void> {
+    // Re-fetch schedule and agent to pick up changes since registration
+    const freshSchedule = await getScheduleById(scheduleId);
+    if (!freshSchedule || !freshSchedule.enabled) {
+      console.log(`  [cron] Skipping schedule ${scheduleId} — not found or disabled`);
       return;
     }
 
-    const freshSchedule = await getScheduleById(schedule.id);
-    if (!freshSchedule || !freshSchedule.enabled) {
-      console.log(
-        `  [cron] Skipping ${schedule.agent_name}/${schedule.name} — schedule disabled`,
-      );
+    const freshDef = await getAgentByName(agentNameHint);
+    if (!freshDef || !freshDef.enabled) {
+      console.log(`  [cron] Skipping ${agentNameHint} — not found or disabled`);
       return;
     }
 
     const userMessage = await buildInvocationMessage(
-      { ...freshSchedule, agent_name: schedule.agent_name },
+      { ...freshSchedule, agent_name: freshDef.name },
       freshDef,
     );
     if (!userMessage) {
       console.log(
-        `  [cron] Skipping ${freshDef.name}/${schedule.name} — no work to do`,
+        `  [cron] Skipping ${freshDef.name}/${freshSchedule.name} — no work to do`,
       );
       return;
     }
@@ -247,7 +245,7 @@ export class LocalCronRunner implements CronRunner {
       const startTime = Date.now();
       try {
         await startTaskRun(run.id);
-        console.log(`  [cron] Executing: ${freshDef.name}/${schedule.name}`);
+        console.log(`  [cron] Executing: ${freshDef.name}/${freshSchedule.name}`);
 
         const agent = await buildAgent(freshDef);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -298,9 +296,9 @@ export class LocalCronRunner implements CronRunner {
           );
         }
 
-        console.log(`  [cron] ${freshDef.name}/${schedule.name} completed in ${duration}ms`);
+        console.log(`  [cron] ${freshDef.name}/${freshSchedule.name} completed in ${duration}ms`);
       } catch (err) {
-        console.error(`  [cron] ${freshDef.name}/${schedule.name} error:`, err);
+        console.error(`  [cron] ${freshDef.name}/${freshSchedule.name} error:`, err);
         try {
           await failTaskRun(run.id, sanitizeError(err));
         } catch (dbErr) {
