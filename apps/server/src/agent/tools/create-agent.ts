@@ -70,7 +70,7 @@ export const createAgentTool = tool(
   {
     name: "create_agent",
     description:
-      "Create a new agent. Schedules are managed separately via agent_schedules. Use trigger='schedule' for cron-driven agents.",
+      "Create a new agent definition. Use trigger='schedule' for cron-driven agents, trigger='on_demand' for manually triggered agents.",
     schema: createAgentSchema,
   },
 );

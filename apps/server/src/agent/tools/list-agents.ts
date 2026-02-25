@@ -33,7 +33,7 @@ export const listAgentsTool = tool(
   {
     name: "list_agents",
     description:
-      "List all agent definitions with their schedules and status. Use to discover available agents.",
+      "List all agent definitions with their status. Use to discover available agents.",
     schema: listAgentsSchema,
   },
 );

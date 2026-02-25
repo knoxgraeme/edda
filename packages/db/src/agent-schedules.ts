@@ -22,7 +22,7 @@ export interface EnabledSchedule extends AgentSchedule {
 export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT s.${SCHEDULE_COLS}, a.name AS agent_name
+    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.context_mode, s.hooks, s.enabled, s.created_at, a.name AS agent_name
      FROM agent_schedules s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.enabled = true AND a.enabled = true
@@ -79,7 +79,12 @@ export async function updateSchedule(
   updates: Partial<Pick<AgentSchedule, "cron" | "prompt" | "context_mode" | "hooks" | "enabled">>,
 ): Promise<AgentSchedule> {
   const pool = getPool();
-  const entries = Object.entries(updates).filter(([, v]) => v !== undefined);
+  const SCHEDULE_UPDATE_COLUMNS = ["cron", "prompt", "context_mode", "hooks", "enabled"] as const;
+  const entries = Object.entries(updates).filter(
+    ([k, v]) =>
+      v !== undefined &&
+      SCHEDULE_UPDATE_COLUMNS.includes(k as (typeof SCHEDULE_UPDATE_COLUMNS)[number]),
+  );
   if (entries.length === 0) {
     const existing = await getScheduleById(id);
     if (!existing) throw new Error(`Schedule not found: ${id}`);

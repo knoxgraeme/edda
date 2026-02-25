@@ -47,7 +47,7 @@ async function main() {
   if (!latestMd?.content?.trim()) {
     console.log("  AGENTS.md empty — running initial context refresh...");
     try {
-      const contextRefreshDef = await getAgentByName("context_refresh");
+      const contextRefreshDef = await getAgentByName("maintenance");
       if (contextRefreshDef) {
         const input = await prepareContextRefreshInput();
         if (input) {
@@ -55,7 +55,7 @@ async function main() {
           const threadId = resolveThreadId(contextRefreshDef);
           await crAgent.invoke(
             { messages: [{ role: "user", content: input }] },
-            { configurable: { thread_id: threadId, agent_name: "context_refresh" } },
+            { configurable: { thread_id: threadId, agent_name: "maintenance" } },
           );
           await finalizeContextRefresh();
         }
