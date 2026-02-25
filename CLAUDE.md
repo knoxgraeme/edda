@@ -57,12 +57,10 @@ pnpm init                         # Run interactive setup wizard
 The server is built around **LangGraph** for agentic orchestration and **LangChain** for multi-provider LLM abstraction.
 
 - **`src/index.ts`** — Entry point; orchestrates startup
-- **`src/agent/index.ts`** — Orchestrator agent factory (`createEddaAgent`); mounts `/output/` and `/skills/` backends
-- **`src/agent/build-agent.ts`** — Factory that builds standalone background agents from `Agent` rows with skill-based tool scoping
-- **`src/agent/agent-output-backend.ts`** — Read-only Store backend at `/output/`; stitches agent outputs for orchestrator visibility
+- **`src/agent/build-agent.ts`** — Unified agent factory: `buildAgent(agent)` builds any agent from an `Agent` DB row with skill-based tool scoping, prompt building, and backend assembly
+- **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure), `/store/` (own namespace), cross-agent store mounts (`metadata.stores`), optional `/workspace/` (env-gated `metadata.filesystem`)
 - **`src/agent/skill-loader.ts`** — Loads `SKILL.md` content and `allowed-tools` metadata from disk by skill name (with caching)
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
-- **`src/agent/prompts/system.ts`** — System prompt builder
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
 - **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
 - **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_catchup`, `post_process`, `recall`, `type_evolution`, `weekly_reflect`
@@ -93,7 +91,7 @@ Single source of truth for data model and queries.
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
 - **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getScheduled)
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
-- **`migrations/`** — Ordered SQL migration files (001–032); applied via `pnpm migrate`
+- **`migrations/`** — Ordered SQL migration files (001–036); applied via `pnpm migrate`
 - Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agents`, `task_runs`
 
 ### Configuration Strategy
@@ -107,19 +105,24 @@ Critical env vars (see `.env.example`):
 - `CRON_RUNNER` — `standalone` or `platform`
 - `CHECKPOINTER` — `postgres`, `sqlite`, or `memory`
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
+- `ALLOW_FILESYSTEM_ACCESS` — set to `true` to enable per-agent filesystem access (requires `FILESYSTEM_ROOT`)
+- `FILESYSTEM_ROOT` — absolute path root for agent filesystem mounts (e.g. `/data`)
 
 Notable DB settings (in `settings` table):
+- `default_agent` — Name of the agent to use as the default conversational agent (default: `edda`)
 - `task_max_concurrency` — Max parallel agent executions (default: 3)
 - `notification_targets` — Where to send agent notifications (default: [inbox])
 
-### Background Agents (Multi-Agent System)
+### Agents (Multi-Agent System)
 
-Edda uses a multi-agent architecture where the main orchestrator delegates to background agents that run on schedules or on-demand.
+Edda uses a unified multi-agent architecture. All agents are built by `buildAgent(agent)` — there is no separate orchestrator factory. A `default_agent` setting (default: `edda`) determines which agent serves as the conversational interface. Any agent can be the default.
 
 - **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], schedule (cron expression), context_mode, trigger, model_settings_key, enabled flag, metadata. Agents can declare `metadata.hooks` (`pre_invoke`/`post_invoke`) to customize cron runner behavior via a closed allowlist.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Context modes**: `isolated` (unique thread per run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
+- **`metadata.stores`** — Cross-agent store access. Keys are agent names (or `"*"` for wildcard), values are `"read"` or `"readwrite"`. Example: `{ "daily_digest": "read", "*": "read" }`.
+- **`metadata.filesystem`** — Env-gated filesystem access. Requires `ALLOW_FILESYSTEM_ACCESS=true` and `FILESYSTEM_ROOT`. Example: `{ "path": "exports", "mode": "read" }`. Path is relative to `FILESYSTEM_ROOT`.
 
 **Built-in system agents** (seeded in migration 029):
 | Agent | Schedule | Skills | Context |
@@ -137,7 +140,7 @@ The agent's knowledge of the user lives in a curated document called AGENTS.md, 
 
 - **`src/agent/generate-agents-md.ts`** — Core logic: `buildDeterministicTemplate()` queries raw data from DB, `buildTemplateDiff()` computes changes, `maybeRefreshAgentsMd()` stores template+hash on every conversation (fast, no LLM), `runContextRefreshAgent()` spawns a subagent to curate content (cron only)
 - **`src/agent/tools/save-agents-md.ts`** — Schema-only tool bound to the context_refresh subagent (not in main agent's tool set). The real DB write happens in `runContextRefreshAgent()`
-- **`src/agent/prompts/system.ts`** — Reads latest AGENTS.md content from DB via `getAgentsMdContent()` and embeds it in the system prompt
+- **`src/agent/build-agent.ts:buildPrompt()`** — Reads latest AGENTS.md content from DB via `getAgentsMdContent()` and embeds it in the system prompt
 - **Cron**: `context_refresh` runs daily (default 5am), controlled by `settings.context_refresh_cron`
 - **Change detection**: SHA-256 hash of the deterministic template; post-process path skips if hash matches, with a 30-second in-memory cache to avoid repeated DB queries
 
