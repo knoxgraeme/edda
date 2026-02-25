@@ -7,7 +7,6 @@
 
 import { refreshSettings, getLatestAgentsMd, getAgentByName } from "@edda/db";
 import { seedSkills } from "./agent/seed-skills.js";
-import { createEddaAgent } from "./agent/index.js";
 import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
 import {
   prepareContextRefreshInput,
@@ -27,10 +26,17 @@ async function main() {
   await seedSkills();
   console.log("  Skills seeded");
 
-  // 3. Create agent
-  const agent = await createEddaAgent();
+  // 3. Create agent — default_agent from settings (any agent can be the default)
+  const agentRow = await getAgentByName(settings.default_agent);
+  if (!agentRow) {
+    throw new Error(
+      `Default agent "${settings.default_agent}" not found in database. ` +
+        `Check settings.default_agent and ensure the agent exists.`,
+    );
+  }
+  const agent = await buildAgent(agentRow);
   setAgent(agent);
-  console.log("  Agent ready");
+  console.log(`  Agent ready (${agentRow.name})`);
 
   // 4. Bootstrap AGENTS.md if empty (first boot only)
   const latestMd = await getLatestAgentsMd();
