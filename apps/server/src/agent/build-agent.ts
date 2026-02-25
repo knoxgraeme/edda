@@ -20,7 +20,13 @@ import { getStore } from "../store/index.js";
 import { loadSkillContent, collectSkillTools } from "./skill-loader.js";
 import { allTools } from "./tools/index.js";
 
-const TOOLS_BY_NAME = new Map<string, StructuredTool>(allTools.map((t) => [t.name, t]));
+let _toolsByName: Map<string, StructuredTool> | undefined;
+function getToolsByName(): Map<string, StructuredTool> {
+  if (!_toolsByName) {
+    _toolsByName = new Map(allTools.map((t) => [t.name, t]));
+  }
+  return _toolsByName;
+}
 
 // -- Tool selection --
 
@@ -52,7 +58,7 @@ function getToolsForAgent(agent: Agent): StructuredTool[] {
 
   const tools: StructuredTool[] = [];
   for (const name of resolved) {
-    const tool = TOOLS_BY_NAME.get(name);
+    const tool = getToolsByName().get(name);
     if (tool) tools.push(tool);
   }
   return tools;
