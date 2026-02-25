@@ -2,12 +2,13 @@
  * AGENTS.md generator — DB-backed versioned user context
  *
  * Builds a deterministic template from DB data, diffs against the previous
- * version, and spawns a subagent to make surgical edits. The curated content
- * lives in the agents_md_versions table (no filesystem I/O).
+ * version, and provides input/finalization hooks for the context_refresh agent.
+ * The curated content lives in the agents_md_versions table (no filesystem I/O).
  *
- * Two entry points:
+ * Entry points:
  * - maybeRefreshAgentsMd() — called inline from post-process; stores template + hash only
- * - runContextRefreshAgent() — called by cron; spawns subagent to curate content
+ * - prepareContextRefreshInput() — builds invocation message for context_refresh agent
+ * - finalizeContextRefresh() — stores template hash after agent execution
  */
 
 import { createHash } from "node:crypto";
@@ -23,9 +24,6 @@ import {
   getRecentTaskRuns,
 } from "@edda/db";
 import type { Agent, ItemType } from "@edda/db";
-import type { AIMessageChunk } from "@langchain/core/messages";
-import { getChatModel } from "../llm/index.js";
-import { saveAgentsMdTool, saveAgentsMdSchema } from "./tools/save-agents-md.js";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -231,90 +229,6 @@ ${template}
 Keep total length under ${tokenBudget} tokens (~${tokenBudget * 4} characters).`;
 }
 
-// ── Legacy cron entry point (kept for reference, to be removed in Phase 5) ──
-
-/**
- * Spawn a subagent to curate AGENTS.md based on what changed.
- * @deprecated Use prepareContextRefreshInput() + buildAgent() instead.
- */
-export async function runContextRefreshAgent(): Promise<void> {
-  const startTime = Date.now();
-  const settings = getSettingsSync();
-
-  try {
-    // 1. Build current template + hash
-    const { template, hash } = await buildDeterministicTemplate();
-    const latest = await getLatestAgentsMd();
-    const currentContent = latest?.content ?? "";
-    const previousTemplate = latest?.template ?? "";
-
-    // 2. Skip if nothing changed
-    if (latest?.input_hash === hash) {
-      console.log("  [context_refresh] No changes detected, skipping");
-      return;
-    }
-
-    // 3. Compute diff
-    const diff = buildTemplateDiff(previousTemplate, template);
-    if (diff === "(no changes)") {
-      console.log("  [context_refresh] Diff is empty, skipping");
-      return;
-    }
-
-    // 4. Build subagent prompt
-    const tokenBudget = settings.agents_md_token_budget;
-    const systemPrompt = buildSubagentPrompt(currentContent, diff, template, tokenBudget);
-
-    // 5. Spawn subagent with tool binding
-    const model = await getChatModel(settings.context_refresh_model);
-    if (!model.bindTools) {
-      throw new Error(
-        `Model "${settings.context_refresh_model}" does not support tool binding. ` +
-          `context_refresh requires a model that implements bindTools().`,
-      );
-    }
-    const modelWithTools = model.bindTools([saveAgentsMdTool]);
-
-    const result = await modelWithTools.invoke([
-      { role: "system" as const, content: systemPrompt },
-      {
-        role: "user" as const,
-        content:
-          "Review the changes and edit the AGENTS.md document accordingly. " +
-          "Save your edited version using the save_agents_md tool.",
-      },
-    ]);
-
-    // 6. Extract tool call, validate, and save
-    const toolCalls = (result as AIMessageChunk).tool_calls;
-    const saveCall = toolCalls?.find((tc) => tc.name === "save_agents_md");
-
-    if (!saveCall) {
-      const callNames = toolCalls?.map((tc) => tc.name) ?? [];
-      console.warn(
-        `  [context_refresh] Subagent did not call save_agents_md. Tool calls: [${callNames.join(", ")}]`,
-      );
-      // Still store the template+hash so the next run detects changes correctly
-      await saveAgentsMdVersion({ content: currentContent, template, inputHash: hash });
-    } else {
-      const parsed = saveAgentsMdSchema.safeParse(saveCall.args);
-      if (!parsed.success) {
-        throw new Error(
-          `context_refresh subagent returned invalid save_agents_md args: ${parsed.error.message}`,
-        );
-      }
-      await saveAgentsMdVersion({ content: parsed.data.content, template, inputHash: hash });
-    }
-
-    // 7. Prune old versions
-    await pruneAgentsMdVersions(settings.agents_md_max_versions);
-
-    console.log(`  [context_refresh] AGENTS.md updated in ${Date.now() - startTime}ms`);
-  } catch (err) {
-    console.error("  [context_refresh] Failed:", err);
-    throw err;
-  }
-}
 
 /**
  * Post-execution hook for context_refresh: store the template hash
@@ -387,43 +301,3 @@ export async function maybeRefreshAgentContext(definition: Agent): Promise<boole
   return true;
 }
 
-// ── Subagent prompt ─────────────────────────────────────────────
-
-function buildSubagentPrompt(
-  currentContent: string,
-  diff: string,
-  template: string,
-  tokenBudget: number,
-): string {
-  return `You are Edda's context editor. Your job is to maintain the AGENTS.md user profile document.
-
-This document is embedded in the system prompt and shapes every decision the main agent makes.
-Edit it carefully — every word matters.
-
-## Current AGENTS.md (what's live now):
-${currentContent || "(empty — this is the first version)"}
-
-## What Changed Since Last Edit:
-${diff}
-
-## Raw Materials (full deterministic template):
-${template}
-
-## Instructions:
-- Edit the current AGENTS.md to reflect the changes shown in the diff
-- Preserve content that hasn't changed — don't rewrite for the sake of it
-- Structure the document with these sections:
-  1. **Identity** — who the user is (name, role, key facts)
-  2. **Directives** — imperative rules from preferences + patterns ("Always...", "Never...", "Prefer...")
-  3. **Key Entities** — top people, projects, companies with one-line descriptions
-  4. **Item Types** — available types with icons, classification hints, and metadata schemas
-  5. **Active Context** — what the user is currently working on
-  6. **Boundaries** — privacy rules, confirmation settings
-- Write directives as imperatives ("Always...", "Never...", "Prefer...")
-- Keep total length under ${tokenBudget} tokens (~${tokenBudget * 4} characters)
-- Drop low-value or redundant entries
-- Merge related facts into single statements
-- If this is the first version (empty current), build it from scratch using the raw materials
-
-Save your edited version using the save_agents_md tool.`;
-}
