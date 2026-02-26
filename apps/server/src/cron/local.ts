@@ -17,6 +17,8 @@ import {
   completeTaskRun,
   failTaskRun,
   refreshSettings,
+  getUnreadNotifications,
+  markNotificationsRead,
 } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
 import { sanitizeError } from "../utils/sanitize-error.js";
@@ -199,11 +201,29 @@ export class LocalCronRunner implements CronRunner {
         await startTaskRun(run.id);
         console.log(`  [cron] Executing: ${freshDef.name}/${freshSchedule.name}`);
 
+        // Passive notification consumption: prepend unread notifications to the prompt
+        let userMessage = freshSchedule.prompt;
+        try {
+          const pending = await getUnreadNotifications(freshDef.name);
+          if (pending.length > 0) {
+            const notificationLines = pending
+              .map((n) => `[notification from ${n.source_id}] ${n.summary}`)
+              .join("\n");
+            userMessage = `${notificationLines}\n---\n${userMessage}`;
+            await markNotificationsRead(pending.map((n) => n.id));
+          }
+        } catch (notifyErr) {
+          console.error(
+            `  [cron] ${freshDef.name} failed to read pending notifications:`,
+            notifyErr,
+          );
+        }
+
         const agent = await buildAgent(freshDef);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result: any = await withTimeout(
           agent.invoke(
-            { messages: [{ role: "user", content: freshSchedule.prompt }] },
+            { messages: [{ role: "user", content: userMessage }] },
             {
               configurable: {
                 thread_id: threadId,
@@ -220,17 +240,22 @@ export class LocalCronRunner implements CronRunner {
         const lastMessage = extractLastAssistantMessage(result);
         await completeTaskRun(run.id, { output_summary: lastMessage, duration_ms: duration });
 
-        try {
-          await notify({
-            agentName: freshDef.name,
-            runId: run.id,
-            summary: lastMessage?.slice(0, 200) ?? `${freshDef.name} completed`,
-          });
-        } catch (notifyErr) {
-          console.error(
-            `  [cron] ${freshDef.name} notification failed (run was successful):`,
-            notifyErr,
-          );
+        if (freshSchedule.notify.length > 0) {
+          try {
+            await notify({
+              sourceType: "schedule",
+              sourceId: freshSchedule.id,
+              targets: freshSchedule.notify,
+              summary: lastMessage?.slice(0, 200) ?? `${freshDef.name} completed`,
+              detail: { run_id: run.id, agent_name: freshDef.name, schedule_name: freshSchedule.name },
+              expiresAfter: freshSchedule.notify_expires_after,
+            });
+          } catch (notifyErr) {
+            console.error(
+              `  [cron] ${freshDef.name} notification failed (run was successful):`,
+              notifyErr,
+            );
+          }
         }
 
         console.log(`  [cron] ${freshDef.name}/${freshSchedule.name} completed in ${duration}ms`);
@@ -241,15 +266,20 @@ export class LocalCronRunner implements CronRunner {
         } catch (dbErr) {
           console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
         }
-        try {
-          await notify({
-            agentName: freshDef.name,
-            runId: run.id,
-            summary: `${freshDef.name} failed: ${sanitizeError(err).slice(0, 150)}`,
-            priority: "high",
-          });
-        } catch (notifyErr) {
-          console.error(`  [cron] ${freshDef.name} failure notification failed:`, notifyErr);
+        if (freshSchedule.notify.length > 0) {
+          try {
+            await notify({
+              sourceType: "schedule",
+              sourceId: freshSchedule.id,
+              targets: freshSchedule.notify,
+              summary: `${freshDef.name} failed: ${sanitizeError(err).slice(0, 150)}`,
+              detail: { run_id: run.id, agent_name: freshDef.name },
+              priority: "high",
+              expiresAfter: freshSchedule.notify_expires_after,
+            });
+          } catch (notifyErr) {
+            console.error(`  [cron] ${freshDef.name} failure notification failed:`, notifyErr);
+          }
         }
       }
     });

@@ -355,6 +355,31 @@ export interface AgentSchedule {
   cron: string;
   prompt: string;
   context_mode: AgentContextMode | null;
+  notify: string[];
+  notify_expires_after: string;
   enabled: boolean;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Notifications
+// ──────────────────────────────────────────────
+
+export type NotificationSourceType = "schedule" | "agent" | "system";
+export type NotificationTargetType = "inbox" | "agent";
+export type NotificationPriority = "low" | "normal" | "high";
+export type NotificationStatus = "unread" | "read" | "dismissed";
+
+export interface Notification {
+  id: string;
+  source_type: NotificationSourceType;
+  source_id: string;
+  target_type: NotificationTargetType;
+  target_id: string | null;
+  summary: string;
+  detail: Record<string, unknown>;
+  priority: NotificationPriority;
+  status: NotificationStatus;
+  expires_at: string;
   created_at: string;
 }
