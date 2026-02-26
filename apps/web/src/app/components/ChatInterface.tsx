@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useMemo, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Square, ArrowUp } from "lucide-react";
+import { Square, ArrowUp, MessageSquare, Search, CalendarDays, BookOpen } from "lucide-react";
 import { ChatMessage } from "@/app/components/ChatMessage";
 import type { ToolCall, Message, SDKToolCall } from "@/app/types/types";
 import { extractStringFromMessageContent } from "@/lib/utils";
@@ -38,6 +38,25 @@ export const ChatInterface = React.memo(function ChatInterface() {
       }
     },
     [handleSubmit]
+  );
+
+  const suggestedPrompts = useMemo(
+    () => [
+      { icon: CalendarDays, text: "What's on my schedule today?" },
+      { icon: BookOpen, text: "Remember that I prefer..." },
+      { icon: Search, text: "Search my notes about..." },
+      { icon: MessageSquare, text: "Show me a daily summary" },
+    ],
+    []
+  );
+
+  const handlePromptClick = useCallback(
+    (text: string) => {
+      setInput(text);
+      // Focus the textarea so the user can edit or just hit Enter
+      textareaRef.current?.focus();
+    },
+    []
   );
 
   // Correlate AI messages with tool result messages to build { message, toolCalls }[] structure.
@@ -122,6 +141,8 @@ export const ChatInterface = React.memo(function ChatInterface() {
     return Array.from(messageMap.values());
   }, [messages]);
 
+  const hasMessages = processedMessages.length > 0;
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div
@@ -129,13 +150,36 @@ export const ChatInterface = React.memo(function ChatInterface() {
         ref={scrollRef}
       >
         <div className="mx-auto w-full max-w-[1024px] px-6 pb-6 pt-4" ref={contentRef}>
-          {processedMessages.map((data) => (
-            <ChatMessage
-              key={data.message.id}
-              message={data.message}
-              toolCalls={data.toolCalls}
-            />
-          ))}
+          {!hasMessages ? (
+            <div className="flex min-h-[60vh] flex-col items-center justify-center pb-12">
+              <h1 className="text-3xl font-semibold tracking-tight text-primary">Edda</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Your AI second brain</p>
+              <p className="mt-4 max-w-sm text-center text-sm text-muted-foreground/80">
+                Capture thoughts, recall memories, and let agents work for you.
+              </p>
+              <div className="mt-8 flex flex-wrap justify-center gap-2">
+                {suggestedPrompts.map((prompt) => (
+                  <button
+                    key={prompt.text}
+                    type="button"
+                    onClick={() => handlePromptClick(prompt.text)}
+                    className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted hover:text-primary"
+                  >
+                    <prompt.icon className="h-3.5 w-3.5 flex-shrink-0" />
+                    {prompt.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            processedMessages.map((data) => (
+              <ChatMessage
+                key={data.message.id}
+                message={data.message}
+                toolCalls={data.toolCalls}
+              />
+            ))
+          )}
         </div>
       </div>
 

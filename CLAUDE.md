@@ -111,7 +111,6 @@ Critical env vars (see `.env.example`):
 Notable DB settings (in `settings` table):
 - `default_agent` — Name of the agent to use as the default conversational agent (default: `edda`)
 - `task_max_concurrency` — Max parallel agent executions (default: 3)
-- `notification_targets` — Where to send agent notifications (default: [inbox])
 
 ### Agents (Multi-Agent System)
 

@@ -296,25 +296,6 @@ export function SettingsClient({
                 onChange={(e) => update("task_max_concurrency", Number(e.target.value))}
               />
             </FieldGroup>
-            <FieldGroup
-              label="Notification targets"
-              htmlFor="notification_targets"
-              description="Where agent notifications are sent (comma-separated, e.g. inbox)"
-            >
-              <Input
-                id="notification_targets"
-                value={(form.notification_targets ?? []).join(", ")}
-                onChange={(e) =>
-                  update(
-                    "notification_targets",
-                    e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  )
-                }
-              />
-            </FieldGroup>
           </CardContent>
         </Card>
 

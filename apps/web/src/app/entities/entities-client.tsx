@@ -271,7 +271,7 @@ export function EntitiesClient({ entities: initialEntities }: { entities: Entity
           </p>
           <p className="text-sm">
             {entities.length === 0
-              ? "Entities will appear here as the agent discovers them."
+              ? "Entities are people, projects, companies, and topics that Edda learns about from your conversations. Start chatting to build your knowledge graph."
               : "Try adjusting your search or filter."}
           </p>
         </div>

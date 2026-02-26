@@ -94,7 +94,6 @@ export interface Settings {
   context_refresh_model: string;
 
   // Agent channels
-  notification_targets: string[];
   task_max_concurrency: number;
 
   // Default agent

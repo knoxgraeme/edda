@@ -41,18 +41,20 @@ export function ChatPageClient() {
             size="sm"
             onClick={() => setShowThreads((prev) => !prev)}
             title="Toggle thread history"
-            className="h-8 px-2"
+            className="h-8 gap-1.5 px-2"
           >
             <History className="h-4 w-4" />
+            <span className="text-xs">History</span>
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={newThread}
             title="New thread"
-            className="h-8 px-2"
+            className="h-8 gap-1.5 px-2"
           >
             <Plus className="h-4 w-4" />
+            <span className="text-xs">New chat</span>
           </Button>
         </div>
 
