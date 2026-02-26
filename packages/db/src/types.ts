@@ -369,6 +369,8 @@ export type ThreadLifetime = "ephemeral" | "daily" | "persistent";
 /** @deprecated Use ThreadLifetime instead */
 export type AgentContextMode = ThreadLifetime;
 export type AgentTrigger = "schedule" | "on_demand";
+export type ThreadScope = "shared" | "per_channel";
+export type ChannelPlatform = "telegram" | "slack" | "discord";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent" | "notification";
 
@@ -379,6 +381,7 @@ export interface Agent {
   system_prompt: string | null;
   skills: string[];
   thread_lifetime: ThreadLifetime;
+  thread_scope: ThreadScope;
   trigger: AgentTrigger | null;
   tools: string[];
   subagents: string[];
@@ -433,6 +436,25 @@ export type NotificationSourceType = "schedule" | "agent" | "system";
 export type NotificationTargetType = "inbox" | "agent";
 export type NotificationPriority = "low" | "normal" | "high";
 export type NotificationStatus = "unread" | "read" | "dismissed";
+
+// ──────────────────────────────────────────────
+// Agent Channels
+// ──────────────────────────────────────────────
+
+export interface AgentChannel {
+  id: string;
+  agent_id: string;
+  platform: ChannelPlatform;
+  external_id: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  receive_announcements: boolean;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Notifications
+// ──────────────────────────────────────────────
 
 export interface Notification {
   id: string;

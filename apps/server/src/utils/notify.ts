@@ -10,6 +10,7 @@ import {
   createNotification,
   claimUnreadNotifications,
   getAgentByName,
+  getChannelsByAgent,
   createTaskRun,
   startTaskRun,
   completeTaskRun,
@@ -18,6 +19,7 @@ import {
 } from "@edda/db";
 import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
 import { resolveRetrievalContext } from "../agent/tool-helpers.js";
+import { deliverToChannel } from "../channels/deliver.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import { sanitizeError } from "./sanitize-error.js";
 import { withTimeout } from "./with-timeout.js";
@@ -49,6 +51,14 @@ export async function notify(params: NotifyParams): Promise<void> {
   for (const target of targets) {
     const parsed = parseTarget(target);
 
+    // announce targets bypass notification rows — direct channel delivery
+    if (parsed.announce && parsed.targetId) {
+      announceToChannels(parsed.targetId, summary).catch((err) => {
+        console.error(`[notify] Announce delivery failed for ${parsed.targetId}:`, err);
+      });
+      continue;
+    }
+
     await createNotification({
       source_type: sourceType,
       source_id: sourceId,
@@ -76,19 +86,30 @@ interface ParsedTarget {
   targetType: "inbox" | "agent";
   targetId: string | null;
   active: boolean;
+  announce: boolean;
 }
 
 /**
  * Parse a notify target string into structured form.
  *
  * Formats:
- *   'inbox'              → { targetType: 'inbox', targetId: null, active: false }
- *   'agent:<name>'       → { targetType: 'agent', targetId: '<name>', active: false }
- *   'agent:<name>:active' → { targetType: 'agent', targetId: '<name>', active: true }
+ *   'inbox'                → { targetType: 'inbox', targetId: null, active: false, announce: false }
+ *   'agent:<name>'         → { targetType: 'agent', targetId: '<name>', active: false, announce: false }
+ *   'agent:<name>:active'  → { targetType: 'agent', targetId: '<name>', active: true, announce: false }
+ *   'announce:<name>'      → { targetType: 'agent', targetId: '<name>', active: false, announce: true }
  */
 function parseTarget(target: string): ParsedTarget {
   if (target === "inbox") {
-    return { targetType: "inbox", targetId: null, active: false };
+    return { targetType: "inbox", targetId: null, active: false, announce: false };
+  }
+
+  if (target.startsWith("announce:")) {
+    const agentName = target.slice("announce:".length);
+    if (!agentName || !/^[a-z0-9_-]+$/i.test(agentName)) {
+      console.warn(`[notify] Invalid agent name in announce target '${target}', skipping`);
+      return { targetType: "inbox", targetId: null, active: false, announce: false };
+    }
+    return { targetType: "agent", targetId: agentName, active: false, announce: true };
   }
 
   if (target.startsWith("agent:")) {
@@ -96,18 +117,63 @@ function parseTarget(target: string): ParsedTarget {
     const agentName = parts[1];
     if (!agentName || !/^[a-z0-9_-]+$/i.test(agentName)) {
       console.warn(`[notify] Invalid agent name in target '${target}', falling back to inbox`);
-      return { targetType: "inbox", targetId: null, active: false };
+      return { targetType: "inbox", targetId: null, active: false, announce: false };
     }
     const active = parts[2] === "active";
-    return { targetType: "agent", targetId: agentName, active };
+    return { targetType: "agent", targetId: agentName, active, announce: false };
   }
 
-  throw new Error(`Unknown notification target format: '${target}'. Valid formats: 'inbox', 'agent:<name>', 'agent:<name>:active'`);
+  throw new Error(`Unknown notification target format: '${target}'. Valid formats: 'inbox', 'agent:<name>', 'agent:<name>:active', 'announce:<name>'`);
 }
 
 // ---------------------------------------------------------------------------
 // Active agent triggering
 // ---------------------------------------------------------------------------
+
+/**
+ * Announce pass-through: push source output directly to an agent's
+ * receive_announcements channels. No agent invocation — zero cost, instant.
+ */
+async function announceToChannels(agentName: string, text: string): Promise<void> {
+  const definition = await getAgentByName(agentName);
+  if (!definition) {
+    console.warn(`[notify] Announce target agent "${agentName}" not found, skipping`);
+    return;
+  }
+
+  const channels = await getChannelsByAgent(definition.id, { receiveAnnouncements: true });
+  if (channels.length === 0) return;
+
+  console.log(`[notify] Announcing to ${channels.length} channel(s) for ${agentName}`);
+  for (const channel of channels) {
+    try {
+      await deliverToChannel(channel, text);
+    } catch (err) {
+      console.error(`[notify] Announce delivery to ${channel.platform}/${channel.external_id} failed:`, err);
+    }
+  }
+}
+
+/**
+ * Deliver an agent's response to its announcement channels after a triggered run.
+ */
+async function deliverToAnnouncementChannels(agentId: string, agentName: string, text: string): Promise<void> {
+  try {
+    const channels = await getChannelsByAgent(agentId, { receiveAnnouncements: true });
+    if (channels.length === 0) return;
+
+    console.log(`[notify] Delivering to ${channels.length} announcement channel(s) for ${agentName}`);
+    for (const channel of channels) {
+      try {
+        await deliverToChannel(channel, text);
+      } catch (err) {
+        console.error(`[notify] Channel delivery to ${channel.platform}/${channel.external_id} failed:`, err);
+      }
+    }
+  } catch (err) {
+    console.error(`[notify] Failed to query announcement channels for ${agentName}:`, err);
+  }
+}
 
 /**
  * Trigger an immediate agent run with claimed notification content as the user message.
@@ -158,10 +224,16 @@ async function triggerAgentRun(agentName: string): Promise<void> {
           agentName,
         );
         const lastMsg = result?.messages?.[result.messages.length - 1]?.content;
+        const fullResponse = typeof lastMsg === "string" ? lastMsg : undefined;
         await completeTaskRun(run.id, {
-          output_summary: typeof lastMsg === "string" ? lastMsg.slice(0, 500) : undefined,
+          output_summary: fullResponse?.slice(0, 500),
           duration_ms: Date.now() - startTime,
         });
+
+        // Deliver full agent response to announcement channels
+        if (fullResponse) {
+          await deliverToAnnouncementChannels(definition.id, agentName, fullResponse);
+        }
       } catch (err) {
         console.error(`[notify] Active run for ${agentName} failed:`, err);
         await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {

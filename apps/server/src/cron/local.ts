@@ -12,6 +12,7 @@ import {
   getEnabledSchedules,
   getScheduleById,
   getAgentByName,
+  getChannelsByAgent,
   createTaskRun,
   startTaskRun,
   completeTaskRun,
@@ -29,6 +30,7 @@ import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build
 import { resolveRetrievalContext } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import { notify } from "../utils/notify.js";
+import { deliverToChannel } from "../channels/deliver.js";
 import type { CronRunner } from "./index.js";
 
 // ---------------------------------------------------------------------------
@@ -42,7 +44,7 @@ function extractLastAssistantMessage(result: {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if ((m.role === "assistant" || m._getType?.() === "ai") && typeof m.content === "string") {
-      return m.content.slice(0, 500);
+      return m.content;
     }
   }
   return undefined;
@@ -246,7 +248,21 @@ export class LocalCronRunner implements CronRunner {
 
         const duration = Date.now() - startTime;
         const lastMessage = extractLastAssistantMessage(result);
-        await completeTaskRun(run.id, { output_summary: lastMessage, duration_ms: duration });
+        await completeTaskRun(run.id, { output_summary: lastMessage?.slice(0, 500), duration_ms: duration });
+
+        // Deliver to announcement channels
+        if (lastMessage) {
+          try {
+            const channels = await getChannelsByAgent(freshDef.id, { receiveAnnouncements: true });
+            for (const channel of channels) {
+              await deliverToChannel(channel, lastMessage).catch((err) =>
+                console.error(`  [cron] Channel delivery to ${channel.platform}/${channel.external_id} failed:`, err),
+              );
+            }
+          } catch (err) {
+            console.error(`  [cron] ${freshDef.name} channel delivery failed:`, err);
+          }
+        }
 
         if (freshSchedule.notify.length > 0) {
           try {

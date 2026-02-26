@@ -414,15 +414,23 @@ list might have metadata: {recommended_by: "Tom", category: "movie", source: "di
 // Thread ID resolver
 // ---------------------------------------------------------------------------
 
-export function resolveThreadId(agent: Agent): string {
+export function resolveThreadId(
+  agent: Agent,
+  channel?: { platform: string; external_id: string },
+): string {
+  const channelSuffix =
+    agent.thread_scope === "per_channel" && channel
+      ? `-${channel.platform}:${channel.external_id}`
+      : "";
+
   const today = new Date().toISOString().split("T")[0];
   switch (agent.thread_lifetime) {
     case "ephemeral":
       return `task-${agent.name}-${randomUUID()}`;
     case "daily":
-      return `task-${agent.name}-${today}`;
+      return `task-${agent.name}-${today}${channelSuffix}`;
     case "persistent":
-      return `task-${agent.name}`;
+      return `task-${agent.name}${channelSuffix}`;
     default:
       throw new Error(
         `Unknown thread_lifetime "${agent.thread_lifetime}" for agent "${agent.name}". ` +

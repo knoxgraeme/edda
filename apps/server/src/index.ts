@@ -11,6 +11,7 @@ import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
 import { resolveRetrievalContext } from "./agent/tool-helpers.js";
 import { createCronRunner } from "./cron/index.js";
 import { setAgent, startHealthServer } from "./server/index.js";
+import { initTelegram, registerWebhook } from "./channels/telegram.js";
 
 async function main() {
   console.log("🧠 Edda starting...");
@@ -74,6 +75,21 @@ async function main() {
   const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
   console.log(`  Health: http://localhost:${port}/api/health`);
+
+  // 7. Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
+  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (telegramToken) {
+    initTelegram(telegramToken);
+
+    // TELEGRAM_WEBHOOK_URL must point at the server (port 8000), not the web app (port 3000)
+    const webhookUrl =
+      process.env.TELEGRAM_WEBHOOK_URL ?? `http://localhost:${port}/api/telegram/webhook`;
+    try {
+      await registerWebhook(webhookUrl, process.env.TELEGRAM_WEBHOOK_SECRET);
+    } catch (err) {
+      console.warn("  Telegram webhook registration failed (will work with manual setup):", err);
+    }
+  }
 
   console.log("🧠 Edda ready.");
 }
