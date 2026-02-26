@@ -16,7 +16,9 @@ export type {
   Agent,
   AgentSchedule,
   AgentContextMode,
+  AgentTrigger,
   TaskRun,
   TaskRunStatus,
   McpConnection,
+  Skill,
 } from "@edda/db";

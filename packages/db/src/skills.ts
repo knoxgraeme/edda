@@ -5,6 +5,14 @@
 import { getPool } from "./connection.js";
 import type { Skill, UpsertSkillInput } from "./types.js";
 
+export async function getSkills(): Promise<Skill[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM skills WHERE confirmed = true ORDER BY name`,
+  );
+  return rows as Skill[];
+}
+
 export async function getSkillByName(name: string): Promise<Skill | null> {
   const pool = getPool();
   const { rows } = await pool.query(

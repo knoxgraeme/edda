@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessageSquare, LayoutDashboard, Inbox, Users, Bot, Settings } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Inbox, Users, Bot, Puzzle, Settings } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Chat", icon: MessageSquare },
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/entities", label: "Entities", icon: Users },
   { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/skills", label: "Skills & Tools", icon: Puzzle },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
