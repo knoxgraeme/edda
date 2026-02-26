@@ -63,7 +63,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
 - **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
-- **`src/skills/`** — Modular agent capabilities: `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_catchup`, `post_process`, `recall`, `type_evolution`, `weekly_reflect`
+- **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `self_improvement`, `type_evolution`, `weekly_reflect`
 - **`src/cron/standalone.ts`** — Standalone cron runner; reads `agents` table for schedules, creates `task_run` records, syncs dynamically
 - **`src/cron/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
 - **`src/notifications/index.ts`** — Creates notification items for agent run completions/failures
@@ -124,30 +124,51 @@ Edda uses a unified multi-agent architecture. All agents are built by `buildAgen
 - **`metadata.stores`** — Cross-agent store access. Keys are agent names (or `"*"` for wildcard), values are `"read"` or `"readwrite"`. Example: `{ "daily_digest": "read", "*": "read" }`.
 - **`metadata.filesystem`** — Env-gated filesystem access. Requires `ALLOW_FILESYSTEM_ACCESS=true` and `FILESYSTEM_ROOT`. Example: `{ "path": "exports", "mode": "read" }`. Path is relative to `FILESYSTEM_ROOT`.
 
-**Built-in system agents** (consolidated in migration 041):
+**Built-in system agents**:
 | Agent | Skills | Context | Schedules |
 |---|---|---|---|
-| digest | daily_digest, weekly_reflect | daily | daily_digest (7am), weekly_reflect (Sun 3am) |
+| digest | daily_digest, weekly_reflect | daily | daily_digest (7am), weekly_reflect (Sun 6pm) |
 | maintenance | context_refresh, type_evolution | isolated | context_refresh (5am), type_evolution (6am) |
 | memory | memory_extraction | isolated | memory_catchup (10pm) |
 
-### AGENTS.md (User Context Document)
+Note: `weekly_reflect` includes three parts: activity analysis, memory maintenance, and self-improvement (reviews session summaries → updates AGENTS.md). New user-created agents automatically get the `self_improvement` skill and a seeded AGENTS.md.
 
-The agent's knowledge of the user lives in a curated document called AGENTS.md, stored in the `agents_md_versions` DB table (not on disk). Each row is a complete version with content, the deterministic template used to produce it, and an input hash for change detection.
+### System Prompt Architecture (Three Layers)
 
-- **`src/agent/generate-agents-md.ts`** — `buildDeterministicTemplate()` queries raw data from DB (preferences, facts, patterns, entities, item types, settings), `buildTemplateDiff()` computes line-level changes between template versions
-- **`src/agent/tools/get-context-diff.ts`** — Tool that builds the template fresh, diffs against stored version, returns diff or "no_changes". Used by the `context_refresh` skill.
-- **`src/agent/tools/save-agents-md.ts`** — Tool that writes curated AGENTS.md content to DB along with the current template hash
-- **`src/agent/build-agent.ts:buildPrompt()`** — Reads latest AGENTS.md content from DB via `getAgentsMdContent()` and embeds it in the system prompt
-- **Change detection**: SHA-256 hash of the deterministic template stored with each version; `get_context_diff` compares current hash against stored hash
+The assembled system prompt has three layers with distinct ownership:
+
+1. **Agent prompt** (Layer 1) — The agent's task description (`agent.system_prompt` DB field). Agent-editable via `update_agent` tool, guided by `self_improvement` skill. Structured as Task/Output/Boundaries.
+2. **Memory** (Layer 2) — AGENTS.md procedural memory wrapped in `<agent_memory>` tags, plus static `<memory_guidelines>`. Agent-editable via `save_agents_md` tool. Contains: Communication, Patterns, Standards, Corrections.
+3. **System context** (Layer 3) — Deterministic, code-built sections: Capabilities, Rules, Context (date/tz/user), Item Types, Common Metadata, Active Lists. Not agent-editable.
+
+Built by `buildPrompt()` in `src/agent/build-agent.ts`.
+
+### AGENTS.md (Procedural Memory)
+
+AGENTS.md is the agent's operating notes about how to serve a specific user — communication preferences, behavioral patterns, quality standards, and corrections. Stored in `agents_md_versions` DB table (not on disk), scoped per agent.
+
+- **`src/agent/generate-agents-md.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data (preferences, facts, patterns, entities). `buildTemplateDiff()` computes line-level diffs between template versions. The template is an input signal for what's new in the DB, not a document structure that AGENTS.md mirrors.
+- **`src/agent/tools/get-context-diff.ts`** — Builds template fresh, diffs against stored version, returns diff or "no_changes". Used by `context_refresh` skill.
+- **`src/agent/tools/save-agents-md.ts`** — Writes curated AGENTS.md content to DB with current template hash. Used by `context_refresh` (scheduled) and `self_improvement` (real-time).
+- **Change detection**: SHA-256 hash of the deterministic template; `get_context_diff` compares current hash against stored hash
+- **Seeding**: `create_agent` tool auto-seeds an empty AGENTS.md with section scaffolding (Communication, Patterns, Standards, Corrections)
+- **Self-improvement loop**: Real-time corrections via `self_improvement` skill → weekly trend analysis via `weekly_reflect` Part 3 (reviews `session_summary` items)
 
 ### Memory System
 
-Memory is entity-based, not file-based. The `post_process` skill extracts knowledge (preferences, learned facts, patterns) and entities (person, project, company, etc.) from conversation transcripts into items and entity profiles.
+Memory uses three complementary mechanisms:
 
+| Layer | What It Stores | Implementation |
+|---|---|---|
+| **Knowledge** | Facts about user/world | `items` table + pgvector search |
+| **History** | Past conversations and runs | Checkpointer + `task_runs` |
+| **Operating notes** | How the agent should behave | AGENTS.md + agent prompt |
+
+- **`memory_extraction` skill** — Extracts implicit knowledge (preferences, facts, patterns), entities, and session summaries from conversations. Supports incremental processing of long-lived threads via message-count watermarks. Used by both post-conversation hook and nightly `memory_catchup` cron.
+- **`session_summary` item type** — Per-extraction-pass retrospective capturing corrections, preferences observed, and quality signals. Feeds the weekly self-improvement analysis.
 - **`get_entity_profile` tool** — Dynamically assembles a complete entity profile from `entities` + linked `items`; always fresh, no cron needed
-- **`post_process` skill** — Extracts implicit knowledge from conversations; deduplicates via semantic similarity (reinforce ≥0.95, supersede 0.85–0.95, create new otherwise)
-- **`memory_catchup` agent** — Runs nightly; iterates unprocessed threads and invokes `post_process` for each
+- **`memory` agent** — Runs nightly (`memory_catchup` schedule); iterates unprocessed threads and invokes `memory_extraction` for each
+- **Dedup**: Semantic similarity thresholds — reinforce ≥0.95, supersede 0.85–0.95, create new otherwise
 
 ## Code Style
 

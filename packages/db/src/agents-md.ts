@@ -11,7 +11,7 @@ import type { AgentsMdVersion } from "./types.js";
 
 /** Get the latest AGENTS.md version for an agent (most recent row). */
 export async function getLatestAgentsMd(
-  agentName = "orchestrator",
+  agentName = "edda",
 ): Promise<AgentsMdVersion | null> {
   const pool = getPool();
   const { rows } = await pool.query(
@@ -32,7 +32,7 @@ export async function saveAgentsMdVersion(input: {
   agentName?: string;
 }): Promise<AgentsMdVersion> {
   const pool = getPool();
-  const agentName = input.agentName ?? "orchestrator";
+  const agentName = input.agentName ?? "edda";
   const { rows } = await pool.query(
     `INSERT INTO agents_md_versions (content, template, input_hash, agent_name)
      VALUES ($1, $2, $3, $4)
@@ -62,7 +62,7 @@ export async function pruneAgentsMdVersions(keepCount: number): Promise<void> {
 }
 
 /** Shorthand: get just the content string from the latest version. */
-export async function getAgentsMdContent(agentName = "orchestrator"): Promise<string> {
+export async function getAgentsMdContent(agentName = "edda"): Promise<string> {
   const latest = await getLatestAgentsMd(agentName);
   return latest?.content ?? "";
 }

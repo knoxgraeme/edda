@@ -78,7 +78,7 @@ describe("buildDeterministicTemplate", () => {
 
   it("returns a template string and SHA-256 hash", async () => {
     const result = await buildDeterministicTemplate();
-    expect(result.template).toContain("# Raw Template Data");
+    expect(result.template).toContain("# Change Signal");
     expect(result.hash).toMatch(/^[a-f0-9]{64}$/);
   });
 
