@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import type { StructuredTool } from "@langchain/core/tools";
 
 // Barrel schema — satisfies tool-file validation hook
 export const allToolsSchema = z.object({});
@@ -63,10 +64,28 @@ import { deleteAgentTool } from "./delete-agent.js";
 import { saveAgentsMdTool } from "./save-agents-md.js";
 import { listMyRunsTool } from "./list-my-runs.js";
 
+// Community tools (lazy-loaded from @langchain/community)
+import { loadWikipediaTool } from "./wikipedia.js";
+import { loadDuckDuckGoTool } from "./duckduckgo.js";
+import { loadWolframAlphaTool } from "./wolframalpha.js";
+
+/**
+ * Load community tools from @langchain/community. Each returns null if
+ * the package is missing or (for WolframAlpha) the env var is unset.
+ */
+export async function loadCommunityTools(): Promise<StructuredTool[]> {
+  const results = await Promise.all([
+    loadWikipediaTool(),
+    loadDuckDuckGoTool(),
+    loadWolframAlphaTool(),
+  ]);
+  return results.filter((t): t is StructuredTool => t !== null);
+}
+
 /**
  * All Edda tools — single pool shared by all agents.
  *
- * buildAgent() passes this full set (plus MCP/search tools added at runtime).
+ * buildAgent() passes this full set (plus MCP/search/community tools added at runtime).
  * Each agent's tools are scoped via SKILL.md `allowed-tools` + agent.tools[].
  */
 export const allTools = [

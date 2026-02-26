@@ -34,10 +34,19 @@ if [[ "${FILE_PATH}" == */apps/server/src/agent/tools/*.ts ]]; then
     VIOLATIONS+="RAW SQL IN TOOL: Server tools must use query functions from '@edda/db' instead of raw SQL. Import and use the appropriate query function from packages/db/src/queries/.\n"
   fi
 
-  # Check for Zod schema export
-  if ! grep -qE 'export\s+(const\s+\w+Schema|{[^}]*Schema)' "${FILE_PATH}" 2>/dev/null; then
-    if ! grep -qE '^\s*schema:' "${FILE_PATH}" 2>/dev/null; then
-      VIOLATIONS+="MISSING SCHEMA: Tool files must export a Zod schema for input validation. Define and export an input schema using z.object({...}).\n"
+  # Community tools (lazy-loaded from @langchain/community) don't use Zod schemas —
+  # they are pre-built StructuredTool classes with their own input validation.
+  IS_COMMUNITY_TOOL=false
+  if grep -qE 'await import\(.*@langchain/community/tools/' "${FILE_PATH}" 2>/dev/null; then
+    IS_COMMUNITY_TOOL=true
+  fi
+
+  # Check for Zod schema export (skip for community tool wrappers)
+  if [[ "${IS_COMMUNITY_TOOL}" == "false" ]]; then
+    if ! grep -qE 'export\s+(const\s+\w+Schema|{[^}]*Schema)' "${FILE_PATH}" 2>/dev/null; then
+      if ! grep -qE '^\s*schema:' "${FILE_PATH}" 2>/dev/null; then
+        VIOLATIONS+="MISSING SCHEMA: Tool files must export a Zod schema for input validation. Define and export an input schema using z.object({...}).\n"
+      fi
     fi
   fi
 fi

@@ -36,7 +36,7 @@ import { getCheckpointer } from "../checkpointer/index.js";
 import { getStore } from "../store/index.js";
 import { getSearchTool } from "../search/index.js";
 import { loadMCPTools } from "./mcp.js";
-import { allTools } from "./tools/index.js";
+import { allTools, loadCommunityTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
 
 // ---------------------------------------------------------------------------
@@ -371,25 +371,36 @@ export async function buildAgent(agent: Agent): Promise<any> {
       : undefined;
 
   // 2. Gather ALL available tools + prompt data + skills in one parallel batch
-  const [model, searchTool, checkpointer, store, mcpTools, itemTypes, connections, skills] =
-    await Promise.all([
-      getChatModel(modelName),
-      getSearchTool(),
-      getCheckpointer(),
-      getStore(),
-      loadMCPTools(),
-      getItemTypes(),
-      getMcpConnections(),
-      agent.skills.length > 0 ? getSkillsByNames(agent.skills) : ([] as Skill[]),
-    ]);
+  const [
+    model,
+    searchTool,
+    checkpointer,
+    store,
+    mcpTools,
+    communityTools,
+    itemTypes,
+    connections,
+    skills,
+  ] = await Promise.all([
+    getChatModel(modelName),
+    getSearchTool(),
+    getCheckpointer(),
+    getStore(),
+    loadMCPTools(),
+    loadCommunityTools(),
+    getItemTypes(),
+    getMcpConnections(),
+    agent.skills.length > 0 ? getSkillsByNames(agent.skills) : ([] as Skill[]),
+  ]);
 
   const allAvailable = [
     ...allTools,
     ...mcpTools,
+    ...communityTools,
     ...(searchTool ? [searchTool] : []),
   ];
 
-  // 3. Scope tools (empty agent.tools[] = all tools, otherwise filter by name)
+  // 3. Scope tools via skills' allowed-tools + agent.tools[]; empty = list_my_runs only
   const tools = scopeTools(agent, allAvailable, skills);
 
   // 4. Duplicate check
