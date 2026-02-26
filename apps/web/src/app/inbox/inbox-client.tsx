@@ -200,7 +200,11 @@ export function InboxClient({
             {items.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Inbox className="h-10 w-10 mb-3" />
-                <p className="text-sm">No pending confirmations.</p>
+                <p className="text-sm font-medium">No pending confirmations.</p>
+                <p className="text-sm mt-1 max-w-sm text-center">
+                  When agents want to create new item types or merge entities, you&apos;ll approve them
+                  here.
+                </p>
               </div>
             ) : (
               items.map((item) => (
@@ -215,7 +219,10 @@ export function InboxClient({
             {notifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Bell className="h-10 w-10 mb-3" />
-                <p className="text-sm">No notifications.</p>
+                <p className="text-sm font-medium">No notifications yet.</p>
+                <p className="text-sm mt-1 max-w-sm text-center">
+                  You&apos;ll see updates here when agent runs complete or need your attention.
+                </p>
               </div>
             ) : (
               notifications.map((n) => (
