@@ -79,7 +79,7 @@ Bad: "Be careful with emails." (not actionable)
 ### Modify Agent
 "change the daily digest schedule", "disable the weekly reflect agent"
 - update_agent: Modify an existing agent's configuration.
-- Can update: description, system_prompt, skills, schedule, enabled, context_mode, metadata.
+- Can update: description, system_prompt, skills, schedule, enabled, thread_lifetime, metadata.
 
 ### Delete Agent
 "remove that agent I created"

@@ -15,7 +15,7 @@ export type {
   EntityType,
   Agent,
   AgentSchedule,
-  AgentContextMode,
+  ThreadLifetime,
   AgentTrigger,
   TaskRun,
   TaskRunStatus,

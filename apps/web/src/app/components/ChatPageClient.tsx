@@ -50,7 +50,7 @@ export function ChatPageClient() {
             variant="ghost"
             size="sm"
             onClick={newThread}
-            title="New thread"
+            title="New chat"
             className="h-8 gap-1.5 px-2"
           >
             <Plus className="h-4 w-4" />

@@ -1,8 +1,8 @@
 /**
  * list_my_runs — lets agents query their own past task runs.
  *
- * An isolated-context agent can still know "I ran 3 times this week
- * and failed once" regardless of context_mode.
+ * An ephemeral-thread agent can still know "I ran 3 times this week
+ * and failed once" regardless of thread_lifetime.
  */
 
 import { z } from "zod";

@@ -161,7 +161,7 @@ describe("notify()", () => {
       id: "agent-1",
       name: "edda",
       enabled: true,
-      context_mode: "persistent",
+      thread_lifetime: "persistent",
       metadata: {},
     });
     mockClaimUnreadNotifications.mockResolvedValueOnce([
@@ -205,7 +205,7 @@ describe("notify()", () => {
       id: "agent-1",
       name: "edda",
       enabled: true,
-      context_mode: "persistent",
+      thread_lifetime: "persistent",
       metadata: {},
     });
     mockClaimUnreadNotifications.mockResolvedValueOnce([]);
@@ -229,7 +229,7 @@ describe("notify()", () => {
       id: "agent-1",
       name: "edda",
       enabled: false,
-      context_mode: "persistent",
+      thread_lifetime: "persistent",
       metadata: {},
     });
 

@@ -40,12 +40,12 @@ export async function POST(
   if (typeof body.prompt !== "string" || body.prompt.length > 5000) {
     return badRequest("prompt must be a string (max 5000 chars)");
   }
-  const VALID_CONTEXT_MODES = new Set(["isolated", "daily", "persistent"]);
+  const VALID_THREAD_LIFETIMES = new Set(["ephemeral", "daily", "persistent"]);
   if (
-    body.context_mode !== undefined &&
-    (typeof body.context_mode !== "string" || !VALID_CONTEXT_MODES.has(body.context_mode))
+    body.thread_lifetime !== undefined &&
+    (typeof body.thread_lifetime !== "string" || !VALID_THREAD_LIFETIMES.has(body.thread_lifetime))
   ) {
-    return badRequest("Invalid context_mode");
+    return badRequest("Invalid thread_lifetime");
   }
 
   try {
@@ -54,7 +54,7 @@ export async function POST(
       name: body.name,
       cron: body.cron,
       prompt: body.prompt,
-      context_mode: body.context_mode ?? undefined,
+      thread_lifetime: body.thread_lifetime ?? undefined,
     });
     return NextResponse.json(schedule, { status: 201 });
   } catch (err) {

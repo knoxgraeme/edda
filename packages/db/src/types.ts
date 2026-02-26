@@ -365,7 +365,9 @@ export interface UpsertSkillInput {
 // Agents
 // ──────────────────────────────────────────────
 
-export type AgentContextMode = "isolated" | "daily" | "persistent";
+export type ThreadLifetime = "ephemeral" | "daily" | "persistent";
+/** @deprecated Use ThreadLifetime instead */
+export type AgentContextMode = ThreadLifetime;
 export type AgentTrigger = "schedule" | "on_demand";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent" | "notification";
@@ -376,7 +378,7 @@ export interface Agent {
   description: string;
   system_prompt: string | null;
   skills: string[];
-  context_mode: AgentContextMode;
+  thread_lifetime: ThreadLifetime;
   trigger: AgentTrigger | null;
   tools: string[];
   subagents: string[];
@@ -416,7 +418,7 @@ export interface AgentSchedule {
   name: string;
   cron: string;
   prompt: string;
-  context_mode: AgentContextMode | null;
+  thread_lifetime: ThreadLifetime | null;
   notify: string[];
   notify_expires_after: string;
   enabled: boolean;

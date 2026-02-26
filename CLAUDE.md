@@ -116,20 +116,20 @@ Notable DB settings (in `settings` table):
 
 Edda uses a unified multi-agent architecture. All agents are built by `buildAgent(agent)` — there is no separate orchestrator factory. A `default_agent` setting (default: `edda`) determines which agent serves as the conversational interface. Any agent can be the default.
 
-- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], context_mode, trigger, model_settings_key, enabled flag, metadata.
-- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional context_mode override, enabled flag. One agent can have multiple schedules.
+- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], thread_lifetime, trigger, model_settings_key, enabled flag, metadata.
+- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional thread_lifetime override, enabled flag. One agent can have multiple schedules.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
-- **Context modes**: `isolated` (unique thread per run), `daily` (shared thread per day), `persistent` (single shared thread)
+- **Thread lifetimes**: `ephemeral` (new thread every run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
 - **`metadata.stores`** — Cross-agent store access. Keys are agent names (or `"*"` for wildcard), values are `"read"` or `"readwrite"`. Example: `{ "daily_digest": "read", "*": "read" }`.
 - **`metadata.filesystem`** — Env-gated filesystem access. Requires `ALLOW_FILESYSTEM_ACCESS=true` and `FILESYSTEM_ROOT`. Example: `{ "path": "exports", "mode": "read" }`. Path is relative to `FILESYSTEM_ROOT`.
 
 **Built-in system agents**:
-| Agent | Skills | Context | Schedules |
+| Agent | Skills | Thread Lifetime | Schedules |
 |---|---|---|---|
 | digest | daily_digest, weekly_reflect | daily | daily_digest (7am), weekly_reflect (Sun 6pm) |
-| maintenance | context_refresh, type_evolution | isolated | context_refresh (5am), type_evolution (6am) |
-| memory | memory_extraction | isolated | memory_catchup (10pm) |
+| maintenance | context_refresh, type_evolution | ephemeral | context_refresh (5am), type_evolution (6am) |
+| memory | memory_extraction | ephemeral | memory_catchup (10pm) |
 
 Note: `weekly_reflect` includes three parts: activity analysis, memory maintenance, and self-improvement (reviews session summaries → updates AGENTS.md). New user-created agents automatically get the `self_improvement` skill and a seeded AGENTS.md.
 

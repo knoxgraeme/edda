@@ -25,7 +25,7 @@ export const listAgentsTool = tool(
         description: a.description,
         enabled: a.enabled,
         trigger: a.trigger,
-        context_mode: a.context_mode,
+        thread_lifetime: a.thread_lifetime,
         skills: a.skills,
       })),
     );

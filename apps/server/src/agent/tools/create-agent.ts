@@ -25,10 +25,10 @@ export const createAgentSchema = z.object({
     .enum(["schedule", "on_demand"])
     .default("on_demand")
     .describe("How this agent is triggered"),
-  context_mode: z
-    .enum(["isolated", "daily", "persistent"])
-    .default("isolated")
-    .describe("Thread ID strategy"),
+  thread_lifetime: z
+    .enum(["ephemeral", "daily", "persistent"])
+    .default("ephemeral")
+    .describe("Thread ID strategy: ephemeral (new thread every run), daily (shared per day), persistent (one thread forever)"),
   metadata: z
     .record(z.unknown())
     .optional()
@@ -46,7 +46,7 @@ export const createAgentTool = tool(
     system_prompt,
     skills,
     trigger,
-    context_mode,
+    thread_lifetime,
     metadata,
   }) => {
     const existing = await getAgents();
@@ -65,7 +65,7 @@ export const createAgentTool = tool(
       description,
       system_prompt,
       skills: resolvedSkills,
-      context_mode,
+      thread_lifetime,
       trigger,
       metadata,
     });
