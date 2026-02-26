@@ -412,6 +412,10 @@ function OverviewTab({
                   <Badge variant="outline">{agent.thread_lifetime}</Badge>
                 </div>
                 <div>
+                  <span className="text-muted-foreground">Thread scope:</span>{" "}
+                  <Badge variant="outline">{agent.thread_scope}</Badge>
+                </div>
+                <div>
                   <span className="text-muted-foreground">Trigger:</span>{" "}
                   <Badge variant="outline">{agent.trigger ?? "on_demand"}</Badge>
                 </div>
@@ -745,46 +749,34 @@ const PLATFORM_OPTIONS: { value: ChannelPlatform; label: string }[] = [
 function ChannelDialogInner({
   onOpenChange,
   agentName,
-  channel,
   onSaved,
 }: {
   onOpenChange: (open: boolean) => void;
   agentName: string;
-  channel?: AgentChannel;
   onSaved: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [platform, setPlatform] = useState<ChannelPlatform>(channel?.platform ?? "telegram");
-  const [externalId, setExternalId] = useState(channel?.external_id ?? "");
-  const [receiveAnnouncements, setReceiveAnnouncements] = useState(
-    channel?.receive_announcements ?? false,
-  );
+  const [platform, setPlatform] = useState<ChannelPlatform>("telegram");
+  const [externalId, setExternalId] = useState("");
+  const [receiveAnnouncements, setReceiveAnnouncements] = useState(false);
 
-  const isEdit = !!channel;
   const canSubmit = externalId.length > 0;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     startTransition(async () => {
       try {
-        if (isEdit) {
-          await updateChannelAction(channel.id, agentName, {
-            receive_announcements: receiveAnnouncements,
-          });
-          toast.success("Channel updated");
-        } else {
-          await createChannelAction({
-            agent_name: agentName,
-            platform,
-            external_id: externalId,
-            receive_announcements: receiveAnnouncements,
-          });
-          toast.success("Channel linked");
-        }
+        await createChannelAction({
+          agent_name: agentName,
+          platform,
+          external_id: externalId,
+          receive_announcements: receiveAnnouncements,
+        });
+        toast.success("Channel linked");
         onOpenChange(false);
         onSaved();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to save channel");
+        toast.error(err instanceof Error ? err.message : "Failed to link channel");
       }
     });
   };
@@ -792,11 +784,9 @@ function ChannelDialogInner({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{isEdit ? "Edit Channel" : "Link Channel"}</DialogTitle>
+        <DialogTitle>Link Channel</DialogTitle>
         <DialogDescription>
-          {isEdit
-            ? "Update the channel configuration."
-            : "Link a chat channel to this agent for bidirectional messaging."}
+          Link a chat channel to this agent for bidirectional messaging.
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-4 py-2">
@@ -806,7 +796,6 @@ function ChannelDialogInner({
             id="ch-platform"
             value={platform}
             onChange={(e) => setPlatform(e.target.value as ChannelPlatform)}
-            disabled={isEdit}
           >
             {PLATFORM_OPTIONS.map((p) => (
               <option key={p.value} value={p.value}>
@@ -828,7 +817,6 @@ function ChannelDialogInner({
                   ? "T01234:C56789"
                   : "123456789:987654321"
             }
-            disabled={isEdit}
           />
           <p className="text-xs text-muted-foreground">
             {platform === "telegram"
@@ -857,7 +845,7 @@ function ChannelDialogInner({
           Cancel
         </Button>
         <Button onClick={handleSubmit} disabled={!canSubmit || isPending}>
-          {isPending ? "Saving..." : isEdit ? "Update" : "Link"}
+          {isPending ? "Linking..." : "Link"}
         </Button>
       </DialogFooter>
     </>
@@ -868,23 +856,21 @@ function ChannelDialog({
   open,
   onOpenChange,
   agentName,
-  channel,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agentName: string;
-  channel?: AgentChannel;
   onSaved: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
+        {/* key forces remount to reset form state each time dialog opens */}
         <ChannelDialogInner
-          key={channel?.id ?? "new"}
+          key={open ? "open" : "closed"}
           onOpenChange={onOpenChange}
           agentName={agentName}
-          channel={channel}
           onSaved={onSaved}
         />
       </DialogContent>
@@ -904,7 +890,6 @@ function ChannelsTab({
   const [isPending, startTransition] = useTransition();
   const [channels, setChannels] = useState(initialChannels);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingChannel, setEditingChannel] = useState<AgentChannel | undefined>();
 
   const refresh = useCallback(async () => {
     try {
@@ -913,7 +898,7 @@ function ChannelsTab({
       );
       if (res.ok) {
         const data = await res.json();
-        setChannels(Array.isArray(data) ? data : data.data);
+        setChannels(data.data);
       }
     } catch (err) {
       if (process.env.NODE_ENV === "development") console.warn("Channel refresh failed:", err);
@@ -925,7 +910,7 @@ function ChannelsTab({
       try {
         await updateChannelAction(ch.id, agentName, { enabled });
         toast.success(`Channel ${enabled ? "enabled" : "disabled"}`);
-        refresh();
+        await refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to toggle channel");
       }
@@ -939,7 +924,7 @@ function ChannelsTab({
           receive_announcements: receiveAnnouncements,
         });
         toast.success(`Announcements ${receiveAnnouncements ? "enabled" : "disabled"}`);
-        refresh();
+        await refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to toggle announcements");
       }
@@ -952,7 +937,7 @@ function ChannelsTab({
       try {
         await deleteChannelAction(ch.id, agentName);
         toast.success("Channel unlinked");
-        refresh();
+        await refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to delete channel");
       }
@@ -969,10 +954,7 @@ function ChannelsTab({
           variant="outline"
           size="sm"
           className="gap-1"
-          onClick={() => {
-            setEditingChannel(undefined);
-            setDialogOpen(true);
-          }}
+          onClick={() => setDialogOpen(true)}
         >
           <Plus className="h-3.5 w-3.5" />
           Link Channel
@@ -1036,17 +1018,6 @@ function ChannelsTab({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
-                    onClick={() => {
-                      setEditingChannel(ch);
-                      setDialogOpen(true);
-                    }}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
                     className="h-8 w-8 text-destructive hover:text-destructive"
                     onClick={() => handleDelete(ch)}
                     disabled={isPending}
@@ -1064,7 +1035,6 @@ function ChannelsTab({
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         agentName={agentName}
-        channel={editingChannel}
         onSaved={refresh}
       />
     </div>
