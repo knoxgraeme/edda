@@ -335,7 +335,7 @@ CREATE TABLE task_runs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
   agent_name TEXT NOT NULL,
-  trigger TEXT NOT NULL CHECK (trigger IN ('cron', 'user', 'orchestrator', 'hook', 'agent')),
+  trigger TEXT NOT NULL CHECK (trigger IN ('cron', 'user', 'orchestrator', 'hook', 'agent', 'notification')),
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
   thread_id TEXT,
