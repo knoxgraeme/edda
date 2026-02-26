@@ -4,8 +4,9 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { batchCreateItems, getSettingsSync } from "@edda/db";
+import { batchCreateItems, getSettingsSync, getListByName, getListById } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
+import type { EmbeddingContext } from "../../embed/index.js";
 import { getAgentName } from "../tool-helpers.js";
 
 const batchItemSchema = z.object({
@@ -14,7 +15,9 @@ const batchItemSchema = z.object({
   type: z.string().describe("Item type (must exist in item_types)"),
   day: z.string().optional().describe("YYYY-MM-DD, defaults to today"),
   metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
-  parent_id: z.string().optional().describe("Parent item ID"),
+  parent_id: z.string().optional().describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists."),
+  list_id: z.string().uuid().optional().describe("List UUID"),
+  list_name: z.string().optional().describe("List name (resolved automatically)"),
   confirmed: z.boolean().optional().describe("Default true. Set false when approval is needed."),
 });
 
@@ -28,22 +31,55 @@ export const batchCreateItemsTool = tool(
     const settings = getSettingsSync();
     const today = new Date().toISOString().split("T")[0];
 
-    const embeddings = await embedBatch(items.map((item) => buildEmbeddingText(item.type, item.content, item.summary)));
+    // Resolve list names to IDs (cached)
+    const listCache = new Map<string, string>(); // name → id
+    for (const item of items) {
+      if (item.list_name && !item.list_id && !listCache.has(item.list_name)) {
+        const list = await getListByName(item.list_name);
+        if (list) listCache.set(item.list_name, list.id);
+      }
+    }
 
-    const inputs = items.map((item, i) => ({
-      content: item.content,
-      summary: item.summary,
-      type: item.type,
-      embedding: embeddings[i],
-      embedding_model: settings.embedding_model,
-      day: item.day ?? today,
-      metadata: agentName
-        ? { ...(item.metadata ?? {}), created_by: agentName }
-        : (item.metadata ?? {}),
-      parent_id: item.parent_id,
-      confirmed: item.confirmed ?? true,
-      source: "chat" as const,
-    }));
+    // Build embedding context per list
+    const listDetailCache = new Map<string, EmbeddingContext>();
+    const resolvedListIds = new Set<string>();
+    for (const item of items) {
+      const lid = item.list_id ?? (item.list_name ? listCache.get(item.list_name) : undefined);
+      if (lid) resolvedListIds.add(lid);
+    }
+    for (const lid of resolvedListIds) {
+      const list = await getListById(lid);
+      if (list) {
+        listDetailCache.set(lid, { listName: list.name, listSummary: list.summary ?? undefined });
+      }
+    }
+
+    const embeddings = await embedBatch(
+      items.map((item) => {
+        const lid = item.list_id ?? (item.list_name ? listCache.get(item.list_name) : undefined);
+        const ctx = lid ? listDetailCache.get(lid) ?? null : null;
+        return buildEmbeddingText(item.type, item.content, item.summary, ctx);
+      }),
+    );
+
+    const inputs = items.map((item, i) => {
+      const resolvedListId = item.list_id ?? (item.list_name ? listCache.get(item.list_name) : undefined);
+      return {
+        content: item.content,
+        summary: item.summary,
+        type: item.type,
+        embedding: embeddings[i],
+        embedding_model: settings.embedding_model,
+        day: item.day ?? today,
+        metadata: agentName
+          ? { ...(item.metadata ?? {}), created_by: agentName }
+          : (item.metadata ?? {}),
+        parent_id: item.parent_id,
+        list_id: resolvedListId,
+        confirmed: item.confirmed ?? true,
+        source: "chat" as const,
+      };
+    });
 
     const created = await batchCreateItems(inputs);
 

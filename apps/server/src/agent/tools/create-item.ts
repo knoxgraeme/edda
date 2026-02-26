@@ -4,8 +4,9 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createItem, getSettingsSync, searchItems, updateItem } from "@edda/db";
+import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
+import type { EmbeddingContext } from "../../embed/index.js";
 import { getAgentName } from "../tool-helpers.js";
 
 export const createItemSchema = z.object({
@@ -18,19 +19,43 @@ export const createItemSchema = z.object({
     .enum(["active", "done", "archived", "snoozed"])
     .optional()
     .describe("Item status (default: active)"),
-  parent_id: z.string().optional().describe("Parent item ID for hierarchical items"),
+  parent_id: z.string().optional().describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists — use list_id."),
+  list_id: z.string().uuid().optional().describe("List UUID to add this item to"),
+  list_name: z.string().optional().describe("List name to add this item to (resolved automatically)"),
 });
 
 const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);
 
 export const createItemTool = tool(
-  async ({ type, content, summary, metadata, day, status, parent_id }, config) => {
+  async ({ type, content, summary, metadata, day, status, parent_id, list_id, list_name }, config) => {
     const agentName = getAgentName(config);
     const finalMetadata = agentName
       ? { ...(metadata ?? {}), created_by: agentName }
       : metadata;
     const settings = getSettingsSync();
-    const embedding = await embed(buildEmbeddingText(type, content, summary));
+
+    // List resolution
+    let resolvedListId = list_id ?? null;
+    if (list_name && !resolvedListId) {
+      const list = await getListByName(list_name);
+      if (!list) {
+        return JSON.stringify({
+          error: `No list found with name "${list_name}". Create it first with create_list.`,
+        });
+      }
+      resolvedListId = list.id;
+    }
+
+    // Embedding context from list
+    let embeddingContext: EmbeddingContext | null = null;
+    if (resolvedListId) {
+      const list = await getListById(resolvedListId);
+      if (list) {
+        embeddingContext = { listName: list.name, listSummary: list.summary ?? undefined };
+      }
+    }
+
+    const embedding = await embed(buildEmbeddingText(type, content, summary, embeddingContext));
 
     // Dedup check — only for knowledge types (preference, learned_fact, pattern)
     if (DEDUP_TYPES.has(type)) {
@@ -63,6 +88,7 @@ export const createItemTool = tool(
       day,
       status,
       parent_id,
+      list_id: resolvedListId ?? undefined,
       embedding,
       embedding_model: settings.embedding_model,
       source: "chat",

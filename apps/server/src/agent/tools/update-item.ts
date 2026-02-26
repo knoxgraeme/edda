@@ -20,11 +20,17 @@ export const updateItemSchema = z.object({
     .uuid()
     .nullable()
     .optional()
-    .describe("Parent item ID — set to move item to a different list, or null to unlink"),
+    .describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists — use list_id."),
+  list_id: z
+    .string()
+    .uuid()
+    .nullable()
+    .optional()
+    .describe("Move item to a list, or null to remove from list"),
 });
 
 export const updateItemTool = tool(
-  async ({ item_id, status, content, metadata, parent_id }) => {
+  async ({ item_id, status, content, metadata, parent_id, list_id }) => {
     const updates: Parameters<typeof updateItem>[1] = {};
 
     if (status !== undefined) {
@@ -47,6 +53,7 @@ export const updateItemTool = tool(
 
     if (metadata !== undefined) updates.metadata = metadata;
     if (parent_id !== undefined) updates.parent_id = parent_id;
+    if (list_id !== undefined) updates.list_id = list_id;
 
     const item = await updateItem(item_id, updates);
 

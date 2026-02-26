@@ -308,8 +308,10 @@ describe("getListContentsSchema", () => {
     expect(result.list_id).toBe("550e8400-e29b-41d4-a716-446655440000");
   });
 
-  it("rejects missing list_id", () => {
-    expect(() => getListContentsSchema.parse({})).toThrow(ZodError);
+  it("accepts empty object (no-args mode for listing all lists)", () => {
+    const result = getListContentsSchema.parse({});
+    expect(result.list_id).toBeUndefined();
+    expect(result.list_name).toBeUndefined();
   });
 
   it("rejects non-uuid string", () => {

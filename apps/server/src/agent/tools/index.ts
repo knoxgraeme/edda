@@ -23,6 +23,10 @@ import { getDailySummaryTool } from "./get-daily-summary.js";
 import { getListContentsTool } from "./list-contents.js";
 import { getTimelineTool } from "./get-timeline.js";
 
+// List tools
+import { createListTool } from "./create-list.js";
+import { updateListTool } from "./update-list.js";
+
 // Entity tools
 import { upsertEntityTool } from "./upsert-entity.js";
 import { linkItemEntityTool } from "./link-item-entity.js";
@@ -103,6 +107,10 @@ export const allTools = [
   getDailySummaryTool,
   getListContentsTool,
   getTimelineTool,
+
+  // List tools
+  createListTool,
+  updateListTool,
 
   // Entity tools
   upsertEntityTool,
