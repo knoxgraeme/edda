@@ -24,6 +24,11 @@ export const searchItemsSchema = z.object({
     .boolean()
     .optional()
     .describe("Only search agent knowledge types (preference, learned_fact, pattern)"),
+  list_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Filter results to items on a specific list"),
   metadata: z
     .record(z.string())
     .optional()
@@ -35,7 +40,7 @@ export const searchItemsSchema = z.object({
 });
 
 export const searchItemsTool = tool(
-  async ({ query, type, after, limit, agent_knowledge_only, metadata, order_by }, config) => {
+  async ({ query, type, after, limit, agent_knowledge_only, list_id, metadata, order_by }, config) => {
     // Listing mode: no query + agent_knowledge_only = ordered listing
     if (!query && agent_knowledge_only) {
       const items = await getAgentKnowledge({ orderBy: order_by, limit });
@@ -77,6 +82,7 @@ export const searchItemsTool = tool(
       type,
       after,
       agentKnowledgeOnly: agent_knowledge_only,
+      list_id,
       metadata,
       retrieval_context: retrievalContext,
     });

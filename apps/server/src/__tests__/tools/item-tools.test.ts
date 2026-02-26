@@ -24,6 +24,9 @@ vi.mock("@edda/db", () => ({
   searchItems: vi.fn(),
   batchCreateItems: vi.fn(),
   getListItems: vi.fn(),
+  getListByName: vi.fn(),
+  getListById: vi.fn(),
+  getAllLists: vi.fn(),
   getTimeline: vi.fn(),
   getAgentKnowledge: vi.fn(),
   getPendingItems: vi.fn(),
@@ -52,6 +55,8 @@ import {
   getItemById,
   getDashboard,
   getListItems,
+  getListById,
+  getAllLists,
   getTimeline,
   getAgentKnowledge,
   getPendingItems,
@@ -87,7 +92,7 @@ describe("createItemTool", () => {
     const result = await createItemTool.invoke({ type: "note", content: "hello world" });
     const parsed = JSON.parse(result);
 
-    expect(vi.mocked(buildEmbeddingText)).toHaveBeenCalledWith("note", "hello world", undefined);
+    expect(vi.mocked(buildEmbeddingText)).toHaveBeenCalledWith("note", "hello world", undefined, null);
     expect(vi.mocked(embed)).toHaveBeenCalledWith("note: hello world");
     expect(vi.mocked(searchItems)).not.toHaveBeenCalled();
     expect(vi.mocked(createItem)).toHaveBeenCalledWith(
@@ -285,8 +290,17 @@ describe("read-only item tools", () => {
     expect(vi.mocked(getDashboard)).toHaveBeenCalledWith("2026-02-21");
   });
 
-  it("getListContentsTool calls getListItems", async () => {
+  it("getListContentsTool calls getListItems when list_id provided", async () => {
     const listId = "550e8400-e29b-41d4-a716-446655440000";
+    const fakeList = {
+      id: listId,
+      name: "Grocery",
+      summary: null,
+      icon: "📋",
+      list_type: "rolling",
+      status: "active",
+    };
+    vi.mocked(getListById).mockResolvedValueOnce(fakeList as never);
     vi.mocked(getListItems).mockResolvedValueOnce([
       { id: "li-1", content: "buy milk" },
     ] as never);
@@ -294,8 +308,22 @@ describe("read-only item tools", () => {
     const result = await getListContentsTool.invoke({ list_id: listId });
     const parsed = JSON.parse(result);
 
+    expect(vi.mocked(getListById)).toHaveBeenCalledWith(listId);
     expect(vi.mocked(getListItems)).toHaveBeenCalledWith(listId);
     expect(parsed.count).toBe(1);
+  });
+
+  it("getListContentsTool returns all lists when no args", async () => {
+    vi.mocked(getAllLists).mockResolvedValueOnce([
+      { id: "l-1", name: "Grocery", item_count: 3 },
+    ] as never);
+
+    const result = await getListContentsTool.invoke({});
+    const parsed = JSON.parse(result);
+
+    expect(vi.mocked(getAllLists)).toHaveBeenCalled();
+    expect(parsed.count).toBe(1);
+    expect(parsed.lists[0].name).toBe("Grocery");
   });
 
   it("getTimelineTool calls getTimeline", async () => {

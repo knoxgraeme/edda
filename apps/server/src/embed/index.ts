@@ -47,13 +47,27 @@ async function createEmbeddings(provider: string, model: string, dimensions: num
   }
 }
 
+export interface EmbeddingContext {
+  listName?: string;
+  listSummary?: string;
+}
+
 /**
  * Build a consistent embedding text string for an item.
  * All callers that embed item content should use this to ensure
  * the vector space is consistent across create, update, and search.
  */
-export function buildEmbeddingText(type: string, content: string, summary?: string | null): string {
-  return `${type}: ${content}${summary ? `. ${summary}` : ''}`;
+export function buildEmbeddingText(
+  type: string,
+  content: string,
+  summary?: string | null,
+  context?: EmbeddingContext | null,
+): string {
+  let text = `${type}: ${content}${summary ? `. ${summary}` : ''}`;
+  if (context?.listName) {
+    text += ` [list: ${context.listName}${context.listSummary ? ` — ${context.listSummary}` : ''}]`;
+  }
+  return text;
 }
 
 export async function getEmbeddings(): Promise<Embeddings> {
