@@ -14,6 +14,7 @@ import {
   findConnectionByStateParam,
   getOAuthState,
   upsertOAuthState,
+  decrypt,
 } from "@edda/db";
 
 const PKCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
       body: JSON.stringify({
         connection_id: connectionId,
         code,
-        completion_secret: oauthState.pending_auth.completion_secret,
+        completion_secret: decrypt(oauthState.pending_auth.completion_secret),
       }),
     });
 
