@@ -224,16 +224,12 @@ export function SettingsClient({
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Web Search</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Configure the search provider. Add &quot;web_search&quot; to an
+              agent&apos;s tools to enable it.
+            </p>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="web_search_enabled">Enable web search</Label>
-              <Switch
-                id="web_search_enabled"
-                checked={form.web_search_enabled}
-                onCheckedChange={(v) => update("web_search_enabled", v)}
-              />
-            </div>
             <FieldGroup label="Provider" htmlFor="search_provider">
               <Select
                 id="search_provider"
@@ -242,8 +238,9 @@ export function SettingsClient({
                   update("search_provider", e.target.value as Settings["search_provider"])
                 }
               >
+                <option value="brave">Brave (free tier available)</option>
                 <option value="tavily">Tavily</option>
-                <option value="brave">Brave</option>
+                <option value="duckduckgo">DuckDuckGo (no API key, unreliable)</option>
                 <option value="serper">Serper</option>
                 <option value="serpapi">SerpAPI</option>
               </Select>
