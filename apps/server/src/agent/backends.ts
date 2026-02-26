@@ -122,7 +122,11 @@ const StoreConfigSchema = z
 
 const FsConfigSchema = z
   .object({
-    path: z.string().max(500).regex(/^[a-zA-Z0-9_\-/.]+$/, "Invalid filesystem path characters"),
+    path: z
+      .string()
+      .max(500)
+      .regex(/^[a-zA-Z0-9_\-/.]+$/, "Invalid filesystem path characters")
+      .refine((p) => !p.split("/").includes(".."), "Path traversal not allowed"),
     mode: z.enum(["read", "readwrite"]).optional(),
   })
   .optional();

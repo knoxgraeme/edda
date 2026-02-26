@@ -117,32 +117,30 @@ Notable DB settings (in `settings` table):
 
 Edda uses a unified multi-agent architecture. All agents are built by `buildAgent(agent)` — there is no separate orchestrator factory. A `default_agent` setting (default: `edda`) determines which agent serves as the conversational interface. Any agent can be the default.
 
-- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], schedule (cron expression), context_mode, trigger, model_settings_key, enabled flag, metadata. Agents can declare `metadata.hooks` (`pre_invoke`/`post_invoke`) to customize cron runner behavior via a closed allowlist.
+- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], context_mode, trigger, model_settings_key, enabled flag, metadata.
+- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional context_mode override, enabled flag. One agent can have multiple schedules.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Context modes**: `isolated` (unique thread per run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
 - **`metadata.stores`** — Cross-agent store access. Keys are agent names (or `"*"` for wildcard), values are `"read"` or `"readwrite"`. Example: `{ "daily_digest": "read", "*": "read" }`.
 - **`metadata.filesystem`** — Env-gated filesystem access. Requires `ALLOW_FILESYSTEM_ACCESS=true` and `FILESYSTEM_ROOT`. Example: `{ "path": "exports", "mode": "read" }`. Path is relative to `FILESYSTEM_ROOT`.
 
-**Built-in system agents** (seeded in migration 029):
-| Agent | Schedule | Skills | Context |
+**Built-in system agents** (consolidated in migration 041):
+| Agent | Skills | Context | Schedules |
 |---|---|---|---|
-| daily_digest | 7am daily | daily_digest | daily |
-| memory_catchup | 10pm daily | memory_catchup | isolated |
-| weekly_reflect | Sunday 3am | weekly_reflect | daily |
-| type_evolution | on-demand | type_evolution | isolated |
-| context_refresh | 5am daily | context_refresh | isolated |
-| memory_writer | subagent (orchestrator) | post_process | isolated |
+| digest | daily_digest, weekly_reflect | daily | daily_digest (7am), weekly_reflect (Sun 3am) |
+| maintenance | context_refresh, type_evolution | isolated | context_refresh (5am), type_evolution (6am) |
+| memory | memory_extraction | isolated | memory_catchup (10pm) |
 
 ### AGENTS.md (User Context Document)
 
-The agent's knowledge of the user lives in a curated document called AGENTS.md, stored in the `agents_md_versions` DB table (not on disk). Each row is a complete version with content, the deterministic template used to produce it, and an input hash for change detection. Supports per-agent variants via `agent_name` column.
+The agent's knowledge of the user lives in a curated document called AGENTS.md, stored in the `agents_md_versions` DB table (not on disk). Each row is a complete version with content, the deterministic template used to produce it, and an input hash for change detection.
 
-- **`src/agent/generate-agents-md.ts`** — Core logic: `buildDeterministicTemplate()` queries raw data from DB, `buildTemplateDiff()` computes changes, `maybeRefreshAgentsMd()` stores template+hash on every conversation (fast, no LLM), `runContextRefreshAgent()` spawns a subagent to curate content (cron only)
-- **`src/agent/tools/save-agents-md.ts`** — Schema-only tool bound to the context_refresh subagent (not in main agent's tool set). The real DB write happens in `runContextRefreshAgent()`
+- **`src/agent/generate-agents-md.ts`** — `buildDeterministicTemplate()` queries raw data from DB (preferences, facts, patterns, entities, item types, settings), `buildTemplateDiff()` computes line-level changes between template versions
+- **`src/agent/tools/get-context-diff.ts`** — Tool that builds the template fresh, diffs against stored version, returns diff or "no_changes". Used by the `context_refresh` skill.
+- **`src/agent/tools/save-agents-md.ts`** — Tool that writes curated AGENTS.md content to DB along with the current template hash
 - **`src/agent/build-agent.ts:buildPrompt()`** — Reads latest AGENTS.md content from DB via `getAgentsMdContent()` and embeds it in the system prompt
-- **Cron**: `context_refresh` runs daily (default 5am), controlled by `settings.context_refresh_cron`
-- **Change detection**: SHA-256 hash of the deterministic template; post-process path skips if hash matches, with a 30-second in-memory cache to avoid repeated DB queries
+- **Change detection**: SHA-256 hash of the deterministic template stored with each version; `get_context_diff` compares current hash against stored hash
 
 ### Memory System
 
