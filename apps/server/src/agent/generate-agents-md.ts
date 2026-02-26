@@ -13,6 +13,7 @@ import {
   getTopEntities,
   getItemTypes,
   getPendingConfirmationsCount,
+  getAllLists,
 } from "@edda/db";
 import type { ItemType } from "@edda/db";
 
@@ -36,13 +37,14 @@ export async function buildDeterministicTemplate(): Promise<{
 }> {
   const settings = getSettingsSync();
 
-  const [preferences, facts, patterns, entities, itemTypes, pendingCount] = await Promise.all([
+  const [preferences, facts, patterns, entities, itemTypes, pendingCount, lists] = await Promise.all([
     getItemsByType("preference", "active"),
     getItemsByType("learned_fact", "active"),
     getItemsByType("pattern", "active"),
     getTopEntities(settings.agents_md_max_entities),
     getItemTypes(),
     getPendingConfirmationsCount(),
+    getAllLists({ status: 'active' }),
   ]);
 
   const maxPerCategory = settings.agents_md_max_per_category;
@@ -86,6 +88,16 @@ export async function buildDeterministicTemplate(): Promise<{
           return `- **${e.name}** (${e.type})${desc} [${e.mention_count}x]`;
         })
         .join("\n")}`,
+    );
+  }
+
+  // Active lists
+  if (lists.length > 0) {
+    sections.push(
+      `## Active Lists\n` +
+      lists.map(l => `- ${l.icon} **${l.name}** (${l.list_type}, ${l.item_count} items)` +
+        (l.summary ? `\n  ${l.summary}` : '')
+      ).join("\n")
     );
   }
 

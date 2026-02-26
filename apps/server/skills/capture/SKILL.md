@@ -15,6 +15,8 @@ allowed-tools:
   - get_list_contents
   - create_item
   - batch_create_items
+  - create_list
+  - update_list
 ---
 
 # capture
@@ -36,16 +38,28 @@ link_item_entity. Just focus on creating items quickly and confirming.
    it as a type evolution candidate in the agent log.
 2. For reminders/tasks: always parse dates to concrete values and confirm them
    back to the user ("Reminder set for Thursday Feb 26").
-3. For list items: first find or create the parent list, then add items with parent_id.
-   - Search for existing list: search_items(type="list") matching the inferred name
-   - If no list exists: create_item(type="list", content="Grocery List", metadata={list_type:"rolling", normalized_name:"grocery"})
-   - Then create list_items with parent_id pointing to the list's ID
-   - Use batch_create_items for multiple items in a single message
-   - Use list_type "rolling" for recurring lists (grocery, shopping) and "one_off" for temporary lists (trip packing)
-4. For recommendations: always include `category` in metadata (e.g. "movie", "book",
-   "restaurant", "podcast"). Write rich content that includes what it is and who
-   recommended it. Before creating, use search_items with type="recommendation" to
-   check existing categories and reuse them — avoid drift ("movies" vs "movie").
+3. For lists:
+   - BEFORE creating any list, ALWAYS check if one exists:
+     get_list_contents(list_name="<inferred name>")
+     If a similar list exists, ask the user: "You already have a '...' list —
+     add to that one, or create a separate list?" Do NOT silently create duplicates.
+   - To CREATE A NEW LIST: create_list(name="Movies to Watch",
+     summary="Movies recommended by friends or that I want to see", list_type="rolling")
+   - To ADD ITEMS TO A LIST: create_item(type="note", list_name="movies to watch",
+     content="Inception", metadata={recommended_by: "Tom", category: "movie"})
+     Or use batch_create_items for multiple items.
+   - ALWAYS set a meaningful `summary` on new lists.
+   - Items on a list keep their behavioral type: use "task" if it should be checkable,
+     "reminder" if it has a due date, "note" for everything else.
+   - Use list_type "rolling" for recurring/ongoing lists (grocery, movies, books)
+     and "one_off" for temporary lists (trip packing, moving checklist).
+4. For common metadata: when the user mentions who recommended something, a URL,
+   a category, or a source — always include these in metadata:
+   - recommended_by: who suggested it
+   - url: any associated link
+   - category: what kind of thing it is (movie, book, restaurant, etc.)
+   - source: where they heard about it
+   These fields work on any item type on any list.
 5. For meetings: create child items (type=decision, type=task) linked via parent_id.
    Use batch_create_items to create the meeting + children in one call.
 6. For journal: respect privacy — these are excluded from casual recall.
@@ -76,26 +90,51 @@ Input: "remind me to call the dentist next Thursday"
 → create_item(type="reminder", content="Call the dentist", metadata={due_date: "2026-02-26"})
 → Response: "🔔 Reminder set: Call the dentist — Thursday Feb 26"
 
-Input: "eggs, milk, that good bread from Trader Joe's"
-→ search_items(type="list", query="grocery") — find existing grocery list
-→ If no list: create_item(type="list", content="Grocery List", metadata={list_type:"rolling", normalized_name:"grocery"})
+Input: "create a list of movies to watch"
+→ get_list_contents(list_name="movies to watch") — check for existing
+→ None found → create_list(name="Movies to Watch",
+  summary="Movies recommended by friends or that I want to see", list_type="rolling")
+→ Response: "📋 Created list: Movies to Watch"
+
+Input: "Tom recommended I watch Inception"
+→ get_list_contents() — check active lists for a movie/watch list
+→ If "Movies to Watch" exists → create_item(type="note", list_name="movies to watch",
+  content="Inception — recommended by Tom",
+  metadata={recommended_by: "Tom", category: "movie"})
+→ Response: "Added Inception to Movies to Watch"
+→ If no relevant list → "I don't have a movies list yet — want me to create one
+  and add Inception to it?"
+
+Input: "eggs, milk, bread"
+→ get_list_contents(list_name="grocery") — find existing
 → batch_create_items([
-    {type: "list_item", content: "Eggs", parent_id: <grocery_list_id>},
-    {type: "list_item", content: "Milk", parent_id: <grocery_list_id>},
-    {type: "list_item", content: "Bread (Trader Joe's)", parent_id: <grocery_list_id>, metadata: {store: "Trader Joe's"}}
-  ])
+   {type: "note", list_name: "grocery", content: "Eggs"},
+   {type: "note", list_name: "grocery", content: "Milk"},
+   {type: "note", list_name: "grocery", content: "Bread"}
+ ])
 → Response: "🛒 Added 3 items to Grocery List"
+
+Input: "save this article https://example.com/good-read"
+→ create_item(type="note", content="Good read — example.com",
+  metadata={url: "https://example.com/good-read", category: "article"})
+→ If a "Read Later" list exists, add to it. Otherwise standalone note.
+→ Response: "📝 Saved: Good read"
+
+Input: "remind me to pack my adapter for Japan, trip is April 5"
+→ create_item(type="reminder", list_name="japan trip",
+  content="Pack adapter", metadata={due_date: "2026-04-01"})
+→ Response: "🔔 Reminder set: Pack adapter — April 1 (on Japan Trip list)"
 
 Input: "met with Sarah, she's pushing back on the Q2 timeline. We agreed to cut the admin dashboard."
 → batch_create_items([
-    {type: "meeting", content: "Met with Sarah about Q2 timeline...", metadata: {attendees: ["Sarah"]}},
-    {type: "decision", content: "Cut admin dashboard from first release", parent_id: <meeting_id>}
-  ])
+   {type: "meeting", content: "Met with Sarah about Q2 timeline...", metadata: {attendees: ["Sarah"]}},
+   {type: "decision", content: "Cut admin dashboard from first release", parent_id: <meeting_id>}
+ ])
 → Response: "🤝 Meeting with Sarah logged. ⚖️ Decision captured: cut admin dashboard."
 
 (Entity extraction — Sarah, Q2 timeline — happens automatically after the conversation.)
 
-Input: "Dave recommended I watch Sleepless Night"
-→ create_item(type="recommendation", content="Sleepless Night (movie) — recommended by Dave",
-    summary="Movie recommendation from Dave", metadata={category: "movies", recommended_by: "Dave"})
-→ Response: "⭐ Saved: Sleepless Night (movie) — recommended by Dave"
+## Response Style
+- Confirm with a brief icon + summary.
+- NEVER explain internal data model details to the user.
+- "📋 Created list: Movies to Watch" — not a paragraph about types and schemas.

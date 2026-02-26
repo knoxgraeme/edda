@@ -2,8 +2,9 @@
 name: manage
 description: >
   Item modification skill. Handles completing, snoozing, editing, archiving items,
-  and processing confirmation approvals/rejections. Use when the user wants to
-  change an existing item or respond to a pending confirmation.
+  list management, and processing confirmation approvals/rejections. Use when the
+  user wants to change an existing item, manage a list, or respond to a pending
+  confirmation.
 allowed-tools:
   - search_items
   - get_item_by_id
@@ -15,6 +16,8 @@ allowed-tools:
   - get_list_contents
   - update_item
   - delete_item
+  - create_list
+  - update_list
   - confirm_pending
   - reject_pending
   - list_pending_items
@@ -42,35 +45,28 @@ allowed-tools:
 "never mind about X", "remove X", "I don't need that anymore"
 → Find item → update_item(status='archived')
 
+## List Management
+
+"rename my grocery list to Shopping"
+→ update_list(list_name="grocery", name="Shopping")
+
+"archive the Japan trip list"
+→ update_list(list_name="japan trip", status="archived")
+
+"move this item to my movies list"
+→ update_item(id=..., list_id=<movies_list_id>)
+
+"remove this from the list" / "take milk off the grocery list"
+→ update_item(id=..., list_id=null) — removes from list but keeps the item
+→ Or update_item(id=..., status="done") — marks complete (for tasks)
+→ Or update_item(id=..., status="archived") — archives it
+→ Ask the user which they mean if ambiguous.
+
 ## Bulk Operations
 "I got everything on the grocery list", "clear the packing list"
-→ search_items(type="list", query="grocery") to find the list
-→ get_list_contents(list_id) → update_item for each active item → status='done'
-→ For one-off lists (e.g. packing list): also update_item on the list itself → status='done'
-
-## Rename List
-"rename the grocery list to 'weekly groceries'"
-→ search_items(type="list", query="grocery") to find the list
-→ update_item(id, content="Weekly Groceries", metadata={...existing, normalized_name: "weekly groceries"})
-→ "Renamed list to Weekly Groceries."
-
-## Archive List
-"remove the packing list", "delete the grocery list"
-→ search_items(type="list", query="packing") to find the list
-→ get_list_contents(list_id) → update_item(status='archived') for EACH active child item
-→ THEN update_item on the list itself → status='archived'
-→ "Archived packing list and its 5 items."
-⚠️ Always archive children BEFORE the parent to prevent orphaned items.
-
-## Remove List Item
-"take eggs off the grocery list", "remove milk"
-→ search_items(type="list", query="grocery") to find the list
-→ get_list_contents(list_id) to find the specific item
-→ update_item(id, status='archived')
-
-## Discover Lists
-To find all lists including empty ones: search_items(type="list")
-The daily summary only shows lists with active items. Use search_items for a complete inventory.
+→ get_list_contents(list_name="grocery") to find the list and its items
+→ update_item for each active item → status='done'
+→ For one-off lists (e.g. packing list): also update_list(list_name=..., status='archived')
 
 ## Confirm / Reject Pending Items
 "yes do it", "approve the recipe type", "no don't archive those"

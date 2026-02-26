@@ -13,12 +13,14 @@ const {
   mockGetTopEntities,
   mockGetItemTypes,
   mockGetPendingConfirmationsCount,
+  mockGetAllLists,
 } = vi.hoisted(() => ({
   mockGetSettingsSync: vi.fn(),
   mockGetItemsByType: vi.fn().mockResolvedValue([]),
   mockGetTopEntities: vi.fn().mockResolvedValue([]),
   mockGetItemTypes: vi.fn().mockResolvedValue([]),
   mockGetPendingConfirmationsCount: vi.fn().mockResolvedValue(0),
+  mockGetAllLists: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@edda/db", () => ({
@@ -27,6 +29,7 @@ vi.mock("@edda/db", () => ({
   getTopEntities: mockGetTopEntities,
   getItemTypes: mockGetItemTypes,
   getPendingConfirmationsCount: mockGetPendingConfirmationsCount,
+  getAllLists: mockGetAllLists,
 }));
 
 import {
