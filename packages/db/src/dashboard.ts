@@ -3,8 +3,14 @@
  */
 
 import { getPool } from "./connection.js";
-import { ITEM_COLS } from "./items.js";
-import type { DashboardData, Item } from "./types.js";
+import { ITEM_COLS, QUALIFIED_ITEM_COLS } from "./items.js";
+import type { DashboardData, Item, List } from "./types.js";
+
+/** List columns aliased with list_ prefix to avoid collisions in JOINs with items */
+const ALIASED_LIST_COLS = `l.id AS list_id, l.name AS list_name, l.normalized_name AS list_normalized_name,
+  l.summary AS list_summary, l.icon AS list_icon, l.list_type AS list_list_type,
+  l.status AS list_status, l.embedding_model AS list_embedding_model,
+  l.metadata AS list_metadata, l.created_at AS list_created_at, l.updated_at AS list_updated_at`;
 
 export async function getDashboard(day?: string): Promise<DashboardData> {
   const pool = getPool();
@@ -38,13 +44,13 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
       [today],
     ),
     pool.query(
-      `SELECT p.content AS list_name, ${ITEM_COLS.split(",").map((c) => `li.${c.trim()}`).join(", ")}
-       FROM items p
-       JOIN items li ON li.parent_id = p.id
-       WHERE p.type = 'list' AND p.confirmed = true AND p.status = 'active'
-         AND li.type = 'list_item' AND li.confirmed = true AND li.status = 'active'
-       ORDER BY p.content, li.created_at
-       LIMIT 100`,
+      `SELECT ${ALIASED_LIST_COLS}, ${QUALIFIED_ITEM_COLS}
+       FROM lists l
+       JOIN items i ON i.list_id = l.id
+       WHERE l.status = 'active'
+         AND i.confirmed = true AND i.status = 'active'
+       ORDER BY l.name, i.created_at
+       LIMIT 200`,
     ),
     pool.query(
       `SELECT ${ITEM_COLS} FROM items WHERE confirmed = false ORDER BY created_at DESC
@@ -52,12 +58,30 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
     ),
   ]);
 
-  // Group list items by parent list name
-  const listMap: Record<string, Item[]> = {};
-  for (const row of lists.rows as (Item & { list_name: string })[]) {
-    const listName = row.list_name ?? "other";
-    if (!listMap[listName]) listMap[listName] = [];
-    listMap[listName].push(row);
+  // Group list items by list id, extracting aliased list_ columns
+  const listMap: Record<string, { list: List; items: Item[] }> = {};
+  for (const row of lists.rows as Record<string, unknown>[]) {
+    const lid = row.list_id as string;
+    if (!listMap[lid]) {
+      listMap[lid] = {
+        list: {
+          id: lid,
+          name: row.list_name as string,
+          normalized_name: row.list_normalized_name as string,
+          summary: (row.list_summary as string) ?? null,
+          icon: row.list_icon as string,
+          list_type: row.list_list_type as List["list_type"],
+          status: row.list_status as List["status"],
+          embedding: null,
+          embedding_model: (row.list_embedding_model as string) ?? null,
+          metadata: (row.list_metadata as Record<string, unknown>) ?? {},
+          created_at: row.list_created_at as string,
+          updated_at: row.list_updated_at as string,
+        },
+        items: [],
+      };
+    }
+    listMap[lid].items.push(row as unknown as Item);
   }
 
   return {

@@ -62,11 +62,21 @@ export function mockDbModule() {
     getItemById: vi.fn(),
     searchItems: vi.fn(),
     batchCreateItems: vi.fn(),
-    getListItems: vi.fn(),
     getTimeline: vi.fn(),
     getAgentKnowledge: vi.fn(),
     getItemsByType: vi.fn(),
     ITEM_COLS,
+
+    // lists.ts
+    createList: vi.fn(),
+    getListById: vi.fn(),
+    getListByName: vi.fn(),
+    getAllLists: vi.fn().mockResolvedValue([]),
+    getListItems: vi.fn(),
+    updateList: vi.fn(),
+    searchLists: vi.fn().mockResolvedValue([]),
+    LIST_COLS: `id, name, normalized_name, summary, icon, list_type,
+  status, embedding_model, metadata, created_at, updated_at`,
 
     // entities.ts
     upsertEntity: vi.fn(),

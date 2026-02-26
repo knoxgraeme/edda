@@ -29,7 +29,7 @@ describe("items", () => {
   // ── createItem ──────────────────────────────────────────────────
 
   describe("createItem", () => {
-    it("binds 12 parameters in correct order and uses ITEM_COLS in RETURNING", async () => {
+    it("binds 13 parameters in correct order and uses ITEM_COLS in RETURNING", async () => {
       const fakeItem = {
         id: "item-1",
         type: "note",
@@ -41,6 +41,7 @@ describe("items", () => {
         day: "2026-02-21",
         confirmed: true,
         parent_id: null,
+        list_id: null,
         embedding_model: null,
         pending_action: null,
         created_at: "2026-02-21",
@@ -59,6 +60,7 @@ describe("items", () => {
         day: "2026-02-21",
         confirmed: true,
         parent_id: "parent-1",
+        list_id: "list-1",
         embedding: [0.1, 0.2],
         embedding_model: "voyage-3",
         pending_action: "review",
@@ -71,8 +73,8 @@ describe("items", () => {
       expect(sql).toEqual(expect.stringContaining("INSERT INTO items"));
       expect(sql).toEqual(expect.stringContaining(`RETURNING ${ITEM_COLS}`));
 
-      // 12 parameters in order
-      expect(params).toHaveLength(12);
+      // 13 parameters in order
+      expect(params).toHaveLength(13);
       expect(params[0]).toBe("note"); // type
       expect(params[1]).toBe("hello"); // content
       expect(params[2]).toBe("sum"); // summary
@@ -82,9 +84,10 @@ describe("items", () => {
       expect(params[6]).toBe("2026-02-21"); // day
       expect(params[7]).toBe(true); // confirmed
       expect(params[8]).toBe("parent-1"); // parent_id
-      expect(params[9]).toBe(JSON.stringify([0.1, 0.2])); // embedding serialized
-      expect(params[10]).toBe("voyage-3"); // embedding_model
-      expect(params[11]).toBe("review"); // pending_action
+      expect(params[9]).toBe("list-1"); // list_id
+      expect(params[10]).toBe(JSON.stringify([0.1, 0.2])); // embedding serialized
+      expect(params[11]).toBe("voyage-3"); // embedding_model
+      expect(params[12]).toBe("review"); // pending_action
 
       expect(result).toEqual(fakeItem);
     });

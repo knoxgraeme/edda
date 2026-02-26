@@ -182,7 +182,7 @@ export function DashboardClient({
     });
   };
 
-  const listNames = Object.keys(data.lists);
+  const listIds = Object.keys(data.lists);
   const today = format(new Date(), "EEEE, MMMM d");
 
   return (
@@ -238,29 +238,29 @@ export function DashboardClient({
           }
         />
 
-        {listNames.length > 0 && (
+        {listIds.length > 0 && (
           <Card className="shadow-sm border-0 hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <List className="h-4 w-4 text-muted-foreground" />
                 Lists
                 <Badge variant="secondary" className="ml-auto">
-                  {listNames.length}
+                  {listIds.length}
                 </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {listNames.map((name) => {
-                const items = data.lists[name];
-                const isExpanded = expandedLists.has(name);
+              {listIds.map((listId) => {
+                const { list, items } = data.lists[listId];
+                const isExpanded = expandedLists.has(listId);
                 return (
-                  <div key={name} className="border-b last:border-0">
+                  <div key={listId} className="border-b last:border-0">
                     <button
                       type="button"
                       className="flex items-center justify-between w-full py-2.5 text-sm font-medium hover:text-foreground/80"
-                      onClick={() => toggleList(name)}
+                      onClick={() => toggleList(listId)}
                     >
-                      <span>{name}</span>
+                      <span>{list.icon} {list.name}</span>
                       <Badge variant="secondary">{items.length}</Badge>
                     </button>
                     {isExpanded &&
