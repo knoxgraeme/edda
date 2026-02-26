@@ -326,7 +326,7 @@ list might have metadata: {recommended_by: "Tom", category: "movie", source: "di
 
   const listsSection = lists.length > 0
     ? `\n\n## Active Lists\n${lists.map(l =>
-        `- ${l.icon} **${l.name}**${l.summary ? ` — ${l.summary}` : ''} (${l.item_count} items)`
+        `- ${l.icon} **${l.name}** (id: ${l.id})${l.summary ? ` — ${l.summary}` : ''} (${l.item_count} items)`
       ).join("\n")}`
     : '';
 

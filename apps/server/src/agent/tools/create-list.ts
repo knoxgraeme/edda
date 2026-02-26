@@ -8,15 +8,15 @@ import { createList, getListByName, getSettingsSync } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const createListSchema = z.object({
-  name: z.string().describe("The list name (e.g. 'Grocery List', 'Movies to Watch')"),
-  summary: z.string().optional().describe("Description of what the list is for — improves recall"),
+  name: z.string().min(1).max(200).describe("The list name (e.g. 'Grocery List', 'Movies to Watch')"),
+  summary: z.string().max(2000).optional().describe("Description of what the list is for — improves recall"),
   list_type: z
     .enum(["rolling", "one_off"])
     .default("rolling")
     .describe(
       "'rolling' for recurring lists (grocery, movies), 'one_off' for temporary (trip packing)",
     ),
-  icon: z.string().optional().describe("Emoji icon for the list (default: 📋)"),
+  icon: z.string().max(10).optional().describe("Emoji icon for the list (default: 📋)"),
 });
 
 export const createListTool = tool(

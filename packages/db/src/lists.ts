@@ -53,10 +53,16 @@ export async function getAllLists(
   const pool = getPool();
   const status = options.status ?? 'active';
   const { rows } = await pool.query(
-    `SELECT ${LIST_COLS},
-       (SELECT count(*) FROM items
-        WHERE list_id = l.id AND confirmed = true AND status = 'active') AS item_count
+    `SELECT l.id, l.name, l.normalized_name, l.summary, l.icon, l.list_type,
+       l.status, l.embedding_model, l.metadata, l.created_at, l.updated_at,
+       COALESCE(ic.cnt, 0) AS item_count
      FROM lists l
+     LEFT JOIN (
+       SELECT list_id, count(*) AS cnt
+       FROM items
+       WHERE confirmed = true AND status = 'active' AND list_id IS NOT NULL
+       GROUP BY list_id
+     ) ic ON ic.list_id = l.id
      WHERE l.status = $1
      ORDER BY l.updated_at DESC`,
     [status],

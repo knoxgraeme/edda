@@ -6,11 +6,11 @@ import { getPool } from "./connection.js";
 import { ITEM_COLS, QUALIFIED_ITEM_COLS } from "./items.js";
 import type { DashboardData, Item, List } from "./types.js";
 
-/** List columns aliased with list_ prefix to avoid collisions in JOINs with items */
-const ALIASED_LIST_COLS = `l.id AS list_id, l.name AS list_name, l.normalized_name AS list_normalized_name,
-  l.summary AS list_summary, l.icon AS list_icon, l.list_type AS list_list_type,
-  l.status AS list_status, l.embedding_model AS list_embedding_model,
-  l.metadata AS list_metadata, l.created_at AS list_created_at, l.updated_at AS list_updated_at`;
+/** List columns aliased with _l_ prefix to avoid collisions in JOINs with items */
+const ALIASED_LIST_COLS = `l.id AS _l_id, l.name AS _l_name, l.normalized_name AS _l_normalized_name,
+  l.summary AS _l_summary, l.icon AS _l_icon, l.list_type AS _l_list_type,
+  l.status AS _l_status, l.embedding_model AS _l_embedding_model,
+  l.metadata AS _l_metadata, l.created_at AS _l_created_at, l.updated_at AS _l_updated_at`;
 
 export async function getDashboard(day?: string): Promise<DashboardData> {
   const pool = getPool();
@@ -46,9 +46,9 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
     pool.query(
       `SELECT ${ALIASED_LIST_COLS}, ${QUALIFIED_ITEM_COLS}
        FROM lists l
-       JOIN items i ON i.list_id = l.id
-       WHERE l.status = 'active'
+       LEFT JOIN items i ON i.list_id = l.id
          AND i.confirmed = true AND i.status = 'active'
+       WHERE l.status = 'active'
        ORDER BY l.name, i.created_at
        LIMIT 200`,
     ),
@@ -58,30 +58,39 @@ export async function getDashboard(day?: string): Promise<DashboardData> {
     ),
   ]);
 
-  // Group list items by list id, extracting aliased list_ columns
+  // Group list items by list id, extracting aliased _l_ columns
   const listMap: Record<string, { list: List; items: Item[] }> = {};
   for (const row of lists.rows as Record<string, unknown>[]) {
-    const lid = row.list_id as string;
+    const lid = row._l_id as string;
     if (!listMap[lid]) {
       listMap[lid] = {
         list: {
           id: lid,
-          name: row.list_name as string,
-          normalized_name: row.list_normalized_name as string,
-          summary: (row.list_summary as string) ?? null,
-          icon: row.list_icon as string,
-          list_type: row.list_list_type as List["list_type"],
-          status: row.list_status as List["status"],
+          name: row._l_name as string,
+          normalized_name: row._l_normalized_name as string,
+          summary: (row._l_summary as string) ?? null,
+          icon: row._l_icon as string,
+          list_type: row._l_list_type as List["list_type"],
+          status: row._l_status as List["status"],
           embedding: null,
-          embedding_model: (row.list_embedding_model as string) ?? null,
-          metadata: (row.list_metadata as Record<string, unknown>) ?? {},
-          created_at: row.list_created_at as string,
-          updated_at: row.list_updated_at as string,
+          embedding_model: (row._l_embedding_model as string) ?? null,
+          metadata: (row._l_metadata as Record<string, unknown>) ?? {},
+          created_at: row._l_created_at as string,
+          updated_at: row._l_updated_at as string,
         },
         items: [],
       };
     }
-    listMap[lid].items.push(row as unknown as Item);
+    // LEFT JOIN produces NULL item columns for empty lists — skip those rows
+    if (row.id != null) {
+      const item: Record<string, unknown> = {};
+      for (const key of Object.keys(row)) {
+        if (!key.startsWith("_l_")) {
+          item[key] = row[key];
+        }
+      }
+      listMap[lid].items.push(item as unknown as Item);
+    }
   }
 
   return {

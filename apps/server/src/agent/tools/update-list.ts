@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getListByName, getListById, updateList, getSettingsSync } from "@edda/db";
+import { getListByName, getListById, updateList, getSettingsSync, type List } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const updateListSchema = z.object({
@@ -17,9 +17,9 @@ export const updateListSchema = z.object({
     .uuid()
     .optional()
     .describe("List UUID. Provide list_name or list_id."),
-  name: z.string().optional().describe("New name for the list"),
-  summary: z.string().optional().describe("New description"),
-  icon: z.string().optional().describe("New emoji icon"),
+  name: z.string().min(1).max(200).optional().describe("New name for the list"),
+  summary: z.string().max(2000).optional().describe("New description"),
+  icon: z.string().max(10).optional().describe("New emoji icon"),
   status: z
     .enum(["active", "archived"])
     .optional()
@@ -45,7 +45,7 @@ export const updateListTool = tool(
     }
 
     // Build updates
-    const updates: Record<string, unknown> = {};
+    const updates: Partial<Pick<List, 'name' | 'summary' | 'icon' | 'status' | 'list_type' | 'embedding' | 'embedding_model'>> = {};
     if (name !== undefined) updates.name = name;
     if (summary !== undefined) updates.summary = summary;
     if (icon !== undefined) updates.icon = icon;
@@ -56,12 +56,13 @@ export const updateListTool = tool(
       return JSON.stringify({ error: "No fields to update" });
     }
 
-    // Re-embed if name changes
-    if (name !== undefined) {
+    // Re-embed if name or summary changes
+    if (name !== undefined || summary !== undefined) {
       const settings = getSettingsSync();
+      const embeddingName = name ?? list.name;
       const embeddingSummary = summary ?? list.summary;
       updates.embedding = await embed(
-        buildEmbeddingText("list", name, embeddingSummary),
+        buildEmbeddingText("list", embeddingName, embeddingSummary),
       );
       updates.embedding_model = settings.embedding_model;
     }

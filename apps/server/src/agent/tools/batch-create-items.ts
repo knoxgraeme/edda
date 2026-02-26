@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { batchCreateItems, getSettingsSync, getListByName, getListById } from "@edda/db";
+import { batchCreateItems, getSettingsSync, getListByName, type List } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
 import type { EmbeddingContext } from "../../embed/index.js";
 import { getAgentName } from "../tool-helpers.js";
@@ -31,39 +31,47 @@ export const batchCreateItemsTool = tool(
     const settings = getSettingsSync();
     const today = new Date().toISOString().split("T")[0];
 
-    // Resolve list names to IDs (cached)
-    const listCache = new Map<string, string>(); // name → id
+    // Resolve list names to full List objects (cached)
+    const listCache = new Map<string, List>(); // name → List
     for (const item of items) {
       if (item.list_name && !item.list_id && !listCache.has(item.list_name)) {
         const list = await getListByName(item.list_name);
-        if (list) listCache.set(item.list_name, list.id);
+        if (list) listCache.set(item.list_name, list);
       }
     }
 
-    // Build embedding context per list
-    const listDetailCache = new Map<string, EmbeddingContext>();
-    const resolvedListIds = new Set<string>();
+    // Pre-flight: fail if any list_name could not be resolved
+    const unresolvedLists: string[] = [];
     for (const item of items) {
-      const lid = item.list_id ?? (item.list_name ? listCache.get(item.list_name) : undefined);
-      if (lid) resolvedListIds.add(lid);
-    }
-    for (const lid of resolvedListIds) {
-      const list = await getListById(lid);
-      if (list) {
-        listDetailCache.set(lid, { listName: list.name, listSummary: list.summary ?? undefined });
+      if (item.list_name && !item.list_id && !listCache.has(item.list_name)) {
+        unresolvedLists.push(item.list_name);
       }
+    }
+    if (unresolvedLists.length > 0) {
+      return JSON.stringify({
+        error: `Lists not found: ${[...new Set(unresolvedLists)].join(', ')}. Create them first with create_list.`,
+      });
+    }
+
+    // Build embedding context directly from cached List objects
+    const embeddingContextByListId = new Map<string, EmbeddingContext>();
+    for (const list of listCache.values()) {
+      embeddingContextByListId.set(list.id, {
+        listName: list.name,
+        listSummary: list.summary ?? undefined,
+      });
     }
 
     const embeddings = await embedBatch(
       items.map((item) => {
-        const lid = item.list_id ?? (item.list_name ? listCache.get(item.list_name) : undefined);
-        const ctx = lid ? listDetailCache.get(lid) ?? null : null;
+        const lid = item.list_id ?? (item.list_name ? listCache.get(item.list_name)?.id : undefined);
+        const ctx = lid ? embeddingContextByListId.get(lid) ?? null : null;
         return buildEmbeddingText(item.type, item.content, item.summary, ctx);
       }),
     );
 
     const inputs = items.map((item, i) => {
-      const resolvedListId = item.list_id ?? (item.list_name ? listCache.get(item.list_name) : undefined);
+      const resolvedListId = item.list_id ?? (item.list_name ? listCache.get(item.list_name)?.id : undefined);
       return {
         content: item.content,
         summary: item.summary,
