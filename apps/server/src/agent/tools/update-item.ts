@@ -28,10 +28,28 @@ export const updateItemSchema = z.object({
     .nullable()
     .optional()
     .describe("Move item to a list, or null to remove from list"),
+  superseded_by: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("ID of the item that supersedes this one (marks it as obsolete)"),
+  last_reinforced_at: z
+    .string()
+    .optional()
+    .describe("ISO timestamp of the last reinforcement (near-duplicate detection)"),
+  confirmed: z
+    .boolean()
+    .optional()
+    .describe("Whether this item is confirmed"),
+  pending_action: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Pending review action (e.g. 'confirm', 'merge'), or null to clear"),
 });
 
 export const updateItemTool = tool(
-  async ({ item_id, status, content, metadata, parent_id, list_id }) => {
+  async ({ item_id, status, content, metadata, parent_id, list_id, superseded_by, last_reinforced_at, confirmed, pending_action }) => {
     const updates: Parameters<typeof updateItem>[1] = {};
 
     if (status !== undefined) {
@@ -62,6 +80,10 @@ export const updateItemTool = tool(
     if (metadata !== undefined) updates.metadata = metadata;
     if (parent_id !== undefined) updates.parent_id = parent_id;
     if (list_id !== undefined) updates.list_id = list_id;
+    if (superseded_by !== undefined) updates.superseded_by = superseded_by;
+    if (last_reinforced_at !== undefined) updates.last_reinforced_at = last_reinforced_at;
+    if (confirmed !== undefined) updates.confirmed = confirmed;
+    if (pending_action !== undefined) updates.pending_action = pending_action;
 
     const item = await updateItem(item_id, updates);
 

@@ -22,12 +22,24 @@ export const createItemSchema = z.object({
   parent_id: z.string().optional().describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists — use list_id."),
   list_id: z.string().uuid().optional().describe("List UUID to add this item to"),
   list_name: z.string().optional().describe("List name to add this item to (resolved automatically)"),
+  source: z
+    .enum(["chat", "cli", "api", "cron", "agent", "posthook"])
+    .optional()
+    .describe("Origin of this item (default: chat). Use 'posthook' for post-process extractions."),
+  confirmed: z
+    .boolean()
+    .optional()
+    .describe("Whether this item is confirmed (default: true). Set false for low-confidence extractions."),
+  pending_action: z
+    .string()
+    .optional()
+    .describe("Pending review action (e.g. 'confirm', 'merge'). Used with confirmed=false."),
 });
 
 const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);
 
 export const createItemTool = tool(
-  async ({ type, content, summary, metadata, day, status, parent_id, list_id, list_name }, config) => {
+  async ({ type, content, summary, metadata, day, status, parent_id, list_id, list_name, source, confirmed, pending_action }, config) => {
     const agentName = getAgentName(config);
     const finalMetadata = agentName
       ? { ...(metadata ?? {}), created_by: agentName }
@@ -92,7 +104,9 @@ export const createItemTool = tool(
       list_id: resolvedListId ?? undefined,
       embedding,
       embedding_model: settings.embedding_model,
-      source: "chat",
+      source: source ?? "chat",
+      confirmed,
+      pending_action,
     });
 
     return JSON.stringify({

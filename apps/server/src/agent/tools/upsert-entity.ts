@@ -14,12 +14,21 @@ export const upsertEntitySchema = z.object({
     .describe("Entity type"),
   aliases: z.array(z.string()).optional().describe("Alternative names for the entity"),
   description: z.string().optional().describe("Brief description of the entity"),
+  confirmed: z
+    .boolean()
+    .optional()
+    .describe("Whether this entity is confirmed (default: true). Set false for uncertain entity merges."),
+  pending_action: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Pending review action (e.g. 'confirm', 'merge'), or null to clear"),
 });
 
 export const upsertEntityTool = tool(
-  async ({ name, type, aliases, description }) => {
+  async ({ name, type, aliases, description, confirmed, pending_action }) => {
     const embedding = await embed(`${type}: ${name}. ${description || ""}`);
-    const entity = await upsertEntity({ name, type, aliases, description, embedding });
+    const entity = await upsertEntity({ name, type, aliases, description, embedding, confirmed, pending_action });
     return JSON.stringify({ entity_id: entity.id, status: "upserted" });
   },
   {
