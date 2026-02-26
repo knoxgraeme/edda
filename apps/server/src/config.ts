@@ -28,6 +28,9 @@ const envSchema = z.object({
   SERPER_API_KEY: z.string().optional(),
   SERPAPI_API_KEY: z.string().optional(),
 
+  // Community tools (optional)
+  WOLFRAM_APP_ID: z.string().min(1).optional(),
+
   // Cron runner
   CRON_RUNNER: z.enum(['standalone', 'platform']).default('standalone'),
 
