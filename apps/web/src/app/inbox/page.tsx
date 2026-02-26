@@ -1,17 +1,14 @@
-/**
- * Notification inbox — pending confirmations
- *
- * Server component that fetches all unconfirmed items, entities, and item types.
- * Client component handles approve/reject actions.
- */
-
-import { getPendingItems } from "@edda/db";
+import { getPendingItems, getItemsByType } from "@edda/db";
 import { InboxClient } from "./inbox-client";
 
 export default async function InboxPage() {
   let pending;
+  let notifications;
   try {
-    pending = await getPendingItems();
+    [pending, notifications] = await Promise.all([
+      getPendingItems(),
+      getItemsByType("notification", "active", 50),
+    ]);
   } catch (err) {
     console.error("Failed to load inbox:", err);
     return (
@@ -25,5 +22,5 @@ export default async function InboxPage() {
     );
   }
 
-  return <InboxClient items={pending} />;
+  return <InboxClient items={pending} notifications={notifications ?? []} />;
 }

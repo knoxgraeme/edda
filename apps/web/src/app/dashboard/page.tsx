@@ -5,16 +5,20 @@
  * Client components handle quick actions (complete, snooze, archive).
  */
 
-import { getDashboard, getPendingConfirmationsCount } from "@edda/db";
+import { getDashboard, getPendingConfirmationsCount, getRecentTaskRuns, getRunningTaskCount } from "@edda/db";
 import { DashboardClient } from "./dashboard-client";
 
 export default async function DashboardPage() {
   let data;
   let pendingCount;
+  let recentRuns;
+  let activeCount;
   try {
-    [data, pendingCount] = await Promise.all([
+    [data, pendingCount, recentRuns, activeCount] = await Promise.all([
       getDashboard(),
       getPendingConfirmationsCount(),
+      getRecentTaskRuns({ limit: 5 }),
+      getRunningTaskCount(),
     ]);
   } catch (err) {
     console.error("Failed to load dashboard:", err);
@@ -29,5 +33,12 @@ export default async function DashboardPage() {
     );
   }
 
-  return <DashboardClient data={data} pendingCount={pendingCount} />;
+  return (
+    <DashboardClient
+      data={data}
+      pendingCount={pendingCount}
+      recentRuns={recentRuns}
+      activeCount={activeCount}
+    />
+  );
 }

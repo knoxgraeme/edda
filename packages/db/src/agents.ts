@@ -139,6 +139,12 @@ export async function updateAgent(
   return rows[0] as Agent;
 }
 
+export async function getAgentNames(): Promise<string[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT name FROM agents ORDER BY name`);
+  return rows.map((r: { name: string }) => r.name);
+}
+
 export async function deleteAgent(id: string): Promise<void> {
   const pool = getPool();
   const { rowCount } = await pool.query(`DELETE FROM agents WHERE id = $1`, [id]);

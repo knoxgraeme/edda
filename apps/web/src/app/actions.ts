@@ -45,6 +45,12 @@ const UpdateSettingsSchema = z
   })
   .strict();
 
+const CRON_FIELD_RE = /^(\*|(\d+(-\d+)?(,\d+(-\d+)?)*)(\/\d+)?|\*\/\d+)$/;
+function isValidCron(expr: string): boolean {
+  const fields = expr.trim().split(/\s+/);
+  return fields.length === 5 && fields.every((f) => CRON_FIELD_RE.test(f));
+}
+
 const VALID_TABLES = new Set(["items", "entities", "item_types"] as const);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_STATUSES = new Set(["active", "done", "archived", "snoozed"] as const);
@@ -222,6 +228,8 @@ export async function createAgentAction(data: {
   context_mode?: AgentContextMode;
   trigger?: AgentTrigger;
   tools?: string[];
+  subagents?: string[];
+  model_settings_key?: string | null;
   metadata?: Record<string, unknown>;
 }) {
   validateAgentName(data.name);
@@ -250,6 +258,8 @@ export async function createAgentAction(data: {
       context_mode: contextMode,
       trigger: data.trigger,
       tools: data.tools ?? [],
+      subagents: data.subagents ?? [],
+      model_settings_key: data.model_settings_key ?? undefined,
       metadata: data.metadata,
     });
     revalidatePath("/agents");
@@ -274,6 +284,8 @@ export async function updateAgentAction(
     context_mode: AgentContextMode;
     trigger: AgentTrigger | null;
     tools: string[];
+    subagents: string[];
+    model_settings_key: string | null;
     enabled: boolean;
     metadata: Record<string, unknown>;
   }>,
@@ -330,6 +342,7 @@ export async function createScheduleAction(data: {
   if (!data.name || data.name.length > 100)
     throw new Error("Schedule name is required (max 100 chars)");
   if (!data.cron || data.cron.length > 50) throw new Error("Cron expression is required");
+  if (!isValidCron(data.cron)) throw new Error("Invalid cron expression — expected 5 fields: minute hour day month weekday");
   if (!data.prompt || data.prompt.length > 5000)
     throw new Error("Prompt is required (max 5000 chars)");
 
@@ -366,6 +379,21 @@ export async function updateScheduleAction(
   }>,
 ) {
   if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  if (updates.cron !== undefined && (typeof updates.cron !== "string" || updates.cron.length > 50 || !isValidCron(updates.cron)))
+    throw new Error("Invalid cron expression — expected 5 fields: minute hour day month weekday");
+  if (
+    updates.prompt !== undefined &&
+    (typeof updates.prompt !== "string" || updates.prompt.length > 5000)
+  )
+    throw new Error("Prompt is too long (max 5000 chars)");
+  if (
+    updates.context_mode !== undefined &&
+    updates.context_mode !== null &&
+    !VALID_CONTEXT_MODES.has(updates.context_mode as AgentContextMode)
+  )
+    throw new Error("Invalid context_mode");
+  if (updates.enabled !== undefined && typeof updates.enabled !== "boolean")
+    throw new Error("enabled must be a boolean");
   try {
     await updateScheduleDb(id, updates);
     revalidatePath(`/agents/${agentName}`);

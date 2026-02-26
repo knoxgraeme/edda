@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import {
   CheckCircle2,
   Clock,
@@ -11,12 +11,15 @@ import {
   CalendarClock,
   Archive,
   Moon,
+  Bot,
+  Activity,
 } from "lucide-react";
-import type { DashboardData, Item } from "../types/db";
+import type { DashboardData, Item, TaskRun } from "../types/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateItemStatusAction } from "../actions";
+import { formatDuration, statusVariant } from "@/lib/format";
 
 function ItemRow({ item, showType }: { item: Item; showType?: boolean }) {
   const [isPending, startTransition] = useTransition();
@@ -127,9 +130,13 @@ function SectionCard({
 export function DashboardClient({
   data,
   pendingCount,
+  recentRuns,
+  activeCount,
 }: {
   data: DashboardData;
   pendingCount: number;
+  recentRuns: TaskRun[];
+  activeCount: number;
 }) {
   const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
 
@@ -230,6 +237,63 @@ export function DashboardClient({
             showType
           />
         )}
+
+        {/* Agent Activity */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bot className="h-4 w-4 text-muted-foreground" />
+              Agent Activity
+              {activeCount > 0 && (
+                <Badge className="ml-auto gap-1">
+                  <Activity className="h-3 w-3" />
+                  {activeCount} running
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentRuns.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No recent agent runs.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentRuns.map((run) => (
+                  <div
+                    key={run.id}
+                    className="flex items-center justify-between py-1.5 border-b last:border-0 text-sm"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge
+                        variant={statusVariant(run.status)}
+                        className="text-xs"
+                      >
+                        {run.status}
+                      </Badge>
+                      <span className="font-medium truncate">{run.agent_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                      {run.duration_ms != null && (
+                        <span>{formatDuration(run.duration_ms)}</span>
+                      )}
+                      {run.started_at && (
+                        <span>
+                          {formatDistanceToNow(new Date(run.started_at), {
+                            addSuffix: true,
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {recentRuns.length >= 5 && (
+                  <Link href="/agents" className="text-xs text-muted-foreground hover:text-foreground">
+                    View all agent activity
+                  </Link>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </main>
   );
