@@ -20,7 +20,7 @@ import {
   type Settings,
   type Entity,
   type Item,
-  type AgentContextMode,
+  type ThreadLifetime,
   type AgentTrigger,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
@@ -166,7 +166,7 @@ export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
 const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
 const AGENT_NAME_MAX_LEN = 100;
 
-const VALID_CONTEXT_MODES = new Set<AgentContextMode>(["isolated", "daily", "persistent"]);
+const VALID_THREAD_LIFETIMES = new Set<ThreadLifetime>(["ephemeral", "daily", "persistent"]);
 const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "on_demand"]);
 
 // Default agent cannot be deleted — checked dynamically via settings
@@ -199,8 +199,8 @@ function validateAgentUpdates(updates: Record<string, unknown>): void {
       throw new Error(`System prompt must be a string (max ${MAX_SYSTEM_PROMPT_LEN} chars)`);
     }
   }
-  if (updates.context_mode != null && !VALID_CONTEXT_MODES.has(updates.context_mode as AgentContextMode)) {
-    throw new Error("Invalid context_mode");
+  if (updates.thread_lifetime != null && !VALID_THREAD_LIFETIMES.has(updates.thread_lifetime as ThreadLifetime)) {
+    throw new Error("Invalid thread_lifetime");
   }
   if (updates.trigger != null && updates.trigger !== null && !VALID_TRIGGERS.has(updates.trigger as AgentTrigger)) {
     throw new Error("Invalid trigger");
@@ -225,7 +225,7 @@ export async function createAgentAction(data: {
   description: string;
   system_prompt?: string;
   skills?: string[];
-  context_mode?: AgentContextMode;
+  thread_lifetime?: ThreadLifetime;
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
@@ -241,9 +241,9 @@ export async function createAgentAction(data: {
     throw new Error(`System prompt too long (max ${MAX_SYSTEM_PROMPT_LEN} chars)`);
   }
 
-  const contextMode = data.context_mode ?? "isolated";
-  if (!VALID_CONTEXT_MODES.has(contextMode)) {
-    throw new Error("Invalid context_mode");
+  const threadLifetime = data.thread_lifetime ?? "ephemeral";
+  if (!VALID_THREAD_LIFETIMES.has(threadLifetime)) {
+    throw new Error("Invalid thread_lifetime");
   }
   if (data.trigger && !VALID_TRIGGERS.has(data.trigger)) {
     throw new Error("Invalid trigger");
@@ -255,7 +255,7 @@ export async function createAgentAction(data: {
       description: data.description,
       system_prompt: data.system_prompt,
       skills: data.skills ?? [],
-      context_mode: contextMode,
+      thread_lifetime: threadLifetime,
       trigger: data.trigger,
       tools: data.tools ?? [],
       subagents: data.subagents ?? [],
@@ -281,7 +281,7 @@ export async function updateAgentAction(
     description: string;
     system_prompt: string | null;
     skills: string[];
-    context_mode: AgentContextMode;
+    thread_lifetime: ThreadLifetime;
     trigger: AgentTrigger | null;
     tools: string[];
     subagents: string[];
@@ -336,7 +336,7 @@ export async function createScheduleAction(data: {
   name: string;
   cron: string;
   prompt: string;
-  context_mode?: AgentContextMode;
+  thread_lifetime?: ThreadLifetime;
 }) {
   validateAgentName(data.agent_name);
   if (!data.name || data.name.length > 100)
@@ -355,7 +355,7 @@ export async function createScheduleAction(data: {
       name: data.name,
       cron: data.cron,
       prompt: data.prompt,
-      context_mode: data.context_mode,
+      thread_lifetime: data.thread_lifetime,
     });
     revalidatePath(`/agents/${data.agent_name}`);
     return schedule;
@@ -374,7 +374,7 @@ export async function updateScheduleAction(
   updates: Partial<{
     cron: string;
     prompt: string;
-    context_mode: AgentContextMode | null;
+    thread_lifetime: ThreadLifetime | null;
     enabled: boolean;
   }>,
 ) {
@@ -387,11 +387,11 @@ export async function updateScheduleAction(
   )
     throw new Error("Prompt is too long (max 5000 chars)");
   if (
-    updates.context_mode !== undefined &&
-    updates.context_mode !== null &&
-    !VALID_CONTEXT_MODES.has(updates.context_mode as AgentContextMode)
+    updates.thread_lifetime !== undefined &&
+    updates.thread_lifetime !== null &&
+    !VALID_THREAD_LIFETIMES.has(updates.thread_lifetime as ThreadLifetime)
   )
-    throw new Error("Invalid context_mode");
+    throw new Error("Invalid thread_lifetime");
   if (updates.enabled !== undefined && typeof updates.enabled !== "boolean")
     throw new Error("enabled must be a boolean");
   try {

@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import type { Agent, TaskRun, AgentSchedule, AgentContextMode } from "../../types/db";
+import type { Agent, TaskRun, AgentSchedule, ThreadLifetime } from "../../types/db";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,7 +62,7 @@ function ScheduleDialogInner({
   const [name, setName] = useState(schedule?.name ?? "");
   const [cron, setCron] = useState(schedule?.cron ?? "");
   const [prompt, setPrompt] = useState(schedule?.prompt ?? "");
-  const [contextMode, setContextMode] = useState(schedule?.context_mode ?? "");
+  const [threadLifetime, setThreadLifetime] = useState(schedule?.thread_lifetime ?? "");
 
   const isEdit = !!schedule;
   const cronValid = cron.length > 0 && isValidCron(cron);
@@ -76,7 +76,7 @@ function ScheduleDialogInner({
           await updateScheduleAction(schedule.id, agentName, {
             cron,
             prompt,
-            context_mode: (contextMode || null) as AgentContextMode | null,
+            thread_lifetime: (threadLifetime || null) as ThreadLifetime | null,
           });
           toast.success("Schedule updated");
         } else {
@@ -85,7 +85,7 @@ function ScheduleDialogInner({
             name,
             cron,
             prompt,
-            context_mode: contextMode ? (contextMode as AgentContextMode) : undefined,
+            thread_lifetime: threadLifetime ? (threadLifetime as ThreadLifetime) : undefined,
           });
           toast.success("Schedule created");
         }
@@ -148,14 +148,14 @@ function ScheduleDialogInner({
           />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="sched-context">Context Mode Override</Label>
+          <Label htmlFor="sched-context">Thread Lifetime Override</Label>
           <Select
             id="sched-context"
-            value={contextMode}
-            onChange={(e) => setContextMode(e.target.value)}
+            value={threadLifetime}
+            onChange={(e) => setThreadLifetime(e.target.value)}
           >
             <option value="">Use agent default</option>
-            <option value="isolated">Isolated</option>
+            <option value="ephemeral">Ephemeral</option>
             <option value="daily">Daily</option>
             <option value="persistent">Persistent</option>
           </Select>
@@ -224,7 +224,7 @@ function OverviewTab({
 
   // Editable fields
   const [description, setDescription] = useState(agent.description);
-  const [contextMode, setContextMode] = useState(agent.context_mode);
+  const [threadLifetime, setThreadLifetime] = useState(agent.thread_lifetime);
   const [trigger, setTrigger] = useState<"on_demand" | "schedule">(agent.trigger ?? "on_demand");
   const [modelKey, setModelKey] = useState(agent.model_settings_key ?? "");
   const [skills, setSkills] = useState<Set<string>>(new Set(agent.skills));
@@ -255,7 +255,7 @@ function OverviewTab({
       try {
         await updateAgentAction(agent.name, {
           description,
-          context_mode: contextMode,
+          thread_lifetime: threadLifetime,
           trigger: trigger as "on_demand" | "schedule",
           model_settings_key: modelKey || null,
           skills: Array.from(skills),
@@ -322,12 +322,12 @@ function OverviewTab({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>Context Mode</Label>
+                  <Label>Thread Lifetime</Label>
                   <Select
-                    value={contextMode}
-                    onChange={(e) => setContextMode(e.target.value as AgentContextMode)}
+                    value={threadLifetime}
+                    onChange={(e) => setThreadLifetime(e.target.value as ThreadLifetime)}
                   >
-                    <option value="isolated">Isolated</option>
+                    <option value="ephemeral">Ephemeral</option>
                     <option value="daily">Daily</option>
                     <option value="persistent">Persistent</option>
                   </Select>
@@ -404,8 +404,8 @@ function OverviewTab({
               <p className="text-sm text-muted-foreground">{agent.description}</p>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Context mode:</span>{" "}
-                  <Badge variant="outline">{agent.context_mode}</Badge>
+                  <span className="text-muted-foreground">Thread lifetime:</span>{" "}
+                  <Badge variant="outline">{agent.thread_lifetime}</Badge>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Trigger:</span>{" "}
@@ -676,9 +676,9 @@ function SchedulesTab({
                     <Badge variant="outline" className="text-xs font-mono">
                       {sched.cron}
                     </Badge>
-                    {sched.context_mode && (
+                    {sched.thread_lifetime && (
                       <Badge variant="secondary" className="text-xs">
-                        {sched.context_mode}
+                        {sched.thread_lifetime}
                       </Badge>
                     )}
                   </div>

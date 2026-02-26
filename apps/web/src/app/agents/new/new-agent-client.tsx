@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import type { AgentContextMode } from "../../types/db";
+import type { ThreadLifetime } from "../../types/db";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,7 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
   const [systemPrompt, setSystemPrompt] = useState("");
 
   // Configuration
-  const [contextMode, setContextMode] = useState<AgentContextMode>("isolated");
+  const [threadLifetime, setThreadLifetime] = useState<ThreadLifetime>("ephemeral");
   const [trigger, setTrigger] = useState("on_demand");
   const [modelKey, setModelKey] = useState("");
 
@@ -65,7 +65,7 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
           description,
           system_prompt: systemPrompt || undefined,
           skills: Array.from(skills),
-          context_mode: contextMode,
+          thread_lifetime: threadLifetime,
           trigger: trigger as "on_demand" | "schedule",
           tools: tools
             .split(",")
@@ -148,13 +148,13 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
           <CardContent className="grid gap-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="context_mode">Context Mode</Label>
+                <Label htmlFor="thread_lifetime">Thread Lifetime</Label>
                 <Select
-                  id="context_mode"
-                  value={contextMode}
-                  onChange={(e) => setContextMode(e.target.value as AgentContextMode)}
+                  id="thread_lifetime"
+                  value={threadLifetime}
+                  onChange={(e) => setThreadLifetime(e.target.value as ThreadLifetime)}
                 >
-                  <option value="isolated">Isolated (unique thread per run)</option>
+                  <option value="ephemeral">Ephemeral (new thread every run)</option>
                   <option value="daily">Daily (shared thread per day)</option>
                   <option value="persistent">Persistent (single shared thread)</option>
                 </Select>

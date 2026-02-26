@@ -124,24 +124,23 @@ Thread scoping is controlled by `metadata.thread_scope` on the agent (agent-leve
 
 Inspired by OpenClaw's `session.dmScope`, which is also set per-agent. A personal assistant (edda) wants `shared` — it shouldn't matter which device you're on. A multi-user or domain-specific agent might want `per_channel`.
 
-```typescript
-// In agent.metadata (no migration needed — JSONB)
-{
-  "thread_scope": "shared",     // or "per_channel"
-  "stores": { ... },
-  "filesystem": { ... }
-}
+`thread_scope` is a simple enum — belongs as a column, not in `metadata`. `metadata` is for complex nested structures (`stores`, `filesystem`). Simple queryable values with CHECK constraints and clear defaults belong as columns.
+
+```sql
+-- In the agent_channels migration (or a separate agents migration)
+ALTER TABLE agents ADD COLUMN thread_scope TEXT NOT NULL DEFAULT 'shared'
+  CHECK (thread_scope IN ('shared', 'per_channel'));
 ```
 
-Thread ID resolution based on `context_mode` × `thread_scope`:
+Thread ID resolution based on `thread_lifetime` × `thread_scope`:
 
 | Context Mode | `shared` | `per_channel` |
 |---|---|---|
-| `isolated` | `task-{agent}-{uuid}` | `task-{agent}-{uuid}` |
+| `ephemeral` | `task-{agent}-{uuid}` | `task-{agent}-{uuid}` |
 | `daily` | `task-{agent}-{date}` | `task-{agent}-{date}-{platform}:{external_id}` |
 | `persistent` | `task-{agent}` | `task-{agent}-{platform}:{external_id}` |
 
-- `isolated` always gets a fresh UUID regardless of scope — no continuity by definition.
+- `ephemeral` always gets a fresh UUID regardless of scope — no continuity by definition.
 - `shared` + `persistent` = one thread for everything (web, Telegram, WhatsApp, cron). The agent sees the full conversation across all platforms.
 - `per_channel` + `persistent` = separate threads per channel link. Each platform has its own conversation context.
 
@@ -152,15 +151,14 @@ export function resolveThreadId(
   agent: Agent,
   channel?: { platform: string; external_id: string },
 ): string {
-  const scope = (agent.metadata?.thread_scope as string) ?? "shared";
   const channelSuffix =
-    scope === "per_channel" && channel
+    agent.thread_scope === "per_channel" && channel
       ? `-${channel.platform}:${channel.external_id}`
       : "";
 
   const today = new Date().toISOString().split("T")[0];
-  switch (agent.context_mode) {
-    case "isolated":
+  switch (agent.thread_lifetime) {
+    case "ephemeral":
       return `task-${agent.name}-${randomUUID()}`;
     case "daily":
       return `task-${agent.name}-${today}${channelSuffix}`;
@@ -282,12 +280,12 @@ The webhook URL and chat/topic mappings live in the `agent_channels` table, not 
 
 ### Phase 1: Database Foundation
 
-**Migration + DB queries for `agent_channels`.**
+**Migration + DB queries for `agent_channels` table and `thread_scope` column on agents.**
 
 Files:
-- `packages/db/migrations/009_agent_channels.sql` — Table creation
+- `packages/db/migrations/009_agent_channels.sql` — `agent_channels` table + `ALTER TABLE agents ADD COLUMN thread_scope`
 - `packages/db/src/channels.ts` — CRUD: `createChannel`, `getChannelByExternalId`, `getChannelsByAgent`, `getChannelsByPlatform`, `updateChannel`, `deleteChannel`
-- `packages/db/src/types.ts` — `AgentChannel` type, `ChannelPlatform` union type
+- `packages/db/src/types.ts` — `AgentChannel` type, `ChannelPlatform` union type, `ThreadScope` union type, add `thread_scope` to `Agent` interface
 - `packages/db/src/index.ts` — Re-export channel queries
 
 ### Phase 2: Telegram Chat Adapter + Channel Delivery

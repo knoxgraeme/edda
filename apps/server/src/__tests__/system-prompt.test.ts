@@ -40,7 +40,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     description: "A test agent",
     system_prompt: null,
     skills: [],
-    context_mode: "isolated",
+    thread_lifetime: "ephemeral",
     trigger: "on_demand",
     tools: [],
     subagents: [],

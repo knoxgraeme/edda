@@ -8,7 +8,7 @@ const UpdateAgentSchema = z
     description: z.string().max(1000).optional(),
     system_prompt: z.string().max(50000).nullable().optional(),
     skills: z.array(z.string().max(100)).optional(),
-    context_mode: z.enum(["isolated", "daily", "persistent"]).optional(),
+    thread_lifetime: z.enum(["ephemeral", "daily", "persistent"]).optional(),
     trigger: z.enum(["schedule", "on_demand"]).nullable().optional(),
     tools: z.array(z.string().max(100)).optional(),
     subagents: z.array(z.string().max(100)).optional(),

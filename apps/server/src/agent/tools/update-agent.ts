@@ -12,10 +12,10 @@ export const updateAgentSchema = z.object({
   system_prompt: z.string().optional().describe("New system prompt"),
   skills: z.array(z.string()).optional().describe("New skill list"),
   enabled: z.boolean().optional().describe("Enable or disable the agent"),
-  context_mode: z
-    .enum(["isolated", "daily", "persistent"])
+  thread_lifetime: z
+    .enum(["ephemeral", "daily", "persistent"])
     .optional()
-    .describe("New thread ID strategy"),
+    .describe("New thread ID strategy: ephemeral (new thread every run), daily (shared per day), persistent (one thread forever)"),
   model_settings_key: z
     .string()
     .optional()

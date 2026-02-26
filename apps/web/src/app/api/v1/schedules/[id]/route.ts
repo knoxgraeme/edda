@@ -17,7 +17,7 @@ export async function PATCH(
 
   const body = await req.json();
 
-  const VALID_CONTEXT_MODES = new Set(["isolated", "daily", "persistent"]);
+  const VALID_THREAD_LIFETIMES = new Set(["ephemeral", "daily", "persistent"]);
   if (body.cron !== undefined && (typeof body.cron !== "string" || body.cron.length > 50 || !isValidCron(body.cron))) {
     return badRequest("Invalid cron expression — expected 5 fields: minute hour day month weekday");
   }
@@ -25,11 +25,11 @@ export async function PATCH(
     return badRequest("prompt must be a string (max 5000 chars)");
   }
   if (
-    body.context_mode !== undefined &&
-    body.context_mode !== null &&
-    (typeof body.context_mode !== "string" || !VALID_CONTEXT_MODES.has(body.context_mode))
+    body.thread_lifetime !== undefined &&
+    body.thread_lifetime !== null &&
+    (typeof body.thread_lifetime !== "string" || !VALID_THREAD_LIFETIMES.has(body.thread_lifetime))
   ) {
-    return badRequest("Invalid context_mode");
+    return badRequest("Invalid thread_lifetime");
   }
   if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
     return badRequest("enabled must be a boolean");

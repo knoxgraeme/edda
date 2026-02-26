@@ -416,8 +416,8 @@ list might have metadata: {recommended_by: "Tom", category: "movie", source: "di
 
 export function resolveThreadId(agent: Agent): string {
   const today = new Date().toISOString().split("T")[0];
-  switch (agent.context_mode) {
-    case "isolated":
+  switch (agent.thread_lifetime) {
+    case "ephemeral":
       return `task-${agent.name}-${randomUUID()}`;
     case "daily":
       return `task-${agent.name}-${today}`;
@@ -425,8 +425,8 @@ export function resolveThreadId(agent: Agent): string {
       return `task-${agent.name}`;
     default:
       throw new Error(
-        `Unknown context_mode "${agent.context_mode}" for agent "${agent.name}". ` +
-          `Expected "isolated", "daily", or "persistent".`,
+        `Unknown thread_lifetime "${agent.thread_lifetime}" for agent "${agent.name}". ` +
+          `Expected "ephemeral", "daily", or "persistent".`,
       );
   }
 }

@@ -189,8 +189,8 @@ export class LocalCronRunner implements CronRunner {
           ] as string)
         : undefined;
 
-    const contextAgent = freshSchedule.context_mode
-      ? { ...freshDef, context_mode: freshSchedule.context_mode }
+    const contextAgent = freshSchedule.thread_lifetime
+      ? { ...freshDef, thread_lifetime: freshSchedule.thread_lifetime }
       : freshDef;
     const threadId = resolveThreadId(contextAgent);
 

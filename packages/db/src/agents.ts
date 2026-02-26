@@ -5,10 +5,10 @@
  */
 
 import { getPool } from "./connection.js";
-import type { Agent, AgentContextMode, AgentTrigger } from "./types.js";
+import type { Agent, ThreadLifetime, AgentTrigger } from "./types.js";
 
 const AGENT_COLS = `id, name, description, system_prompt, skills,
-  context_mode, trigger, tools, subagents, model_settings_key,
+  thread_lifetime, trigger, tools, subagents, model_settings_key,
   enabled, metadata, created_at, updated_at`;
 
 export async function getAgents(opts?: { enabled?: boolean }): Promise<Agent[]> {
@@ -51,7 +51,7 @@ export async function createAgent(input: {
   description: string;
   system_prompt?: string;
   skills?: string[];
-  context_mode?: AgentContextMode;
+  thread_lifetime?: ThreadLifetime;
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
@@ -61,7 +61,7 @@ export async function createAgent(input: {
   const pool = getPool();
   const { rows } = await pool.query(
     `INSERT INTO agents
-       (name, description, system_prompt, skills, context_mode,
+       (name, description, system_prompt, skills, thread_lifetime,
         trigger, tools, subagents, model_settings_key, metadata)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING ${AGENT_COLS}`,
@@ -70,7 +70,7 @@ export async function createAgent(input: {
       input.description,
       input.system_prompt ?? null,
       input.skills ?? [],
-      input.context_mode ?? "isolated",
+      input.thread_lifetime ?? "ephemeral",
       input.trigger ?? null,
       input.tools ?? [],
       input.subagents ?? [],
@@ -85,7 +85,7 @@ const AGENT_UPDATE_COLUMNS = [
   "description",
   "system_prompt",
   "skills",
-  "context_mode",
+  "thread_lifetime",
   "trigger",
   "tools",
   "subagents",
@@ -102,7 +102,7 @@ export async function updateAgent(
       | "description"
       | "system_prompt"
       | "skills"
-      | "context_mode"
+      | "thread_lifetime"
       | "trigger"
       | "tools"
       | "subagents"
