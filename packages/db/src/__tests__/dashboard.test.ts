@@ -8,6 +8,38 @@ import { getDashboard, getPendingConfirmationsCount } from "../dashboard.js";
 
 vi.mock("../connection.js");
 
+/** Helper to build a mock row returned by the lists LEFT JOIN query */
+function listRow(
+  listFields: {
+    id: string;
+    name: string;
+    normalized_name?: string;
+    icon?: string;
+    list_type?: string;
+  },
+  itemFields?: { id: string; type: string; content: string; list_id?: string },
+) {
+  return {
+    // _l_ prefixed list columns (as aliased in the SQL)
+    _l_id: listFields.id,
+    _l_name: listFields.name,
+    _l_normalized_name: listFields.normalized_name ?? listFields.name,
+    _l_summary: null,
+    _l_icon: listFields.icon ?? "list",
+    _l_list_type: listFields.list_type ?? "rolling",
+    _l_status: "active",
+    _l_embedding_model: null,
+    _l_metadata: {},
+    _l_created_at: "2026-01-01",
+    _l_updated_at: "2026-01-01",
+    // item columns — NULL when LEFT JOIN produces no match
+    id: itemFields?.id ?? null,
+    type: itemFields?.type ?? null,
+    content: itemFields?.content ?? null,
+    list_id: itemFields?.list_id ?? itemFields ? listFields.id : null,
+  };
+}
+
 describe("dashboard", () => {
   let query: ReturnType<typeof mockGetPool>["query"];
 
@@ -18,34 +50,25 @@ describe("dashboard", () => {
 
   describe("getDashboard()", () => {
     it("fires 5 parallel queries and groups list items by list id", async () => {
-      // 5 queries: dueToday, capturedToday, openItems, lists (JOIN), pending
+      // 5 queries: dueToday, capturedToday, openItems, lists (LEFT JOIN), pending
       query
         .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // dueToday
         .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // capturedToday
         .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // openItems
         .mockResolvedValueOnce({
           rows: [
-            {
-              list_id: "grocery-list", list_name: "groceries", list_normalized_name: "groceries",
-              list_summary: null, list_icon: "cart", list_list_type: "rolling",
-              list_status: "active", list_embedding_model: null, list_metadata: {},
-              list_created_at: "2026-01-01", list_updated_at: "2026-01-01",
-              id: "i1", type: "list_item", content: "milk",
-            },
-            {
-              list_id: "grocery-list", list_name: "groceries", list_normalized_name: "groceries",
-              list_summary: null, list_icon: "cart", list_list_type: "rolling",
-              list_status: "active", list_embedding_model: null, list_metadata: {},
-              list_created_at: "2026-01-01", list_updated_at: "2026-01-01",
-              id: "i2", type: "list_item", content: "eggs",
-            },
-            {
-              list_id: "book-list", list_name: "books", list_normalized_name: "books",
-              list_summary: null, list_icon: "book", list_list_type: "rolling",
-              list_status: "active", list_embedding_model: null, list_metadata: {},
-              list_created_at: "2026-01-01", list_updated_at: "2026-01-01",
-              id: "i3", type: "list_item", content: "dune",
-            },
+            listRow(
+              { id: "grocery-list", name: "groceries", icon: "cart" },
+              { id: "i1", type: "list_item", content: "milk" },
+            ),
+            listRow(
+              { id: "grocery-list", name: "groceries", icon: "cart" },
+              { id: "i2", type: "list_item", content: "eggs" },
+            ),
+            listRow(
+              { id: "book-list", name: "books", icon: "book" },
+              { id: "i3", type: "list_item", content: "dune" },
+            ),
           ],
           rowCount: 3,
         }) // lists
@@ -68,6 +91,69 @@ describe("dashboard", () => {
       expect(result.pending_confirmations).toEqual([]);
     });
 
+    it("includes empty lists from LEFT JOIN with zero items", async () => {
+      query
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // dueToday
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // capturedToday
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // openItems
+        .mockResolvedValueOnce({
+          rows: [
+            // A list with one item
+            listRow(
+              { id: "grocery-list", name: "groceries", icon: "cart" },
+              { id: "i1", type: "list_item", content: "milk" },
+            ),
+            // An empty list — LEFT JOIN produces NULL item columns
+            listRow({ id: "empty-list", name: "empty", icon: "box" }),
+          ],
+          rowCount: 2,
+        }) // lists
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // pending
+
+      const result = await getDashboard("2026-02-21");
+
+      // Both lists should appear
+      expect(Object.keys(result.lists)).toHaveLength(2);
+
+      // Populated list has its item
+      expect(result.lists["grocery-list"].items).toHaveLength(1);
+
+      // Empty list appears with an empty items array
+      expect(result.lists["empty-list"]).toBeDefined();
+      expect(result.lists["empty-list"].list.name).toBe("empty");
+      expect(result.lists["empty-list"].items).toEqual([]);
+    });
+
+    it("item objects do not contain _l_ prefixed list properties", async () => {
+      query
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // dueToday
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // capturedToday
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // openItems
+        .mockResolvedValueOnce({
+          rows: [
+            listRow(
+              { id: "grocery-list", name: "groceries", icon: "cart" },
+              { id: "i1", type: "list_item", content: "milk" },
+            ),
+          ],
+          rowCount: 1,
+        }) // lists
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // pending
+
+      const result = await getDashboard("2026-02-21");
+
+      const item = result.lists["grocery-list"].items[0];
+      const itemKeys = Object.keys(item);
+
+      // No _l_ prefixed keys should leak into item objects
+      const leakedKeys = itemKeys.filter((k) => k.startsWith("_l_"));
+      expect(leakedKeys).toEqual([]);
+
+      // Item should have its own properties
+      expect(item.id).toBe("i1");
+      expect(item.content).toBe("milk");
+    });
+
     it("defaults day to today when not provided", async () => {
       query.mockResolvedValue({ rows: [], rowCount: 0 });
 
@@ -78,6 +164,16 @@ describe("dashboard", () => {
       // Check that first query uses today's date
       const firstCallParams = query.mock.calls[0][1];
       expect(firstCallParams).toEqual([today]);
+    });
+
+    it("uses LEFT JOIN for lists query", async () => {
+      query.mockResolvedValue({ rows: [], rowCount: 0 });
+
+      await getDashboard("2026-02-21");
+
+      // The 4th query (index 3) is the lists query — should use LEFT JOIN
+      const listsSql = query.mock.calls[3][0] as string;
+      expect(listsSql).toContain("LEFT JOIN items");
     });
   });
 

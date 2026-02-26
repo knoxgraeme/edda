@@ -174,7 +174,7 @@ describe("updateItemTool", () => {
       content: "new text",
     });
 
-    expect(vi.mocked(buildEmbeddingText)).toHaveBeenCalledWith("note", "new text", "a summary");
+    expect(vi.mocked(buildEmbeddingText)).toHaveBeenCalledWith("note", "new text", "a summary", null);
     expect(vi.mocked(embed)).toHaveBeenCalledWith("note: new text. a summary");
     expect(vi.mocked(updateItem)).toHaveBeenCalledWith(
       "00000000-0000-4000-8000-000000000102",

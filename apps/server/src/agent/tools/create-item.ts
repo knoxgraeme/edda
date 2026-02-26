@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById } from "@edda/db";
+import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById, type List } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
 import type { EmbeddingContext } from "../../embed/index.js";
 import { getAgentName } from "../tool-helpers.js";
@@ -36,20 +36,21 @@ export const createItemTool = tool(
 
     // List resolution
     let resolvedListId = list_id ?? null;
+    let resolvedList: List | null = null;
     if (list_name && !resolvedListId) {
-      const list = await getListByName(list_name);
-      if (!list) {
+      resolvedList = await getListByName(list_name);
+      if (!resolvedList) {
         return JSON.stringify({
           error: `No list found with name "${list_name}". Create it first with create_list.`,
         });
       }
-      resolvedListId = list.id;
+      resolvedListId = resolvedList.id;
     }
 
-    // Embedding context from list
+    // Embedding context from list — reuse resolvedList if available
     let embeddingContext: EmbeddingContext | null = null;
     if (resolvedListId) {
-      const list = await getListById(resolvedListId);
+      const list = resolvedList ?? await getListById(resolvedListId);
       if (list) {
         embeddingContext = { listName: list.name, listSummary: list.summary ?? undefined };
       }

@@ -4,8 +4,9 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { updateItem, getItemById, getSettingsSync } from "@edda/db";
+import { updateItem, getItemById, getSettingsSync, getListById } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
+import type { EmbeddingContext } from "../../embed/index.js";
 
 export const updateItemSchema = z.object({
   item_id: z.string().uuid().describe("The ID of the item to update"),
@@ -47,7 +48,14 @@ export const updateItemTool = tool(
       }
       const settings = getSettingsSync();
       updates.content = content;
-      updates.embedding = await embed(buildEmbeddingText(existing.type, content, existing.summary));
+      let embeddingContext: EmbeddingContext | null = null;
+      if (existing.list_id) {
+        const list = await getListById(existing.list_id);
+        if (list) {
+          embeddingContext = { listName: list.name, listSummary: list.summary ?? undefined };
+        }
+      }
+      updates.embedding = await embed(buildEmbeddingText(existing.type, content, existing.summary, embeddingContext));
       updates.embedding_model = settings.embedding_model;
     }
 
