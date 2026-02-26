@@ -10,7 +10,7 @@ export const sendNotificationSchema = z.object({
   target: z
     .string()
     .describe("Target: 'inbox' or 'agent:<name>' or 'agent:<name>:active'"),
-  summary: z.string().describe("Short notification message"),
+  summary: z.string().max(2000).describe("Short notification message"),
   priority: z
     .enum(["low", "normal", "high"])
     .optional()
@@ -36,7 +36,7 @@ export const sendNotificationTool = tool(
       sourceId,
       targets: [target],
       summary,
-      detail: { source_agent: sourceId },
+      detail: { agent_name: sourceId },
       priority,
       expiresAfter,
     });

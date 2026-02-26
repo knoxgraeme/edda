@@ -19,6 +19,7 @@ import {
   refreshSettings,
   getUnreadNotifications,
   markNotificationsRead,
+  deleteExpiredNotifications,
 } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
 import { sanitizeError } from "../utils/sanitize-error.js";
@@ -145,6 +146,13 @@ export class LocalCronRunner implements CronRunner {
           this._registered.delete(id);
           console.log(`  [cron] Unregistered schedule: ${id}`);
         }
+      }
+
+      try {
+        const deleted = await deleteExpiredNotifications();
+        if (deleted > 0) console.log(`  [cron] Cleaned up ${deleted} expired notification(s)`);
+      } catch (cleanupErr) {
+        console.warn("[cron] Failed to clean expired notifications:", cleanupErr);
       }
 
       this.syncFailures = 0;

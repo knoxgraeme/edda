@@ -1,4 +1,4 @@
-import { getPendingItems, getItemsByType } from "@edda/db";
+import { getPendingItems, getInboxNotifications } from "@edda/db";
 import { InboxClient } from "./inbox-client";
 
 export default async function InboxPage() {
@@ -7,7 +7,7 @@ export default async function InboxPage() {
   try {
     [pending, notifications] = await Promise.all([
       getPendingItems(),
-      getItemsByType("notification", "active", 50),
+      getInboxNotifications({ status: "unread", limit: 50 }),
     ]);
   } catch (err) {
     console.error("Failed to load inbox:", err);

@@ -14,7 +14,7 @@ import {
   confirmAllPendingAction,
   dismissNotificationAction,
 } from "../actions";
-import type { Item, PendingItem } from "../types/db";
+import type { Notification, PendingItem } from "../types/db";
 
 function PendingRow({ item }: { item: PendingItem }) {
   const [isPending, startTransition] = useTransition();
@@ -80,24 +80,19 @@ function PendingRow({ item }: { item: PendingItem }) {
   );
 }
 
-function NotificationRow({ notification }: { notification: Item }) {
+function NotificationRow({ notification }: { notification: Notification }) {
   const [isPending, startTransition] = useTransition();
-  const meta = notification.metadata;
-  const priority = (meta?.priority as string) ?? "normal";
-  const sourceAgent = meta?.source_agent as string | undefined;
 
   return (
     <Card>
       <CardContent className="flex items-start justify-between gap-4 pt-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            {sourceAgent && (
-              <Badge variant="outline" className="text-xs gap-1">
-                <Bot className="h-3 w-3" />
-                {sourceAgent}
-              </Badge>
-            )}
-            {priority === "high" && (
+            <Badge variant="outline" className="text-xs gap-1">
+              <Bot className="h-3 w-3" />
+              {notification.source_type}
+            </Badge>
+            {notification.priority === "high" && (
               <Badge variant="destructive" className="text-xs gap-1">
                 <AlertTriangle className="h-3 w-3" />
                 high
@@ -109,7 +104,7 @@ function NotificationRow({ notification }: { notification: Item }) {
               })}
             </span>
           </div>
-          <p className="text-sm">{notification.content}</p>
+          <p className="text-sm">{notification.summary}</p>
         </div>
         <Button
           variant="ghost"
@@ -141,7 +136,7 @@ export function InboxClient({
   notifications,
 }: {
   items: PendingItem[];
-  notifications: Item[];
+  notifications: Notification[];
 }) {
   const [isPending, startTransition] = useTransition();
   const totalCount = items.length + notifications.length;

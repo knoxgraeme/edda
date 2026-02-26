@@ -263,20 +263,17 @@ describe("notify()", () => {
     );
   });
 
-  it("treats unknown target format as inbox", async () => {
-    await notify({
-      sourceType: "system",
-      sourceId: "system",
-      targets: ["unknown_format"],
-      summary: "test",
-    });
-
-    expect(mockCreateNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target_type: "inbox",
-        target_id: null,
+  it("throws on unknown target format", async () => {
+    await expect(
+      notify({
+        sourceType: "system",
+        sourceId: "system",
+        targets: ["unknown_format"],
+        summary: "test",
       }),
-    );
+    ).rejects.toThrow("Unknown notification target format: 'unknown_format'");
+
+    expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 });
 
