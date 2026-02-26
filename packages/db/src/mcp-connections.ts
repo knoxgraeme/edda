@@ -33,7 +33,7 @@ export async function createMcpConnection(input: {
   return rows[0] as McpConnection;
 }
 
-const MCP_UPDATE_COLUMNS = ['name', 'transport', 'config', 'enabled', 'discovered_tools'] as const;
+const MCP_UPDATE_COLUMNS = ['name', 'transport', 'config', 'enabled', 'discovered_tools', 'auth_type', 'auth_status'] as const;
 
 export async function updateMcpConnection(
   id: string,

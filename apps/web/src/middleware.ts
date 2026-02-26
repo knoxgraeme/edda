@@ -13,8 +13,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow the login page through
+  // Allow the login page and OAuth callback through
   if (request.nextUrl.pathname === "/login") return NextResponse.next();
+  if (request.nextUrl.pathname === "/api/v1/mcp-oauth/callback") return NextResponse.next();
 
   // Check session cookie
   const session = request.cookies.get(COOKIE_NAME)?.value;

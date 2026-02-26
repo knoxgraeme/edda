@@ -11,6 +11,10 @@ import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod";
 import { getSharedCheckpointer } from "../checkpointer/index.js";
 import { embed } from "../embed/index.js";
+import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
+import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
+import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
+import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState } from "@edda/db";
 
 interface AgentState {
   agent: Runnable;
@@ -275,6 +279,87 @@ async function handleThreadDetail(threadId: string, res: ServerResponse) {
   }
 }
 
+const OAuthCompleteSchema = z.object({
+  connection_id: z.string().uuid(),
+  code: z.string().min(1).max(2048),
+  completion_secret: z.string().min(1),
+});
+
+async function handleMcpOAuthComplete(req: IncomingMessage, res: ServerResponse) {
+  let connectionId: string | undefined;
+  try {
+    const raw = await readBody(req);
+    const parsed = OAuthCompleteSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: parsed.error.issues[0].message }));
+      return;
+    }
+    const body = parsed.data;
+    connectionId = body.connection_id;
+
+    // Validate completion_secret against stored value (per-flow auth)
+    const oauthState = await getOAuthState(body.connection_id);
+    if (!oauthState?.pending_auth?.completion_secret) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "No pending auth found" }));
+      return;
+    }
+    const expectedBuf = Buffer.from(oauthState.pending_auth.completion_secret);
+    const actualBuf = Buffer.from(body.completion_secret);
+    if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid completion secret" }));
+      return;
+    }
+
+    const connection = await getMcpConnectionById(body.connection_id);
+    if (!connection) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Connection not found" }));
+      return;
+    }
+
+    const serverUrl = (connection.config as { url?: string }).url;
+    if (!serverUrl) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Connection has no URL configured" }));
+      return;
+    }
+
+    // Exchange authorization code for tokens
+    const baseUrl = process.env.EDDA_BASE_URL ?? "http://localhost:3000";
+    const provider = new MCPOAuthProvider(body.connection_id, baseUrl);
+    await auth(provider, { serverUrl: new URL(serverUrl), authorizationCode: body.code, fetchFn: ssrfSafeFetch });
+
+    // Update connection status
+    await updateMcpConnection(body.connection_id, {
+      auth_status: "active",
+    } as Parameters<typeof updateMcpConnection>[1]);
+
+    // Invalidate MCP client so next loadMCPTools() picks up the auth
+    await invalidateMCPClient();
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  } catch (err) {
+    console.error("[mcp-oauth] Token exchange failed:", err);
+
+    // Set error state (best-effort)
+    if (connectionId) {
+      await updateMcpConnection(connectionId, {
+        auth_status: "error",
+      } as Parameters<typeof updateMcpConnection>[1]).catch(() => {});
+      await upsertOAuthState(connectionId, { pending_auth: null }).catch(() => {});
+    }
+
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Token exchange failed" }));
+    }
+  }
+}
+
 const SearchSchema = z.object({
   query: z.string().min(1),
   type: z.string().optional(),
@@ -338,6 +423,8 @@ export async function startHealthServer(port: number): Promise<void> {
       await handleThreadDetail(threadDetailMatch[1], res);
     } else if (url === "/api/search/items" && req.method === "POST") {
       await handleSearchItems(req, res);
+    } else if (url === "/internal/mcp-oauth/complete" && req.method === "POST") {
+      await handleMcpOAuthComplete(req, res);
     } else {
       res.writeHead(404);
       res.end();

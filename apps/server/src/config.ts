@@ -45,6 +45,10 @@ const envSchema = z.object({
   EDDA_PASSWORD: z.string().optional(),
   INTERNAL_API_SECRET: z.string().optional(),
 
+  // OAuth encryption + callback
+  EDDA_ENCRYPTION_KEY: z.string().optional(),
+  EDDA_BASE_URL: z.string().url().default('http://localhost:3000'),
+
   // Server
   PORT: z.coerce.number().int().positive().default(8000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
