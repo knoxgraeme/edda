@@ -306,7 +306,7 @@ export interface UpsertSkillInput {
 export type AgentContextMode = "isolated" | "daily" | "persistent";
 export type AgentTrigger = "schedule" | "on_demand";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
-export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent";
+export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent" | "notification";
 
 export interface Agent {
   id: string;
