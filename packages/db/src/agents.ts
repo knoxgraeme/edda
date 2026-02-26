@@ -5,10 +5,10 @@
  */
 
 import { getPool } from "./connection.js";
-import type { Agent, ThreadLifetime, AgentTrigger } from "./types.js";
+import type { Agent, ThreadLifetime, ThreadScope, AgentTrigger } from "./types.js";
 
 const AGENT_COLS = `id, name, description, system_prompt, skills,
-  thread_lifetime, trigger, tools, subagents, model_settings_key,
+  thread_lifetime, thread_scope, trigger, tools, subagents, model_settings_key,
   enabled, metadata, created_at, updated_at`;
 
 export async function getAgents(opts?: { enabled?: boolean }): Promise<Agent[]> {
@@ -28,6 +28,12 @@ export async function getAgents(opts?: { enabled?: boolean }): Promise<Agent[]> 
     params,
   );
   return rows as Agent[];
+}
+
+export async function getAgentById(id: string): Promise<Agent | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(`SELECT ${AGENT_COLS} FROM agents WHERE id = $1`, [id]);
+  return (rows[0] as Agent) ?? null;
 }
 
 export async function getAgentByName(name: string): Promise<Agent | null> {
@@ -52,6 +58,7 @@ export async function createAgent(input: {
   system_prompt?: string;
   skills?: string[];
   thread_lifetime?: ThreadLifetime;
+  thread_scope?: ThreadScope;
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
@@ -61,9 +68,9 @@ export async function createAgent(input: {
   const pool = getPool();
   const { rows } = await pool.query(
     `INSERT INTO agents
-       (name, description, system_prompt, skills, thread_lifetime,
+       (name, description, system_prompt, skills, thread_lifetime, thread_scope,
         trigger, tools, subagents, model_settings_key, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING ${AGENT_COLS}`,
     [
       input.name,
@@ -71,6 +78,7 @@ export async function createAgent(input: {
       input.system_prompt ?? null,
       input.skills ?? [],
       input.thread_lifetime ?? "ephemeral",
+      input.thread_scope ?? "shared",
       input.trigger ?? null,
       input.tools ?? [],
       input.subagents ?? [],
@@ -86,6 +94,7 @@ const AGENT_UPDATE_COLUMNS = [
   "system_prompt",
   "skills",
   "thread_lifetime",
+  "thread_scope",
   "trigger",
   "tools",
   "subagents",
@@ -103,6 +112,7 @@ export async function updateAgent(
       | "system_prompt"
       | "skills"
       | "thread_lifetime"
+      | "thread_scope"
       | "trigger"
       | "tools"
       | "subagents"
@@ -143,6 +153,43 @@ export async function getAgentNames(): Promise<string[]> {
   const pool = getPool();
   const { rows } = await pool.query(`SELECT name FROM agents ORDER BY name`);
   return rows.map((r: { name: string }) => r.name);
+}
+
+/**
+ * Atomically add/remove tool names on an agent's tools[] array.
+ * Uses array_cat / array_remove to avoid read-modify-write races.
+ */
+export async function modifyAgentTools(
+  id: string,
+  opts: { add?: string[]; remove?: string[] },
+): Promise<Agent> {
+  const pool = getPool();
+
+  // Build SET clause: add first, then remove
+  let expr = "tools";
+  const params: unknown[] = [id];
+  let idx = 2;
+
+  if (opts.add?.length) {
+    // array_cat appends; wrap in SELECT DISTINCT unnest to deduplicate
+    expr = `(SELECT ARRAY(SELECT DISTINCT unnest(array_cat(${expr}, $${idx}::text[]))))`;
+    params.push(opts.add);
+    idx++;
+  }
+  if (opts.remove?.length) {
+    for (const name of opts.remove) {
+      expr = `array_remove(${expr}, $${idx})`;
+      params.push(name);
+      idx++;
+    }
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE agents SET tools = ${expr} WHERE id = $1 RETURNING ${AGENT_COLS}`,
+    params,
+  );
+  if (rows.length === 0) throw new Error(`Agent not found: ${id}`);
+  return rows[0] as Agent;
 }
 
 export async function deleteAgent(id: string): Promise<void> {

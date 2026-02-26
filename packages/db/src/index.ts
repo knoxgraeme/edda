@@ -23,6 +23,7 @@ export * from "./agents.js";
 export * from "./agent-schedules.js";
 export * from "./task-runs.js";
 export * from "./notifications.js";
+export * from "./channels.js";
 export * from "./crypto.js";
 export * from "./migrate.js";
 export * from "./seed-settings.js";

@@ -15,6 +15,7 @@ import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
 import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
+import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
 
 interface AgentState {
   agent: Runnable;
@@ -29,6 +30,30 @@ export function setAgent(
   opts: { agentName: string; retrievalContext?: RetrievalContext },
 ) {
   agentState = { agent, ...opts };
+}
+
+/**
+ * Rebuild the default chat agent from the DB. Call after tool/skill/config
+ * changes so the streaming endpoint picks up the new agent definition
+ * without a server restart.
+ */
+export async function rebuildDefaultAgent(): Promise<void> {
+  if (!agentState) return; // not initialized yet
+  const { buildAgent } = await import("../agent/build-agent.js");
+  const { resolveRetrievalContext } = await import("../agent/tool-helpers.js");
+  const { getAgentByName } = await import("@edda/db");
+  const agentRow = await getAgentByName(agentState.agentName);
+  if (!agentRow) {
+    console.warn(`[rebuild] Agent "${agentState.agentName}" not found — skipping rebuild`);
+    return;
+  }
+  const agent = await buildAgent(agentRow);
+  agentState = {
+    agent,
+    agentName: agentRow.name,
+    retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
+  };
+  console.log(`[rebuild] Default agent "${agentRow.name}" rebuilt`);
 }
 
 const StreamRequestSchema = z.object({
@@ -401,6 +426,37 @@ async function handleSearchItems(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) {
+  try {
+    // Validate secret token if configured
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (secret) {
+      const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
+      if (!validateWebhookSecret(headerSecret, secret)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid secret token" }));
+        return;
+      }
+    }
+
+    const raw = await readBody(req);
+    const update = JSON.parse(raw);
+
+    // Process asynchronously — always return 200 to Telegram immediately
+    handleWebhookUpdate(update).catch((err) => {
+      console.error("[telegram] Webhook update processing failed:", err);
+    });
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  } catch (err) {
+    console.error("[telegram] Webhook handler error:", err);
+    // Always respond 200 to prevent Telegram retries
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  }
+}
+
 export async function startHealthServer(port: number): Promise<void> {
   const server = createServer(async (req, res) => {
     setCors(res);
@@ -414,9 +470,13 @@ export async function startHealthServer(port: number): Promise<void> {
     const url = req.url ?? "";
     const threadDetailMatch = url.match(/^\/api\/threads\/([^/]+)$/);
 
-    // Health endpoint is always unauthenticated
+    // Unauthenticated endpoints (own auth or public)
     if (url === "/api/health" && req.method === "GET") {
       await handleHealth(res);
+      return;
+    }
+    if (url === "/api/telegram/webhook" && req.method === "POST") {
+      await handleTelegramWebhook(req, res);
       return;
     }
 
