@@ -29,7 +29,9 @@ import {
   getItemTypes,
   getMcpConnections,
   getSkillsByNames,
+  getAllLists,
 } from "@edda/db";
+import type { ListWithCount } from "@edda/db";
 import type { ItemType, McpConnection, Skill } from "@edda/db";
 import { getChatModel } from "../llm/index.js";
 import { getCheckpointer } from "../checkpointer/index.js";
@@ -175,7 +177,7 @@ async function resolveSubagents(
   available: StructuredTool[],
   store: BaseStore,
   settings: Settings,
-  prefetched: { itemTypes: ItemType[]; connections: McpConnection[] },
+  prefetched: { itemTypes: ItemType[]; connections: McpConnection[]; lists: ListWithCount[] },
 ): Promise<SubagentSpec[]> {
   if (names.length === 0) return [];
 
@@ -256,12 +258,13 @@ function formatMcpConnections(connections: McpConnection[]): string {
 export async function buildPrompt(
   agent: Agent,
   settings: Settings,
-  prefetched?: { itemTypes?: ItemType[]; connections?: McpConnection[] },
+  prefetched?: { itemTypes?: ItemType[]; connections?: McpConnection[]; lists?: ListWithCount[] },
 ): Promise<string> {
-  const [agentContext, itemTypes, connections] = await Promise.all([
+  const [agentContext, itemTypes, connections, lists] = await Promise.all([
     getAgentsMdContent(agent.name),
     prefetched?.itemTypes ?? getItemTypes(),
     prefetched?.connections ?? getMcpConnections(),
+    prefetched?.lists ?? getAllLists({ status: 'active' }),
   ]);
 
   const now = new Date();
@@ -308,10 +311,29 @@ ${settings.user_display_name ? `- User: ${settings.user_display_name}` : ""}`;
 - **\`run_agent\`** — Background job. Use to kick off independent work you don't need to wait for (scheduled tasks, batch processing). Returns a task_run_id; check status with list_my_runs.`
       : "";
 
+  const commonMetadata = `\n\n## Common Metadata Fields
+Any item can carry these metadata fields regardless of type:
+- **recommended_by**: Who recommended or suggested this
+- **url**: Associated URL or link
+- **category**: Classification (movie, book, restaurant, tool, podcast)
+- **priority**: low | medium | high
+- **location**: Associated place
+- **rating**: 1–5 rating
+- **source**: Where this came from (podcast name, article, conversation)
+
+Use these consistently across all item types. For example, a note on a "Movies to Watch"
+list might have metadata: {recommended_by: "Tom", category: "movie", source: "dinner conversation"}.`;
+
+  const listsSection = lists.length > 0
+    ? `\n\n## Active Lists\n${lists.map(l =>
+        `- ${l.icon} **${l.name}**${l.summary ? ` — ${l.summary}` : ''} (${l.item_count} items)`
+      ).join("\n")}`
+    : '';
+
   return `${base}${contextSection}${storeSection}${settingsContext}${delegationSection}
 
 ## Available Item Types
-${formatItemTypes(itemTypes)}
+${formatItemTypes(itemTypes)}${commonMetadata}${listsSection}
 
 ## Approval Settings
 ${formatApprovalSettings(settings)}
@@ -380,6 +402,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
     communityTools,
     itemTypes,
     connections,
+    lists,
     skills,
   ] = await Promise.all([
     getChatModel(modelName),
@@ -390,6 +413,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
     loadCommunityTools(),
     getItemTypes(),
     getMcpConnections(),
+    getAllLists({ status: 'active' }),
     agent.skills.length > 0 ? getSkillsByNames(agent.skills) : ([] as Skill[]),
   ]);
 
@@ -412,6 +436,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
       ? await resolveSubagents(agent.subagents, allAvailable, store, settings, {
           itemTypes,
           connections,
+          lists,
         })
       : [];
 
@@ -419,7 +444,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
   await writeSkillsToStore(skills, store);
 
   // 7. System prompt — unified builder (no skill content injection)
-  const systemPrompt = await buildPrompt(agent, settings, { itemTypes, connections });
+  const systemPrompt = await buildPrompt(agent, settings, { itemTypes, connections, lists });
 
   // 8. Backend — closes over store for SkillsMiddleware compatibility
   const backend = await buildBackend(agent, store);

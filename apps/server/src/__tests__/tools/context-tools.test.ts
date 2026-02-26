@@ -16,6 +16,7 @@ const {
   mockGetTopEntities,
   mockGetItemTypes,
   mockGetPendingConfirmationsCount,
+  mockGetAllLists,
 } = vi.hoisted(() => ({
   mockGetSettingsSync: vi.fn(),
   mockSaveAgentsMdVersion: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,7 @@ const {
   mockGetTopEntities: vi.fn().mockResolvedValue([]),
   mockGetItemTypes: vi.fn().mockResolvedValue([]),
   mockGetPendingConfirmationsCount: vi.fn().mockResolvedValue(0),
+  mockGetAllLists: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@edda/db", () => ({
@@ -36,6 +38,7 @@ vi.mock("@edda/db", () => ({
   getTopEntities: mockGetTopEntities,
   getItemTypes: mockGetItemTypes,
   getPendingConfirmationsCount: mockGetPendingConfirmationsCount,
+  getAllLists: mockGetAllLists,
 }));
 
 import { saveAgentsMdTool } from "../../agent/tools/save-agents-md.js";

@@ -44,9 +44,21 @@ Topic questions, "what did I say about...", "that thing about...", "anything abo
 → Group by day, summarize each day briefly.
 
 ## List Triggers
+"what lists do I have", "show me my lists", "my lists"
+→ Call get_list_contents() with NO arguments — returns all lists with item counts.
+
 "grocery list", "what's on my reading list", "show me my packing list"
-→ Call get_list_contents with the list name.
-→ Show active items only (not completed/archived).
+→ Call get_list_contents(list_name="grocery") — use the short natural name.
+→ If no list found, call get_list_contents() to show all available lists
+  and suggest the closest match.
+
+## Category & Metadata Queries
+"my movie recommendations", "what restaurants have I saved", "books to read",
+"what did Tom recommend", "things to watch"
+→ First check for a matching list: get_list_contents(list_name="movies to watch")
+→ Also search by metadata: search_items(metadata={recommended_by: "Tom"})
+  or search_items(metadata={category: "movie"})
+→ Combine results — items may live on a list or be standalone notes with metadata.
 
 ## Memory Transparency
 "what do you know about me?", "what have you learned?"

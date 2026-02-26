@@ -11,11 +11,12 @@ import { DEFAULT_TEST_SETTINGS } from "./helpers.js";
 import type { Agent, Settings } from "@edda/db";
 
 // Use vi.hoisted() so these mocks are available inside vi.mock() factories
-const { mockGetAgentsMdContent, mockGetItemTypes, mockGetMcpConnections } = vi.hoisted(() => {
+const { mockGetAgentsMdContent, mockGetItemTypes, mockGetMcpConnections, mockGetAllLists } = vi.hoisted(() => {
   return {
     mockGetAgentsMdContent: vi.fn().mockResolvedValue(""),
     mockGetItemTypes: vi.fn().mockResolvedValue([]),
     mockGetMcpConnections: vi.fn().mockResolvedValue([]),
+    mockGetAllLists: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -26,6 +27,7 @@ vi.mock("@edda/db", async (importOriginal) => {
     getAgentsMdContent: mockGetAgentsMdContent,
     getItemTypes: mockGetItemTypes,
     getMcpConnections: mockGetMcpConnections,
+    getAllLists: mockGetAllLists,
   };
 });
 
