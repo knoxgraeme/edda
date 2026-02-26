@@ -22,4 +22,6 @@ export type {
   McpConnection,
   Skill,
   Notification,
+  AgentChannel,
+  ChannelPlatform,
 } from "@edda/db";

@@ -14,9 +14,10 @@ import {
   Pencil,
   Save,
   X,
+  Radio,
 } from "lucide-react";
 import Link from "next/link";
-import type { Agent, TaskRun, AgentSchedule, ThreadLifetime } from "../../types/db";
+import type { Agent, TaskRun, AgentSchedule, AgentChannel, ChannelPlatform, ThreadLifetime } from "../../types/db";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,9 @@ import {
   createScheduleAction,
   updateScheduleAction,
   deleteScheduleAction,
+  createChannelAction,
+  updateChannelAction,
+  deleteChannelAction,
 } from "../../actions";
 import { AVAILABLE_SKILLS, MODEL_KEYS, isValidCron } from "../../agents/constants";
 import { formatDuration, statusVariant } from "@/lib/format";
@@ -730,6 +734,343 @@ function SchedulesTab({
   );
 }
 
+// ─── Channel Dialog ──────────────────────────────────────────────────
+
+const PLATFORM_OPTIONS: { value: ChannelPlatform; label: string }[] = [
+  { value: "telegram", label: "Telegram" },
+  { value: "slack", label: "Slack" },
+  { value: "discord", label: "Discord" },
+];
+
+function ChannelDialogInner({
+  onOpenChange,
+  agentName,
+  channel,
+  onSaved,
+}: {
+  onOpenChange: (open: boolean) => void;
+  agentName: string;
+  channel?: AgentChannel;
+  onSaved: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [platform, setPlatform] = useState<ChannelPlatform>(channel?.platform ?? "telegram");
+  const [externalId, setExternalId] = useState(channel?.external_id ?? "");
+  const [receiveAnnouncements, setReceiveAnnouncements] = useState(
+    channel?.receive_announcements ?? false,
+  );
+
+  const isEdit = !!channel;
+  const canSubmit = externalId.length > 0;
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    startTransition(async () => {
+      try {
+        if (isEdit) {
+          await updateChannelAction(channel.id, agentName, {
+            receive_announcements: receiveAnnouncements,
+          });
+          toast.success("Channel updated");
+        } else {
+          await createChannelAction({
+            agent_name: agentName,
+            platform,
+            external_id: externalId,
+            receive_announcements: receiveAnnouncements,
+          });
+          toast.success("Channel linked");
+        }
+        onOpenChange(false);
+        onSaved();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save channel");
+      }
+    });
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{isEdit ? "Edit Channel" : "Link Channel"}</DialogTitle>
+        <DialogDescription>
+          {isEdit
+            ? "Update the channel configuration."
+            : "Link a chat channel to this agent for bidirectional messaging."}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4 py-2">
+        <div className="grid gap-2">
+          <Label htmlFor="ch-platform">Platform</Label>
+          <Select
+            id="ch-platform"
+            value={platform}
+            onChange={(e) => setPlatform(e.target.value as ChannelPlatform)}
+            disabled={isEdit}
+          >
+            {PLATFORM_OPTIONS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="ch-external-id">External ID</Label>
+          <Input
+            id="ch-external-id"
+            value={externalId}
+            onChange={(e) => setExternalId(e.target.value)}
+            placeholder={
+              platform === "telegram"
+                ? "-1001234567890:123"
+                : platform === "slack"
+                  ? "T01234:C56789"
+                  : "123456789:987654321"
+            }
+            disabled={isEdit}
+          />
+          <p className="text-xs text-muted-foreground">
+            {platform === "telegram"
+              ? "Format: chat_id:thread_id (use 0 for DMs)"
+              : platform === "slack"
+                ? "Format: workspace_id:channel_id"
+                : "Format: guild_id:channel_id"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Switch
+            id="ch-announcements"
+            checked={receiveAnnouncements}
+            onCheckedChange={setReceiveAnnouncements}
+          />
+          <Label htmlFor="ch-announcements" className="cursor-pointer">
+            Receive announcements
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          When enabled, this channel receives proactive output from scheduled and notification-triggered runs.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button onClick={handleSubmit} disabled={!canSubmit || isPending}>
+          {isPending ? "Saving..." : isEdit ? "Update" : "Link"}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function ChannelDialog({
+  open,
+  onOpenChange,
+  agentName,
+  channel,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  agentName: string;
+  channel?: AgentChannel;
+  onSaved: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <ChannelDialogInner
+          key={channel?.id ?? "new"}
+          onOpenChange={onOpenChange}
+          agentName={agentName}
+          channel={channel}
+          onSaved={onSaved}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Channels Tab ────────────────────────────────────────────────────
+
+function ChannelsTab({
+  agentName,
+  channels: initialChannels,
+}: {
+  agentName: string;
+  channels: AgentChannel[];
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [channels, setChannels] = useState(initialChannels);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<AgentChannel | undefined>();
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/v1/channels?agent_name=${encodeURIComponent(agentName)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setChannels(Array.isArray(data) ? data : data.data);
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") console.warn("Channel refresh failed:", err);
+    }
+  }, [agentName]);
+
+  const handleToggleEnabled = (ch: AgentChannel, enabled: boolean) => {
+    startTransition(async () => {
+      try {
+        await updateChannelAction(ch.id, agentName, { enabled });
+        toast.success(`Channel ${enabled ? "enabled" : "disabled"}`);
+        refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to toggle channel");
+      }
+    });
+  };
+
+  const handleToggleAnnouncements = (ch: AgentChannel, receiveAnnouncements: boolean) => {
+    startTransition(async () => {
+      try {
+        await updateChannelAction(ch.id, agentName, {
+          receive_announcements: receiveAnnouncements,
+        });
+        toast.success(`Announcements ${receiveAnnouncements ? "enabled" : "disabled"}`);
+        refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to toggle announcements");
+      }
+    });
+  };
+
+  const handleDelete = (ch: AgentChannel) => {
+    if (!confirm(`Unlink this ${ch.platform} channel?`)) return;
+    startTransition(async () => {
+      try {
+        await deleteChannelAction(ch.id, agentName);
+        toast.success("Channel unlinked");
+        refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete channel");
+      }
+    });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Linked chat channels for bidirectional messaging.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          onClick={() => {
+            setEditingChannel(undefined);
+            setDialogOpen(true);
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Link Channel
+        </Button>
+      </div>
+
+      {channels.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+            <Radio className="h-8 w-8 mb-2" />
+            <p className="text-sm">No channels linked.</p>
+            <p className="text-xs mt-1">
+              Link a Telegram, Slack, or Discord channel to chat with this agent.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        channels.map((ch) => (
+          <Card key={ch.id} className={!ch.enabled ? "opacity-60" : undefined}>
+            <CardContent className="pt-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {ch.platform}
+                    </Badge>
+                    <code className="text-xs text-muted-foreground">{ch.external_id}</code>
+                    {ch.receive_announcements && (
+                      <Badge variant="secondary" className="text-xs">
+                        announcements
+                      </Badge>
+                    )}
+                  </div>
+                  {ch.config && Object.keys(ch.config).length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {Object.entries(ch.config)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(", ")}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">Enabled</span>
+                      <Switch
+                        checked={ch.enabled}
+                        onCheckedChange={(v) => handleToggleEnabled(ch, v)}
+                        disabled={isPending}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">Announce</span>
+                      <Switch
+                        checked={ch.receive_announcements}
+                        onCheckedChange={(v) => handleToggleAnnouncements(ch, v)}
+                        disabled={isPending}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      setEditingChannel(ch);
+                      setDialogOpen(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    onClick={() => handleDelete(ch)}
+                    disabled={isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      <ChannelDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        agentName={agentName}
+        channel={editingChannel}
+        onSaved={refresh}
+      />
+    </div>
+  );
+}
+
 // ─── Runs Tab ───────────────────────────────────────────────────────
 
 function RunsTab({ agentName, runs: initialRuns }: { agentName: string; runs: TaskRun[] }) {
@@ -847,11 +1188,13 @@ export function AgentDetailClient({
   agent,
   runs,
   schedules,
+  channels,
   availableAgents,
 }: {
   agent: Agent;
   runs: TaskRun[];
   schedules: AgentSchedule[];
+  channels: AgentChannel[];
   availableAgents: string[];
 }) {
   const [isPending, startTransition] = useTransition();
@@ -932,6 +1275,14 @@ export function AgentDetailClient({
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="channels">
+            Channels
+            {channels.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs px-1.5">
+                {channels.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="runs">Runs</TabsTrigger>
         </TabsList>
 
@@ -947,6 +1298,10 @@ export function AgentDetailClient({
 
         <TabsContent value="schedules">
           <SchedulesTab agentName={agent.name} schedules={schedules} />
+        </TabsContent>
+
+        <TabsContent value="channels">
+          <ChannelsTab agentName={agent.name} channels={channels} />
         </TabsContent>
 
         <TabsContent value="runs">

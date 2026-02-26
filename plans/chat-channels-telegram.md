@@ -312,14 +312,15 @@ Announcement delivery behavior:
 - `agent:edda:active` → edda runs, processes, produces response → delivered to `receive_announcements` channels
 - `announce:edda` → source output pushed directly to edda's `receive_announcements` channels (no agent invocation)
 
-### Phase 3: Admin UI
+### Phase 3: Admin UI ✅
 
 **Web UI to manage channel links.**
 
 Files:
-- `apps/web/src/app/agents/[name]/agent-detail-client.tsx` — Add "Channels" tab showing linked channels with add/remove, toggle `receive_announcements`
-- `apps/web/src/app/api/v1/channels/route.ts` — REST endpoints for channel CRUD
-- `apps/web/src/app/actions.ts` — Server actions: `createChannelAction`, `deleteChannelAction`, `updateChannelAction`
+- `apps/web/src/app/agents/[name]/agent-detail-client.tsx` — Add "Channels" tab showing linked channels with add/remove, toggle `receive_announcements` ✅
+- `apps/web/src/app/api/v1/channels/route.ts` — REST endpoints for channel CRUD ✅
+- `apps/web/src/app/api/v1/channels/[id]/route.ts` — PATCH/DELETE for individual channels ✅
+- `apps/web/src/app/actions.ts` — Server actions: `createChannelAction`, `deleteChannelAction`, `updateChannelAction` ✅
 
 ### Phase 4: Setup Helpers
 
