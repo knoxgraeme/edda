@@ -48,7 +48,7 @@ export const addMcpConnectionTool = tool(
     if (transport === "streamable-http" && !auth_env_var) {
       let probeStatus: number | null = null;
       try {
-        const probeRes = await fetch(url, {
+        const probeRes = await ssrfSafeFetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
           body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "edda", version: "1.0.0" } } }),

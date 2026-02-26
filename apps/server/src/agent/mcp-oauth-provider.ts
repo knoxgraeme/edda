@@ -103,7 +103,7 @@ export class MCPOAuthProvider implements OAuthClientProvider {
       pending_auth: {
         code_verifier_encrypted: encrypt(codeVerifier),
         state_param: stateHash,
-        completion_secret: randomBytes(32).toString("hex"),
+        completion_secret: encrypt(randomBytes(32).toString("hex")),
       },
     });
   }

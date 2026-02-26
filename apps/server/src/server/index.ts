@@ -14,7 +14,7 @@ import { embed } from "../embed/index.js";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
 import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
-import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState } from "@edda/db";
+import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 
 interface AgentState {
   agent: Runnable;
@@ -298,14 +298,22 @@ async function handleMcpOAuthComplete(req: IncomingMessage, res: ServerResponse)
     const body = parsed.data;
     connectionId = body.connection_id;
 
-    // Validate completion_secret against stored value (per-flow auth)
+    // Validate completion_secret against stored (encrypted) value (per-flow auth)
     const oauthState = await getOAuthState(body.connection_id);
     if (!oauthState?.pending_auth?.completion_secret) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "No pending auth found" }));
       return;
     }
-    const expectedBuf = Buffer.from(oauthState.pending_auth.completion_secret);
+    let storedSecret: string;
+    try {
+      storedSecret = decrypt(oauthState.pending_auth.completion_secret);
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "No pending auth found" }));
+      return;
+    }
+    const expectedBuf = Buffer.from(storedSecret);
     const actualBuf = Buffer.from(body.completion_secret);
     if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
       res.writeHead(403, { "Content-Type": "application/json" });
