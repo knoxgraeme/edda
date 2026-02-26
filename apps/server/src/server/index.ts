@@ -2,7 +2,7 @@
  * HTTP server — health check + streaming chat endpoint
  */
 
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { getPool, listThreads, upsertThread, setThreadTitle, searchItems } from "@edda/db";
 import type { RetrievalContext } from "@edda/db";
@@ -33,9 +33,39 @@ const StreamRequestSchema = z.object({
 });
 
 function setCors(res: ServerResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const allowedOrigin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+/**
+ * Validate the Authorization bearer token against INTERNAL_API_SECRET.
+ * If INTERNAL_API_SECRET is not set, all requests are allowed (local dev).
+ * Health endpoint is always unauthenticated.
+ */
+function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) return true;
+
+  const authHeader = req.headers.authorization ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+  if (!token) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Missing Authorization header" }));
+    return false;
+  }
+
+  const tokenBuf = Buffer.from(token);
+  const secretBuf = Buffer.from(secret);
+  if (tokenBuf.length !== secretBuf.length || !timingSafeEqual(tokenBuf, secretBuf)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid token" }));
+    return false;
+  }
+
+  return true;
 }
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
@@ -291,9 +321,16 @@ export async function startHealthServer(port: number): Promise<void> {
     const url = req.url ?? "";
     const threadDetailMatch = url.match(/^\/api\/threads\/([^/]+)$/);
 
+    // Health endpoint is always unauthenticated
     if (url === "/api/health" && req.method === "GET") {
       await handleHealth(res);
-    } else if (url === "/api/stream" && req.method === "POST") {
+      return;
+    }
+
+    // All other endpoints require auth when INTERNAL_API_SECRET is set
+    if (!checkAuth(req, res)) return;
+
+    if (url === "/api/stream" && req.method === "POST") {
       await handleStream(req, res);
     } else if (url === "/api/threads" && req.method === "GET") {
       await handleThreadList(res);
