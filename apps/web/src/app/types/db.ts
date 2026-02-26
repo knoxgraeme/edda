@@ -21,4 +21,5 @@ export type {
   TaskRunStatus,
   McpConnection,
   Skill,
+  Notification,
 } from "@edda/db";

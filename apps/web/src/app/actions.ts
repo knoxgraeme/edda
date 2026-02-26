@@ -10,6 +10,7 @@ import {
   updateSettings,
   getSettings,
   getAgentByName,
+  dismissNotification,
   createAgent,
   updateAgent,
   deleteAgent,
@@ -416,7 +417,7 @@ export async function deleteScheduleAction(id: string, agentName: string) {
 export async function dismissNotificationAction(id: string) {
   if (!UUID_RE.test(id)) throw new Error("Invalid id");
   try {
-    await updateItem(id, { status: "done" });
+    await dismissNotification(id);
     revalidatePath("/inbox");
     revalidatePath("/dashboard");
   } catch (err: unknown) {

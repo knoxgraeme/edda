@@ -94,12 +94,15 @@ function parseTarget(target: string): ParsedTarget {
   if (target.startsWith("agent:")) {
     const parts = target.split(":");
     const agentName = parts[1];
+    if (!agentName || !/^[a-z0-9_-]+$/i.test(agentName)) {
+      console.warn(`[notify] Invalid agent name in target '${target}', falling back to inbox`);
+      return { targetType: "inbox", targetId: null, active: false };
+    }
     const active = parts[2] === "active";
     return { targetType: "agent", targetId: agentName, active };
   }
 
-  console.warn(`[notify] Unknown target format: ${target}, treating as inbox`);
-  return { targetType: "inbox", targetId: null, active: false };
+  throw new Error(`Unknown notification target format: '${target}'. Valid formats: 'inbox', 'agent:<name>', 'agent:<name>:active'`);
 }
 
 // ---------------------------------------------------------------------------
