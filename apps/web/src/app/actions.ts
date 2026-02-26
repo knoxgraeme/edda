@@ -17,11 +17,15 @@ import {
   createSchedule as createScheduleDb,
   updateSchedule as updateScheduleDb,
   deleteSchedule as deleteScheduleDb,
+  createChannel as createChannelDb,
+  updateChannel as updateChannelDb,
+  deleteChannel as deleteChannelDb,
   type Settings,
   type Entity,
   type Item,
   type ThreadLifetime,
   type AgentTrigger,
+  type ChannelPlatform,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
@@ -411,6 +415,76 @@ export async function deleteScheduleAction(id: string, agentName: string) {
   } catch (err: unknown) {
     console.error("Failed to delete schedule:", err);
     throw new Error("Failed to delete schedule. Please try again.");
+  }
+}
+
+// ─── Channels ────────────────────────────────────────────────────────
+
+const VALID_PLATFORMS = new Set<ChannelPlatform>(["telegram", "slack", "discord"]);
+
+export async function createChannelAction(data: {
+  agent_name: string;
+  platform: ChannelPlatform;
+  external_id: string;
+  config?: Record<string, unknown>;
+  enabled?: boolean;
+  receive_announcements?: boolean;
+}) {
+  validateAgentName(data.agent_name);
+  if (!VALID_PLATFORMS.has(data.platform)) throw new Error("Invalid platform");
+  if (!data.external_id || data.external_id.length > 500)
+    throw new Error("External ID is required (max 500 chars)");
+
+  const agent = await getAgentByName(data.agent_name);
+  if (!agent) throw new Error("Agent not found");
+
+  try {
+    const channel = await createChannelDb({
+      agent_id: agent.id,
+      platform: data.platform,
+      external_id: data.external_id,
+      config: data.config,
+      enabled: data.enabled,
+      receive_announcements: data.receive_announcements,
+    });
+    revalidatePath(`/agents/${data.agent_name}`);
+    return channel;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes("duplicate key")) {
+      throw new Error("A channel with this platform and external ID already exists.");
+    }
+    console.error("Failed to create channel:", err);
+    throw new Error("Failed to create channel. Please try again.");
+  }
+}
+
+export async function updateChannelAction(
+  id: string,
+  agentName: string,
+  updates: Partial<{
+    config: Record<string, unknown>;
+    enabled: boolean;
+    receive_announcements: boolean;
+  }>,
+) {
+  if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  try {
+    await updateChannelDb(id, updates);
+    revalidatePath(`/agents/${agentName}`);
+  } catch (err: unknown) {
+    console.error("Failed to update channel:", err);
+    throw new Error("Failed to update channel. Please try again.");
+  }
+}
+
+export async function deleteChannelAction(id: string, agentName: string) {
+  if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  try {
+    await deleteChannelDb(id);
+    revalidatePath(`/agents/${agentName}`);
+  } catch (err: unknown) {
+    console.error("Failed to delete channel:", err);
+    throw new Error("Failed to delete channel. Please try again.");
   }
 }
 

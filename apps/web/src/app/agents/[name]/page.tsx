@@ -1,4 +1,4 @@
-import { getAgentByName, getRecentTaskRuns, getSchedulesForAgent, getAgentNames } from "@edda/db";
+import { getAgentByName, getRecentTaskRuns, getSchedulesForAgent, getAgentNames, getChannelsByAgent } from "@edda/db";
 import { notFound } from "next/navigation";
 import { AgentDetailClient } from "./agent-detail-client";
 
@@ -11,10 +11,11 @@ export default async function AgentDetailPage({
   const agent = await getAgentByName(name);
   if (!agent) notFound();
 
-  const [runs, schedules, allNames] = await Promise.all([
+  const [runs, schedules, allNames, channels] = await Promise.all([
     getRecentTaskRuns({ agent_name: name, limit: 20 }),
     getSchedulesForAgent(agent.id),
     getAgentNames(),
+    getChannelsByAgent(agent.id, { includeDisabled: true }),
   ]);
 
   const agentNames = allNames.filter((n) => n !== name);
@@ -24,6 +25,7 @@ export default async function AgentDetailPage({
       agent={agent}
       runs={runs}
       schedules={schedules}
+      channels={channels}
       availableAgents={agentNames}
     />
   );

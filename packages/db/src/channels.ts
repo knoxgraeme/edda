@@ -50,10 +50,11 @@ export async function getChannelByExternalId(
 
 export async function getChannelsByAgent(
   agentId: string,
-  opts?: { receiveAnnouncements?: boolean; platform?: ChannelPlatform },
+  opts?: { receiveAnnouncements?: boolean; platform?: ChannelPlatform; includeDisabled?: boolean },
 ): Promise<AgentChannel[]> {
   const pool = getPool();
-  const conditions = ["agent_id = $1", "enabled = true"];
+  const conditions = ["agent_id = $1"];
+  if (!opts?.includeDisabled) conditions.push("enabled = true");
   const params: unknown[] = [agentId];
   let idx = 2;
 
