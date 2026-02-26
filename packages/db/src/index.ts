@@ -8,6 +8,7 @@
 export * from "./connection.js";
 export * from "./types.js";
 export * from "./items.js";
+export * from "./lists.js";
 export * from "./entities.js";
 export * from "./settings.js";
 export * from "./item-types.js";

@@ -18,7 +18,7 @@ export const RERANK_MULTIPLIER = 3;
 
 /** All item columns except embedding — use for queries that don't need the vector */
 export const ITEM_COLS = `id, type, content, summary, metadata, status, source, day, confirmed,
-  parent_id, embedding_model, superseded_by, completed_at, pending_action,
+  parent_id, list_id, embedding_model, superseded_by, completed_at, pending_action,
   last_reinforced_at, created_at, updated_at`;
 
 /** ITEM_COLS qualified with "i." prefix for use in JOINs where items is aliased as "i" */
@@ -27,8 +27,8 @@ export const QUALIFIED_ITEM_COLS = ITEM_COLS.split(",").map((c) => `i.${c.trim()
 export async function createItem(input: CreateItemInput): Promise<Item> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding, embedding_model, pending_action)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, list_id, embedding, embedding_model, pending_action)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${ITEM_COLS}`,
     [
       input.type,
@@ -40,6 +40,7 @@ export async function createItem(input: CreateItemInput): Promise<Item> {
       input.day ?? new Date().toISOString().split("T")[0],
       input.confirmed ?? true,
       input.parent_id ?? null,
+      input.list_id ?? null,
       input.embedding ? JSON.stringify(input.embedding) : null,
       input.embedding_model ?? null,
       input.pending_action ?? null,
@@ -56,7 +57,7 @@ export async function getItemById(id: string): Promise<Item | null> {
 
 const ITEM_UPDATE_COLUMNS = [
   'type', 'content', 'summary', 'metadata', 'status', 'source', 'day',
-  'confirmed', 'parent_id', 'embedding', 'embedding_model', 'superseded_by',
+  'confirmed', 'parent_id', 'list_id', 'embedding', 'embedding_model', 'superseded_by',
   'completed_at', 'pending_action', 'last_reinforced_at',
 ] as const;
 
@@ -108,6 +109,7 @@ export async function searchItems(
     limit?: number;
     type?: string;
     after?: string;
+    list_id?: string;
     agentKnowledgeOnly?: boolean;
     confirmedOnly?: boolean;
     excludeSuperseded?: boolean;
@@ -121,6 +123,7 @@ export async function searchItems(
     limit = 10,
     type,
     after,
+    list_id,
     agentKnowledgeOnly,
     confirmedOnly,
     excludeSuperseded,
@@ -148,6 +151,11 @@ export async function searchItems(
   if (after) {
     conditions.push(`i.day >= $${paramIdx++}::date`);
     params.push(after);
+  }
+
+  if (list_id) {
+    conditions.push(`i.list_id = $${paramIdx++}`);
+    params.push(list_id);
   }
 
   if (agentKnowledgeOnly) {
@@ -257,8 +265,8 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
     const items: Item[] = [];
     for (const input of inputs) {
       const { rows } = await client.query(
-        `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding, embedding_model, pending_action)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, list_id, embedding, embedding_model, pending_action)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING ${ITEM_COLS}`,
         [
           input.type,
@@ -270,6 +278,7 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
           input.day ?? new Date().toISOString().split("T")[0],
           input.confirmed ?? true,
           input.parent_id ?? null,
+          input.list_id ?? null,
           input.embedding ? JSON.stringify(input.embedding) : null,
           input.embedding_model ?? null,
           input.pending_action ?? null,
@@ -285,33 +294,6 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
   } finally {
     client.release();
   }
-}
-
-export async function getListItems(listId: string, limit: number = 200): Promise<Item[]> {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT ${ITEM_COLS}
-     FROM items
-     WHERE confirmed = true AND status = 'active' AND type = 'list_item'
-       AND parent_id = $1
-     ORDER BY created_at
-     LIMIT $2`,
-    [listId, limit],
-  );
-  return rows as Item[];
-}
-
-export async function getListByName(name: string): Promise<Item | null> {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT ${ITEM_COLS}
-     FROM items
-     WHERE type = 'list' AND confirmed = true AND status = 'active'
-       AND metadata->>'normalized_name' = lower(trim($1))
-     LIMIT 1`,
-    [name],
-  );
-  return (rows[0] as Item) ?? null;
 }
 
 export async function getTimeline(

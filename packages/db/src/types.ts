@@ -18,7 +18,7 @@ export type LlmProvider =
   | "mistral"
   | "bedrock";
 export type EmbeddingProvider = "voyage" | "openai" | "google";
-export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi";
+export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckduckgo";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
 export type CronRunner = "standalone" | "platform";
 export type ApprovalMode = "auto" | "confirm";
@@ -118,6 +118,47 @@ export interface AgentsMdVersion {
 }
 
 // ──────────────────────────────────────────────
+// Lists
+// ──────────────────────────────────────────────
+
+export type ListType = 'rolling' | 'one_off';
+export type ListStatus = 'active' | 'archived';
+
+export interface List {
+  id: string;
+  name: string;
+  normalized_name: string;
+  summary: string | null;
+  icon: string;
+  list_type: ListType;
+  status: ListStatus;
+  embedding: number[] | null;
+  embedding_model: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateListInput {
+  name: string;
+  normalized_name?: string;
+  summary?: string;
+  icon?: string;
+  list_type?: ListType;
+  embedding?: number[];
+  embedding_model?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ListWithCount extends List {
+  item_count: number;
+}
+
+export interface ListSearchResult extends List {
+  similarity: number;
+}
+
+// ──────────────────────────────────────────────
 // Items
 // ──────────────────────────────────────────────
 
@@ -135,6 +176,7 @@ export interface Item {
   day: string; // YYYY-MM-DD
   confirmed: boolean;
   parent_id: string | null;
+  list_id: string | null;
   embedding: number[] | null;
   embedding_model: string | null;
   superseded_by: string | null;
@@ -155,6 +197,7 @@ export interface CreateItemInput {
   day?: string;
   confirmed?: boolean;
   parent_id?: string;
+  list_id?: string;
   embedding?: number[];
   embedding_model?: string;
   pending_action?: string;
@@ -221,7 +264,7 @@ export interface DashboardData {
   due_today: Item[];
   captured_today: Item[];
   open_items: Item[];
-  lists: Record<string, Item[]>;
+  lists: Record<string, { list: List; items: Item[] }>;
   pending_confirmations: Item[];
 }
 
