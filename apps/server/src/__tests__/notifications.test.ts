@@ -48,7 +48,11 @@ vi.mock("@edda/db", () => ({
 
 // Mock build-agent to avoid pulling in the full agent stack
 vi.mock("../agent/build-agent.js", () => ({
-  buildAgent: vi.fn(),
+  buildAgent: vi.fn().mockResolvedValue({
+    invoke: vi.fn().mockResolvedValue({
+      messages: [{ role: "assistant", content: "Notification processed." }],
+    }),
+  }),
   resolveThreadId: vi.fn().mockReturnValue("thread-1"),
   MODEL_SETTINGS_KEYS: new Set(),
 }));
