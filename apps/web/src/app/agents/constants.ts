@@ -1,15 +1,15 @@
 export const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 export const AVAILABLE_SKILLS = [
-  { name: "admin", description: "Agent and MCP management" },
-  { name: "capture", description: "Classify and store items" },
-  { name: "context_refresh", description: "Maintain AGENTS.md context" },
-  { name: "daily_digest", description: "Morning briefing" },
-  { name: "manage", description: "Edit, complete, archive items" },
-  { name: "memory_extraction", description: "Extract knowledge from conversations" },
-  { name: "recall", description: "Search and retrieve information" },
-  { name: "type_evolution", description: "Evolve item type system" },
-  { name: "weekly_reflect", description: "Weekly patterns and maintenance" },
+  { name: "admin", description: "Agent and MCP management", toolCount: 4 },
+  { name: "capture", description: "Classify and store items", toolCount: 3 },
+  { name: "context_refresh", description: "Maintain AGENTS.md context", toolCount: 2 },
+  { name: "daily_digest", description: "Morning briefing", toolCount: 3 },
+  { name: "manage", description: "Edit, complete, archive items", toolCount: 4 },
+  { name: "memory_extraction", description: "Extract knowledge from conversations", toolCount: 5 },
+  { name: "recall", description: "Search and retrieve information", toolCount: 3 },
+  { name: "type_evolution", description: "Evolve item type system", toolCount: 3 },
+  { name: "weekly_reflect", description: "Weekly patterns and maintenance", toolCount: 3 },
 ];
 
 /** Validates a standard 5-field cron expression (minute hour day month weekday). */

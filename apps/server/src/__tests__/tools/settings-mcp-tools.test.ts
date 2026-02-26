@@ -23,7 +23,6 @@ const { DEFAULT_SETTINGS } = vi.hoisted(() => ({
     llm_provider: "anthropic",
     default_model: "claude-sonnet-4-20250514",
     task_max_concurrency: 3,
-    notification_targets: ["inbox"],
     embedding_model: "voyage-3",
   },
 }));

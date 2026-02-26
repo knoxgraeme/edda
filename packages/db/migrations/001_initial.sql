@@ -100,7 +100,6 @@ CREATE TABLE settings (
   user_timezone TEXT DEFAULT 'UTC',
 
   -- Notifications & concurrency
-  notification_targets TEXT[] DEFAULT '{inbox}',
   task_max_concurrency INT DEFAULT 3,
 
   -- Default agent

@@ -15,7 +15,6 @@ const AGENT_VISIBLE_KEYS: (keyof Settings)[] = [
   "llm_provider",
   "default_model",
   "task_max_concurrency",
-  "notification_targets",
   "user_display_name",
   "user_timezone",
   "web_search_enabled",

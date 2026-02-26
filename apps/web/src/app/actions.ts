@@ -39,7 +39,6 @@ const UpdateSettingsSchema = z
     default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(["voyage", "openai", "google"]).optional(),
     embedding_model: z.string().max(100).optional(),
-    notification_targets: z.array(z.string()).optional(),
     context_refresh_cron: z.string().max(50).optional(),
     default_agent: z.string().min(1).max(200).optional(),
   })

@@ -68,7 +68,6 @@ const SETTINGS_UPDATE_COLUMNS = [
   "setup_completed",
   "user_display_name",
   "user_timezone",
-  "notification_targets",
   "task_max_concurrency",
   "default_agent",
 ] as const;

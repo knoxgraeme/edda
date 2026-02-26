@@ -106,7 +106,7 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="my_agent"
+                placeholder="e.g., research-assistant"
               />
               {!nameValid && (
                 <p className="text-xs text-destructive">
@@ -232,7 +232,14 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
                     )}
                   </div>
                   <div className="min-w-0">
-                    <span className="text-sm font-medium">{s.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{s.name}</span>
+                      {s.toolCount > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          ({s.toolCount} {s.toolCount === 1 ? "tool" : "tools"})
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">{s.description}</p>
                   </div>
                 </button>
@@ -267,7 +274,8 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
                 <div className="grid gap-2">
                   <Label>Subagents</Label>
                   <p className="text-xs text-muted-foreground">
-                    Other agents this agent can delegate work to
+                    Subagents can be called by this agent to delegate specialized work. Select
+                    agents you want this agent to be able to invoke.
                   </p>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {availableAgents.map((a) => (
