@@ -14,9 +14,6 @@ const {
   mockGetLatestAgentsMd,
   mockGetItemsByType,
   mockGetTopEntities,
-  mockGetItemTypes,
-  mockGetPendingConfirmationsCount,
-  mockGetAllLists,
 } = vi.hoisted(() => ({
   mockGetSettingsSync: vi.fn(),
   mockSaveAgentsMdVersion: vi.fn().mockResolvedValue(undefined),
@@ -24,9 +21,6 @@ const {
   mockGetLatestAgentsMd: vi.fn().mockResolvedValue(null),
   mockGetItemsByType: vi.fn().mockResolvedValue([]),
   mockGetTopEntities: vi.fn().mockResolvedValue([]),
-  mockGetItemTypes: vi.fn().mockResolvedValue([]),
-  mockGetPendingConfirmationsCount: vi.fn().mockResolvedValue(0),
-  mockGetAllLists: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@edda/db", () => ({
@@ -36,16 +30,13 @@ vi.mock("@edda/db", () => ({
   getLatestAgentsMd: mockGetLatestAgentsMd,
   getItemsByType: mockGetItemsByType,
   getTopEntities: mockGetTopEntities,
-  getItemTypes: mockGetItemTypes,
-  getPendingConfirmationsCount: mockGetPendingConfirmationsCount,
-  getAllLists: mockGetAllLists,
 }));
 
 import { saveAgentsMdTool } from "../../agent/tools/save-agents-md.js";
 import { getContextDiffTool } from "../../agent/tools/get-context-diff.js";
 
 const DEFAULT_SETTINGS = {
-  agents_md_token_budget: 1500,
+  agents_md_token_budget: 4000,
   agents_md_max_per_category: 10,
   agents_md_max_versions: 3,
   agents_md_max_entities: 10,
@@ -56,6 +47,11 @@ const DEFAULT_SETTINGS = {
   approval_merge_entity: "confirm",
 };
 
+/** Config with agent_name in configurable, matching how LangGraph invokes tools. */
+const agentConfig = (name: string) => ({
+  configurable: { agent_name: name },
+});
+
 // ── Tests ──────────────────────────────────────────────────────
 
 describe("save_agents_md tool", () => {
@@ -65,7 +61,10 @@ describe("save_agents_md tool", () => {
   });
 
   it("saves content and prunes old versions", async () => {
-    const result = await saveAgentsMdTool.invoke({ content: "# My AGENTS.md" });
+    const result = await saveAgentsMdTool.invoke(
+      { content: "# My AGENTS.md" },
+      agentConfig("edda"),
+    );
     const parsed = JSON.parse(result);
 
     expect(parsed.saved).toBe(true);
@@ -74,16 +73,32 @@ describe("save_agents_md tool", () => {
     expect(mockSaveAgentsMdVersion).toHaveBeenCalledOnce();
     const call = mockSaveAgentsMdVersion.mock.calls[0][0];
     expect(call.content).toBe("# My AGENTS.md");
-    expect(call.template).toContain("# Raw Template Data");
+    expect(call.template).toContain("# Change Signal");
     expect(call.inputHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(call.agentName).toBe("edda");
 
     expect(mockPruneAgentsMdVersions).toHaveBeenCalledWith(3);
   });
 
+  it("passes the calling agent name to saveAgentsMdVersion", async () => {
+    await saveAgentsMdTool.invoke(
+      { content: "content" },
+      agentConfig("maintenance"),
+    );
+    const call = mockSaveAgentsMdVersion.mock.calls[0][0];
+    expect(call.agentName).toBe("maintenance");
+  });
+
   it("uses max_versions from settings for pruning", async () => {
     mockGetSettingsSync.mockReturnValue({ ...DEFAULT_SETTINGS, agents_md_max_versions: 10 });
-    await saveAgentsMdTool.invoke({ content: "content" });
+    await saveAgentsMdTool.invoke({ content: "content" }, agentConfig("edda"));
     expect(mockPruneAgentsMdVersions).toHaveBeenCalledWith(10);
+  });
+
+  it("throws when agent_name is missing from config", async () => {
+    await expect(saveAgentsMdTool.invoke({ content: "content" })).rejects.toThrow(
+      "agent_name required in configurable",
+    );
   });
 });
 
@@ -104,9 +119,16 @@ describe("get_context_diff tool", () => {
       input_hash: hash,
     });
 
-    const result = await getContextDiffTool.invoke({});
+    const result = await getContextDiffTool.invoke({}, agentConfig("edda"));
     const parsed = JSON.parse(result);
     expect(parsed.status).toBe("no_changes");
+  });
+
+  it("passes agent name to getLatestAgentsMd", async () => {
+    mockGetLatestAgentsMd.mockResolvedValue(null);
+
+    await getContextDiffTool.invoke({}, agentConfig("maintenance"));
+    expect(mockGetLatestAgentsMd).toHaveBeenCalledWith("maintenance");
   });
 
   it("returns changes_detected when hash differs", async () => {
@@ -116,21 +138,27 @@ describe("get_context_diff tool", () => {
       input_hash: "0000000000000000000000000000000000000000000000000000000000000000",
     });
 
-    const result = await getContextDiffTool.invoke({});
+    const result = await getContextDiffTool.invoke({}, agentConfig("edda"));
     const parsed = JSON.parse(result);
     expect(parsed.status).toBe("changes_detected");
     expect(parsed.current_content).toBe("old content");
     expect(parsed.diff).toBeDefined();
-    expect(parsed.raw_template).toContain("# Raw Template Data");
-    expect(parsed.token_budget).toBe(1500);
+    expect(parsed.raw_template).toContain("# Change Signal");
+    expect(parsed.token_budget).toBe(4000);
   });
 
   it("returns changes_detected when no prior version exists", async () => {
     mockGetLatestAgentsMd.mockResolvedValue(null);
 
-    const result = await getContextDiffTool.invoke({});
+    const result = await getContextDiffTool.invoke({}, agentConfig("edda"));
     const parsed = JSON.parse(result);
     expect(parsed.status).toBe("changes_detected");
     expect(parsed.current_content).toBe("(empty — first version)");
+  });
+
+  it("throws when agent_name is missing from config", async () => {
+    await expect(getContextDiffTool.invoke({})).rejects.toThrow(
+      "agent_name required in configurable",
+    );
   });
 });

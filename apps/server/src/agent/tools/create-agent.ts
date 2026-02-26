@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createAgent, getAgents } from "@edda/db";
+import { createAgent, getAgents, saveAgentsMdVersion } from "@edda/db";
 
 export const createAgentSchema = z.object({
   name: z
@@ -54,21 +54,54 @@ export const createAgentTool = tool(
       throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
     }
 
+    // Auto-add self_improvement skill so the agent can refine itself
+    const resolvedSkills = skills ?? [];
+    if (!resolvedSkills.includes("self_improvement")) {
+      resolvedSkills.push("self_improvement");
+    }
+
     const agent = await createAgent({
       name,
       description,
       system_prompt,
-      skills: skills ?? [],
+      skills: resolvedSkills,
       context_mode,
       trigger,
       metadata,
     });
+
+    // Seed an empty AGENTS.md (procedural memory) for the new agent
+    const seedContent = [
+      "## Communication",
+      "(Learning — will update as I observe your preferences)",
+      "",
+      "## Patterns",
+      "(No patterns observed yet)",
+      "",
+      "## Standards",
+      "(No specific standards established yet)",
+      "",
+      "## Corrections",
+      "(No corrections yet)",
+    ].join("\n");
+
+    try {
+      await saveAgentsMdVersion({
+        content: seedContent,
+        template: "",
+        inputHash: "",
+        agentName: name,
+      });
+    } catch (err) {
+      console.error(`[create_agent] Agent "${name}" created but AGENTS.md seed failed:`, err);
+    }
 
     return JSON.stringify({
       created: true,
       agent_id: agent.id,
       name: agent.name,
       trigger: agent.trigger,
+      skills: resolvedSkills,
     });
   },
   {

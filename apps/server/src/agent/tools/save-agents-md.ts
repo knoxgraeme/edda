@@ -14,23 +14,33 @@ import {
   pruneAgentsMdVersions,
 } from "@edda/db";
 import { buildDeterministicTemplate } from "../generate-agents-md.js";
+import { getAgentName } from "../tool-helpers.js";
 
 export const saveAgentsMdSchema = z.object({
   content: z.string().min(1).max(8000).describe("The full curated AGENTS.md content"),
 });
 
 export const saveAgentsMdTool = tool(
-  async ({ content }) => {
+  async ({ content }, config) => {
+    const agentName = getAgentName(config);
+    if (!agentName) throw new Error("agent_name required in configurable");
+
     const settings = getSettingsSync();
     const { template, hash } = await buildDeterministicTemplate();
-    await saveAgentsMdVersion({ content, template, inputHash: hash });
-    await pruneAgentsMdVersions(settings.agents_md_max_versions);
+    await saveAgentsMdVersion({ content, template, inputHash: hash, agentName });
+
+    try {
+      await pruneAgentsMdVersions(settings.agents_md_max_versions);
+    } catch (err) {
+      console.error("[save_agents_md] Pruning old versions failed (save succeeded):", err);
+    }
+
     return JSON.stringify({ saved: true, length: content.length });
   },
   {
     name: "save_agents_md",
     description:
-      "Save a new version of the AGENTS.md user context document. Call after editing the content returned by get_context_diff.",
+      "Save a new version of your AGENTS.md procedural memory (communication preferences, behavioral patterns, quality standards, corrections). Call when you learn something about how to serve this user better.",
     schema: saveAgentsMdSchema,
   },
 );
