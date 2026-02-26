@@ -11,6 +11,7 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { getMcpConnections, updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
 import { withTimeout } from "../utils/with-timeout.js";
+import { MCPOAuthProvider } from "./mcp-oauth-provider.js";
 
 let _client: MultiServerMCPClient | null = null;
 let _initPromise: Promise<DynamicStructuredTool[]> | null = null;
@@ -159,7 +160,7 @@ function normalizeEncodedIP(hostname: string): string | null {
   return null;
 }
 
-function validateMcpUrl(raw: string): string {
+export function validateMcpUrl(raw: string): string {
   const url = new URL(raw);
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -212,6 +213,15 @@ function validateMcpUrl(raw: string): string {
   return url.toString();
 }
 
+/**
+ * Fetch wrapper that validates URLs through validateMcpUrl before making requests.
+ * Pass this to the MCP SDK's auth() as fetchFn to prevent SSRF during OAuth discovery.
+ */
+export function ssrfSafeFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+  validateMcpUrl(typeof url === "string" ? url : url.toString());
+  return fetch(url, init);
+}
+
 // --- Connection config → MultiServerMCPClient format ---
 
 function toMCPServerConfig(conn: McpConnection): Connection {
@@ -255,10 +265,15 @@ function toMCPServerConfig(conn: McpConnection): Connection {
         throw new Error(`MCP streamable-http config missing "url" for "${conn.name}"`);
       }
       const url = validateMcpUrl(config.url);
-      return {
+      const httpConfig: Connection = {
         transport: "http" as const,
         url,
       };
+      if (conn.auth_type === "oauth") {
+        const baseUrl = process.env.EDDA_BASE_URL ?? "http://localhost:3000";
+        httpConfig.authProvider = new MCPOAuthProvider(conn.id, baseUrl);
+      }
+      return httpConfig;
     }
     default:
       throw new Error(`Unsupported MCP transport: ${conn.transport}`);
@@ -268,7 +283,8 @@ function toMCPServerConfig(conn: McpConnection): Connection {
 // --- Internal init helper ---
 
 async function _initMCPClient(): Promise<DynamicStructuredTool[]> {
-  const connections = await getMcpConnections();
+  const allConnections = await getMcpConnections();
+  const connections = allConnections.filter((c) => c.auth_status !== "pending_auth");
   if (connections.length === 0) return [];
 
   const client = new MultiServerMCPClient({

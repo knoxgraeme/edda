@@ -246,6 +246,9 @@ export interface ItemType {
 // MCP Connections
 // ──────────────────────────────────────────────
 
+export type McpAuthType = "none" | "bearer" | "oauth";
+export type McpAuthStatus = "active" | "pending_auth" | "error";
+
 export interface McpConnection {
   id: string;
   name: string;
@@ -253,7 +256,24 @@ export interface McpConnection {
   config: Record<string, unknown>;
   enabled: boolean;
   discovered_tools: string[];
+  auth_type: McpAuthType;
+  auth_status: McpAuthStatus;
   created_at: string;
+}
+
+export interface McpOAuthStateRow {
+  connection_id: string;
+  client_info_encrypted: string | null;
+  tokens_encrypted: string | null;
+  expires_at: string | null;
+  discovery_state: Record<string, unknown> | null;
+  pending_auth: {
+    code_verifier_encrypted: string;
+    state_param: string;
+    completion_secret: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ──────────────────────────────────────────────

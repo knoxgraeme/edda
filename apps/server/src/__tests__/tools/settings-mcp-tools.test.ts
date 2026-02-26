@@ -95,7 +95,7 @@ describe("updateSettingsTool", () => {
 });
 
 describe("addMcpConnectionTool", () => {
-  it("calls createMcpConnection with SSE transport", async () => {
+  it("calls createMcpConnection with streamable-http transport", async () => {
     vi.mocked(createMcpConnection).mockResolvedValueOnce({
       id: "mcp-1",
       name: "TestMCP",
@@ -110,7 +110,7 @@ describe("addMcpConnectionTool", () => {
     expect(vi.mocked(createMcpConnection)).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "TestMCP",
-        transport: "sse",
+        transport: "streamable-http",
         config: expect.objectContaining({ url: "https://mcp.example.com/sse" }),
       }),
     );
