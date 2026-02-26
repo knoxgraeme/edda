@@ -17,16 +17,20 @@ export async function upsertEntity(input: {
   aliases?: string[];
   description?: string;
   embedding?: number[];
+  confirmed?: boolean;
+  pending_action?: string | null;
 }): Promise<Entity> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO entities (name, type, aliases, description, embedding)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO entities (name, type, aliases, description, embedding, confirmed, pending_action)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (name) DO UPDATE SET
        type = EXCLUDED.type,
        aliases = EXCLUDED.aliases,
        description = COALESCE(EXCLUDED.description, entities.description),
        embedding = COALESCE(EXCLUDED.embedding, entities.embedding),
+       confirmed = COALESCE(EXCLUDED.confirmed, entities.confirmed),
+       pending_action = COALESCE(EXCLUDED.pending_action, entities.pending_action),
        mention_count = entities.mention_count + 1,
        last_seen_at = now(),
        updated_at = now()
@@ -37,6 +41,8 @@ export async function upsertEntity(input: {
       input.aliases ?? [],
       input.description ?? null,
       input.embedding ? JSON.stringify(input.embedding) : null,
+      input.confirmed ?? true,
+      input.pending_action ?? null,
     ],
   );
   return rows[0] as Entity;

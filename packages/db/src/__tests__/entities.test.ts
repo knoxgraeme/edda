@@ -49,7 +49,7 @@ describe("entities", () => {
       expect(sql).toContain("COALESCE(EXCLUDED.description, entities.description)");
       expect(sql).toContain("COALESCE(EXCLUDED.embedding, entities.embedding)");
       expect(sql).toContain(`RETURNING ${ENTITY_COLS}`);
-      expect(params).toEqual(["Acme Corp", "company", [], "A company", null]);
+      expect(params).toEqual(["Acme Corp", "company", [], "A company", null, true, null]);
     });
 
     it("aliases default to empty array when not provided", async () => {
