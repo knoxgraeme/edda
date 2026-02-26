@@ -2,7 +2,8 @@
  * Local cron runner — uses node-cron for scheduling
  *
  * Reads agent_schedules table to register per-schedule cron tasks. Each
- * execution creates a task_run record for observability.
+ * execution creates a task_run record for observability. The cron runner
+ * is generic — it just invokes agents with their schedule prompt.
  */
 
 import cron from "node-cron";
@@ -20,14 +21,8 @@ import {
 import type { EnabledSchedule } from "@edda/db";
 import { sanitizeError } from "../utils/sanitize-error.js";
 import { withTimeout } from "../utils/with-timeout.js";
-import type { Agent } from "@edda/db";
 
 import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
-import {
-  prepareContextRefreshInput,
-  finalizeContextRefresh,
-  maybeRefreshAgentContext,
-} from "../agent/generate-agents-md.js";
 import { resolveRetrievalContext } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import { notify } from "../utils/notify.js";
@@ -56,38 +51,6 @@ function extractLastAssistantMessage(result: {
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
-// ---------------------------------------------------------------------------
-// Metadata-driven invocation hooks (closed allowlist)
-// ---------------------------------------------------------------------------
-
-const PRE_HOOKS: Record<string, (agent: Agent) => Promise<string | null>> = {
-  prepareContextRefreshInput: () => prepareContextRefreshInput(),
-};
-
-const POST_HOOKS: Record<string, (agent: Agent) => Promise<void>> = {
-  finalizeContextRefresh: () => finalizeContextRefresh(),
-};
-
-// ---------------------------------------------------------------------------
-// Invocation message builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build the user message for a schedule execution.
- * Dispatches to a pre_invoke hook if one is declared in the schedule's hooks,
- * otherwise uses the schedule's prompt directly.
- */
-async function buildInvocationMessage(
-  schedule: EnabledSchedule,
-  agent: Agent,
-): Promise<string | null> {
-  const hooks = schedule.hooks as { pre_invoke?: string } | undefined;
-  if (hooks?.pre_invoke && PRE_HOOKS[hooks.pre_invoke]) {
-    return PRE_HOOKS[hooks.pre_invoke](agent);
-  }
-  return schedule.prompt;
-}
 
 // ---------------------------------------------------------------------------
 // LocalCronRunner class
@@ -156,7 +119,9 @@ export class LocalCronRunner implements CronRunner {
       );
     }
 
-    const task = cron.schedule(schedule.cron, () => this.executeScheduleById(schedule.id, schedule.agent_name));
+    const task = cron.schedule(schedule.cron, () =>
+      this.executeSchedule(schedule.id, schedule.agent_name),
+    );
     this._registered.set(schedule.id, { task, cron: schedule.cron });
     console.log(
       `  [cron] Registered: ${schedule.agent_name}/${schedule.name} (${schedule.cron})`,
@@ -193,8 +158,7 @@ export class LocalCronRunner implements CronRunner {
 
   // ── Schedule execution ─────────────────────────────────────────
 
-  private async executeScheduleById(scheduleId: string, agentNameHint: string): Promise<void> {
-    // Re-fetch schedule and agent to pick up changes since registration
+  private async executeSchedule(scheduleId: string, agentNameHint: string): Promise<void> {
     const freshSchedule = await getScheduleById(scheduleId);
     if (!freshSchedule || !freshSchedule.enabled) {
       console.log(`  [cron] Skipping schedule ${scheduleId} — not found or disabled`);
@@ -207,17 +171,6 @@ export class LocalCronRunner implements CronRunner {
       return;
     }
 
-    const userMessage = await buildInvocationMessage(
-      { ...freshSchedule, agent_name: freshDef.name },
-      freshDef,
-    );
-    if (!userMessage) {
-      console.log(
-        `  [cron] Skipping ${freshDef.name}/${freshSchedule.name} — no work to do`,
-      );
-      return;
-    }
-
     const settings = await refreshSettings();
     const modelName =
       freshDef.model_settings_key && MODEL_SETTINGS_KEYS.has(freshDef.model_settings_key)
@@ -226,7 +179,6 @@ export class LocalCronRunner implements CronRunner {
           ] as string)
         : undefined;
 
-    // Use schedule's context_mode override if set, otherwise fall back to agent's
     const contextAgent = freshSchedule.context_mode
       ? { ...freshDef, context_mode: freshSchedule.context_mode }
       : freshDef;
@@ -251,7 +203,7 @@ export class LocalCronRunner implements CronRunner {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result: any = await withTimeout(
           agent.invoke(
-            { messages: [{ role: "user", content: userMessage }] },
+            { messages: [{ role: "user", content: freshSchedule.prompt }] },
             {
               configurable: {
                 thread_id: threadId,
@@ -278,21 +230,6 @@ export class LocalCronRunner implements CronRunner {
           console.error(
             `  [cron] ${freshDef.name} notification failed (run was successful):`,
             notifyErr,
-          );
-        }
-
-        // Post-execution hooks (schedule-driven or default context refresh)
-        try {
-          const postHooks = freshSchedule.hooks as { post_invoke?: string } | undefined;
-          if (postHooks?.post_invoke && POST_HOOKS[postHooks.post_invoke]) {
-            await POST_HOOKS[postHooks.post_invoke](freshDef);
-          } else {
-            await maybeRefreshAgentContext(freshDef);
-          }
-        } catch (ctxErr) {
-          console.error(
-            `  [cron] ${freshDef.name} context refresh failed (agent run was successful):`,
-            ctxErr,
           );
         }
 

@@ -1,14 +1,9 @@
 /**
- * AGENTS.md generator — DB-backed versioned user context
+ * AGENTS.md generator — deterministic template builder and diff logic
  *
- * Builds a deterministic template from DB data, diffs against the previous
- * version, and provides input/finalization hooks for the context_refresh agent.
+ * Builds a deterministic template from DB data and computes diffs.
+ * Used by the get_context_diff and save_agents_md tools.
  * The curated content lives in the agents_md_versions table (no filesystem I/O).
- *
- * Entry points:
- * - maybeRefreshAgentsMd() — called inline from post-process; stores template + hash only
- * - prepareContextRefreshInput() — builds invocation message for context_refresh agent
- * - finalizeContextRefresh() — stores template hash after agent execution
  */
 
 import { createHash } from "node:crypto";
@@ -18,29 +13,14 @@ import {
   getTopEntities,
   getItemTypes,
   getPendingConfirmationsCount,
-  getLatestAgentsMd,
-  saveAgentsMdVersion,
-  pruneAgentsMdVersions,
-  getRecentTaskRuns,
 } from "@edda/db";
-import type { Agent, ItemType } from "@edda/db";
+import type { ItemType } from "@edda/db";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 /** SHA-256 hex hash of a string. */
 function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
-}
-
-// ── In-memory hash cache (avoids DB queries when nothing changed) ───
-let _cachedHash: string | null = null;
-let _cachedHashAt = 0;
-const HASH_CACHE_TTL_MS = 30_000; // 30 seconds
-
-/** Reset hash cache — exported for testing only. */
-export function _resetHashCache(): void {
-  _cachedHash = null;
-  _cachedHashAt = 0;
 }
 
 // ── Deterministic template builder ──────────────────────────────
@@ -165,138 +145,3 @@ export function buildTemplateDiff(oldTemplate: string, newTemplate: string): str
 
   return diff.length > 0 ? diff.join("\n") : "(no changes)";
 }
-
-// ── Post-process entry point ────────────────────────────────────
-
-/**
- * Called from post-process middleware (replaces old generateAgentsMd).
- * Fast — no LLM call. Only stores the latest template + hash so the
- * cron job can compute a diff on its next run.
- */
-export async function maybeRefreshAgentsMd(): Promise<void> {
-  if (_cachedHash && Date.now() - _cachedHashAt < HASH_CACHE_TTL_MS) return;
-
-  const { template, hash } = await buildDeterministicTemplate();
-  const latest = await getLatestAgentsMd();
-
-  // If hash matches, nothing changed — skip
-  if (latest?.input_hash === hash) {
-    _cachedHash = hash;
-    _cachedHashAt = Date.now();
-    return;
-  }
-
-  // Store updated template + hash, preserve existing content
-  const currentContent = latest?.content ?? "";
-  await saveAgentsMdVersion({ content: currentContent, template, inputHash: hash });
-  _cachedHash = hash;
-  _cachedHashAt = Date.now();
-}
-
-// ── Context refresh input (for normal agent path) ───────────────
-
-/**
- * Build the invocation message for the context_refresh agent.
- * Returns null if no changes detected (skip execution).
- * Called by the cron runner before invoking context_refresh via buildAgent().
- */
-export async function prepareContextRefreshInput(): Promise<string | null> {
-  const settings = getSettingsSync();
-  const { template, hash } = await buildDeterministicTemplate();
-  const latest = await getLatestAgentsMd();
-
-  if (latest?.input_hash === hash) return null;
-
-  const diff = buildTemplateDiff(latest?.template ?? "", template);
-  if (diff === "(no changes)") return null;
-
-  const tokenBudget = settings.agents_md_token_budget;
-  const currentContent = latest?.content ?? "(empty — this is the first version)";
-
-  return `Review the changes and update AGENTS.md. Save your edited version using the save_agents_md tool.
-
-## Current AGENTS.md (what's live now):
-${currentContent}
-
-## What Changed Since Last Edit:
-${diff}
-
-## Raw Materials (full deterministic template):
-${template}
-
-## Budget:
-Keep total length under ${tokenBudget} tokens (~${tokenBudget * 4} characters).`;
-}
-
-
-/**
- * Post-execution hook for context_refresh: store the template hash
- * and prune old versions so the next run detects changes correctly.
- * Called by the cron runner after a successful context_refresh execution.
- */
-export async function finalizeContextRefresh(): Promise<void> {
-  const settings = getSettingsSync();
-  const { template, hash } = await buildDeterministicTemplate();
-  const latest = await getLatestAgentsMd();
-
-  // If the agent didn't call save_agents_md (no new version),
-  // store the template + hash with current content so we don't re-run
-  if (latest?.input_hash !== hash) {
-    await saveAgentsMdVersion({
-      content: latest?.content ?? "",
-      template,
-      inputHash: hash,
-    });
-  }
-
-  await pruneAgentsMdVersions(settings.agents_md_max_versions);
-}
-
-// ── Per-agent context ────────────────────────────────────────────
-
-/**
- * Build a lightweight context template for an agent from its recent task runs.
- * No LLM call — purely deterministic.
- */
-export async function buildAgentTemplate(definition: Agent): Promise<string> {
-  const recentRuns = await getRecentTaskRuns({ agent_name: definition.name, limit: 20 });
-
-  const sections: string[] = [`# ${definition.name}`, `## Purpose\n${definition.description}`];
-
-  if (recentRuns.length > 0) {
-    const completed = recentRuns.filter((r) => r.status === "completed").length;
-    const failed = recentRuns.filter((r) => r.status === "failed").length;
-    sections.push(
-      `## Recent Runs\n- ${completed} completed, ${failed} failed (last ${recentRuns.length} runs)`,
-    );
-
-    const lastOutputs = recentRuns
-      .filter((r) => r.output_summary)
-      .slice(0, 3)
-      .map((r) => `- ${r.started_at?.split("T")[0]}: ${r.output_summary?.slice(0, 100)}`);
-    if (lastOutputs.length) sections.push(`## Recent Output\n${lastOutputs.join("\n")}`);
-  }
-
-  return sections.join("\n\n");
-}
-
-/**
- * Hash-check an agent's context and save a new version if changed.
- * Fast path — no LLM call. Called after every cron execution.
- */
-export async function maybeRefreshAgentContext(definition: Agent): Promise<boolean> {
-  const template = await buildAgentTemplate(definition);
-  const hash = sha256(template);
-
-  const existing = await getLatestAgentsMd(definition.name);
-  if (existing?.input_hash === hash) return false;
-
-  await saveAgentsMdVersion({
-    content: template,
-    template,
-    inputHash: hash,
-    agentName: definition.name,
-  });
-  return true;
-}
-

@@ -9,10 +9,6 @@ import { refreshSettings, getLatestAgentsMd, getAgentByName } from "@edda/db";
 import { seedSkills } from "./agent/seed-skills.js";
 import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
 import { resolveRetrievalContext } from "./agent/tool-helpers.js";
-import {
-  prepareContextRefreshInput,
-  finalizeContextRefresh,
-} from "./agent/generate-agents-md.js";
 import { createCronRunner } from "./cron/index.js";
 import { setAgent, startHealthServer } from "./server/index.js";
 
@@ -47,18 +43,22 @@ async function main() {
   if (!latestMd?.content?.trim()) {
     console.log("  AGENTS.md empty — running initial context refresh...");
     try {
-      const contextRefreshDef = await getAgentByName("maintenance");
-      if (contextRefreshDef) {
-        const input = await prepareContextRefreshInput();
-        if (input) {
-          const crAgent = await buildAgent(contextRefreshDef);
-          const threadId = resolveThreadId(contextRefreshDef);
-          await crAgent.invoke(
-            { messages: [{ role: "user", content: input }] },
-            { configurable: { thread_id: threadId, agent_name: "maintenance" } },
-          );
-          await finalizeContextRefresh();
-        }
+      const maintenanceDef = await getAgentByName("maintenance");
+      if (maintenanceDef) {
+        const crAgent = await buildAgent(maintenanceDef);
+        const threadId = resolveThreadId(maintenanceDef);
+        await crAgent.invoke(
+          {
+            messages: [
+              {
+                role: "user",
+                content:
+                  "This is the first boot. Check for context changes and create the initial AGENTS.md document.",
+              },
+            ],
+          },
+          { configurable: { thread_id: threadId, agent_name: "maintenance" } },
+        );
       }
     } catch (err: unknown) {
       console.warn("  Initial context refresh failed (will retry on cron):", err);

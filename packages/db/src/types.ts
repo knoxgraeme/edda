@@ -355,7 +355,6 @@ export interface AgentSchedule {
   cron: string;
   prompt: string;
   context_mode: AgentContextMode | null;
-  hooks: Record<string, unknown>;
   enabled: boolean;
   created_at: string;
 }

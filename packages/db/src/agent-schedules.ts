@@ -2,13 +2,13 @@
  * Agent Schedules — CRUD and cron-runner queries
  *
  * Each row represents a single cron trigger for an agent, with its own
- * prompt (steering message), optional context_mode override, and hooks.
+ * prompt (steering message) and optional context_mode override.
  */
 
 import { getPool } from "./connection.js";
 import type { AgentSchedule, AgentContextMode } from "./types.js";
 
-const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, context_mode, hooks, enabled, created_at`;
+const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, context_mode, enabled, created_at`;
 
 /** Schedule row joined with its parent agent's name. */
 export interface EnabledSchedule extends AgentSchedule {
@@ -22,7 +22,7 @@ export interface EnabledSchedule extends AgentSchedule {
 export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.context_mode, s.hooks, s.enabled, s.created_at, a.name AS agent_name
+    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.context_mode, s.enabled, s.created_at, a.name AS agent_name
      FROM agent_schedules s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.enabled = true AND a.enabled = true
@@ -55,12 +55,11 @@ export async function createSchedule(input: {
   cron: string;
   prompt: string;
   context_mode?: AgentContextMode;
-  hooks?: Record<string, unknown>;
 }): Promise<AgentSchedule> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO agent_schedules (agent_id, name, cron, prompt, context_mode, hooks)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO agent_schedules (agent_id, name, cron, prompt, context_mode)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING ${SCHEDULE_COLS}`,
     [
       input.agent_id,
@@ -68,7 +67,6 @@ export async function createSchedule(input: {
       input.cron,
       input.prompt,
       input.context_mode ?? null,
-      JSON.stringify(input.hooks ?? {}),
     ],
   );
   return rows[0] as AgentSchedule;
@@ -76,10 +74,10 @@ export async function createSchedule(input: {
 
 export async function updateSchedule(
   id: string,
-  updates: Partial<Pick<AgentSchedule, "cron" | "prompt" | "context_mode" | "hooks" | "enabled">>,
+  updates: Partial<Pick<AgentSchedule, "cron" | "prompt" | "context_mode" | "enabled">>,
 ): Promise<AgentSchedule> {
   const pool = getPool();
-  const SCHEDULE_UPDATE_COLUMNS = ["cron", "prompt", "context_mode", "hooks", "enabled"] as const;
+  const SCHEDULE_UPDATE_COLUMNS = ["cron", "prompt", "context_mode", "enabled"] as const;
   const entries = Object.entries(updates).filter(
     ([k, v]) =>
       v !== undefined &&
@@ -92,7 +90,7 @@ export async function updateSchedule(
   }
 
   const sets = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(", ");
-  const vals = entries.map(([k, v]) => (k === "hooks" ? JSON.stringify(v) : v));
+  const vals = entries.map(([, v]) => v);
 
   const { rows } = await pool.query(
     `UPDATE agent_schedules SET ${sets} WHERE id = $1 RETURNING ${SCHEDULE_COLS}`,

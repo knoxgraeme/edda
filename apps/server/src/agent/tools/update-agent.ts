@@ -20,7 +20,14 @@ export const updateAgentSchema = z.object({
     .string()
     .optional()
     .describe("Settings key for the model to use (e.g., 'daily_digest_model')"),
-  metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the agent"),
+  metadata: z
+    .record(z.unknown())
+    .optional()
+    .refine(
+      (m) => !m || !Object.keys(m).some((k) => ["stores", "filesystem", "hooks"].includes(k)),
+      "Cannot set privileged metadata keys (stores, filesystem, hooks) via tool",
+    )
+    .describe("Arbitrary metadata for the agent"),
 });
 
 export const updateAgentTool = tool(
