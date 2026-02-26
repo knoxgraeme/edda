@@ -65,6 +65,9 @@ import { getContextDiffTool } from "./get-context-diff.js";
 import { saveAgentsMdTool } from "./save-agents-md.js";
 import { listMyRunsTool } from "./list-my-runs.js";
 
+// Notification tools
+import { sendNotificationTool } from "./send-notification.js";
+
 // Community tools (lazy-loaded from @langchain/community)
 import { loadWikipediaTool } from "./wikipedia.js";
 import { loadDuckDuckGoTool } from "./duckduckgo.js";
@@ -142,4 +145,7 @@ export const allTools = [
   getContextDiffTool,
   saveAgentsMdTool,
   listMyRunsTool,
+
+  // Notification tools
+  sendNotificationTool,
 ];
