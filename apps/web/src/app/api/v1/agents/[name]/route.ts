@@ -1,7 +1,7 @@
-import { getAgentByName, updateAgent, deleteAgent } from "@edda/db";
+import { getAgentByName, getSettings, updateAgent, deleteAgent } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { notFound } from "../../_lib/helpers";
+import { notFound, badRequest } from "../../_lib/helpers";
 
 const UpdateAgentSchema = z
   .object({
@@ -62,6 +62,11 @@ export async function DELETE(
   const { name } = await params;
   const agent = await getAgentByName(name);
   if (!agent) return notFound("Agent");
+
+  const settings = await getSettings();
+  if (name === settings.default_agent) {
+    return badRequest("Cannot delete the default agent");
+  }
 
   await deleteAgent(agent.id);
   return NextResponse.json({ deleted: true });

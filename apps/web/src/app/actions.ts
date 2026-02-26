@@ -8,10 +8,14 @@ import {
   updateEntity,
   getEntityItems,
   updateSettings,
+  getSettings,
   getAgentByName,
   createAgent,
   updateAgent,
   deleteAgent,
+  createSchedule as createScheduleDb,
+  updateSchedule as updateScheduleDb,
+  deleteSchedule as deleteScheduleDb,
   type Settings,
   type Entity,
   type Item,
@@ -159,8 +163,7 @@ const AGENT_NAME_MAX_LEN = 100;
 const VALID_CONTEXT_MODES = new Set<AgentContextMode>(["isolated", "daily", "persistent"]);
 const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "on_demand"]);
 
-// System agents seeded by migrations — cannot be deleted from the UI
-const SYSTEM_AGENTS = new Set(["edda", "digest", "maintenance", "memory"]);
+// Default agent cannot be deleted — checked dynamically via settings
 
 const MAX_DESCRIPTION_LEN = 1000;
 const MAX_SYSTEM_PROMPT_LEN = 50_000;
@@ -288,8 +291,9 @@ export async function deleteAgentAction(name: string) {
   validateAgentName(name);
   const agent = await getAgentByName(name);
   if (!agent) throw new Error("Agent not found");
-  if (SYSTEM_AGENTS.has(agent.name)) {
-    throw new Error("Cannot delete system agent");
+  const settings = await getSettings();
+  if (agent.name === settings.default_agent) {
+    throw new Error("Cannot delete the default agent");
   }
   try {
     await deleteAgent(agent.id);
@@ -311,6 +315,87 @@ export async function toggleAgentAction(name: string, enabled: boolean) {
   await updateAgent(agent.id, { enabled });
   revalidatePath(`/agents/${name}`);
   revalidatePath("/agents");
+}
+
+// ─── Schedules ──────────────────────────────────────────────────────
+
+export async function createScheduleAction(data: {
+  agent_name: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  context_mode?: AgentContextMode;
+}) {
+  validateAgentName(data.agent_name);
+  if (!data.name || data.name.length > 100)
+    throw new Error("Schedule name is required (max 100 chars)");
+  if (!data.cron || data.cron.length > 50) throw new Error("Cron expression is required");
+  if (!data.prompt || data.prompt.length > 5000)
+    throw new Error("Prompt is required (max 5000 chars)");
+
+  const agent = await getAgentByName(data.agent_name);
+  if (!agent) throw new Error("Agent not found");
+
+  try {
+    const schedule = await createScheduleDb({
+      agent_id: agent.id,
+      name: data.name,
+      cron: data.cron,
+      prompt: data.prompt,
+      context_mode: data.context_mode,
+    });
+    revalidatePath(`/agents/${data.agent_name}`);
+    return schedule;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes("duplicate key")) {
+      throw new Error(`A schedule named "${data.name}" already exists for this agent.`);
+    }
+    console.error("Failed to create schedule:", err);
+    throw new Error("Failed to create schedule. Please try again.");
+  }
+}
+
+export async function updateScheduleAction(
+  id: string,
+  agentName: string,
+  updates: Partial<{
+    cron: string;
+    prompt: string;
+    context_mode: AgentContextMode | null;
+    enabled: boolean;
+  }>,
+) {
+  if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  try {
+    await updateScheduleDb(id, updates);
+    revalidatePath(`/agents/${agentName}`);
+  } catch (err: unknown) {
+    console.error("Failed to update schedule:", err);
+    throw new Error("Failed to update schedule. Please try again.");
+  }
+}
+
+export async function deleteScheduleAction(id: string, agentName: string) {
+  if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  try {
+    await deleteScheduleDb(id);
+    revalidatePath(`/agents/${agentName}`);
+  } catch (err: unknown) {
+    console.error("Failed to delete schedule:", err);
+    throw new Error("Failed to delete schedule. Please try again.");
+  }
+}
+
+export async function dismissNotificationAction(id: string) {
+  if (!UUID_RE.test(id)) throw new Error("Invalid id");
+  try {
+    await updateItem(id, { status: "done" });
+    revalidatePath("/inbox");
+    revalidatePath("/dashboard");
+  } catch (err: unknown) {
+    console.error("Failed to dismiss notification:", err);
+    throw new Error("Failed to dismiss notification. Please try again.");
+  }
 }
 
 // ─── Auth ───────────────────────────────────────────────────────────

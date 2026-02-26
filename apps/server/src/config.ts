@@ -43,6 +43,7 @@ const envSchema = z.object({
 
   // Auth
   EDDA_PASSWORD: z.string().optional(),
+  INTERNAL_API_SECRET: z.string().optional(),
 
   // Server
   PORT: z.coerce.number().int().positive().default(8000),
