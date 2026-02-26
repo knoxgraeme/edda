@@ -207,8 +207,8 @@ export class LocalCronRunner implements CronRunner {
           const pending = await getUnreadNotifications(freshDef.name);
           if (pending.length > 0) {
             const notificationLines = pending
-              .map((n) => `[notification from ${n.source_id}] ${n.summary}`)
-              .join("\n");
+              .map((n) => `[notification from ${n.source_id}]\n${n.summary}`)
+              .join("\n\n");
             userMessage = `${notificationLines}\n---\n${userMessage}`;
             await markNotificationsRead(pending.map((n) => n.id));
           }
@@ -246,7 +246,7 @@ export class LocalCronRunner implements CronRunner {
               sourceType: "schedule",
               sourceId: freshSchedule.id,
               targets: freshSchedule.notify,
-              summary: lastMessage?.slice(0, 200) ?? `${freshDef.name} completed`,
+              summary: lastMessage ?? `${freshDef.name} completed`,
               detail: { run_id: run.id, agent_name: freshDef.name, schedule_name: freshSchedule.name },
               expiresAfter: freshSchedule.notify_expires_after,
             });

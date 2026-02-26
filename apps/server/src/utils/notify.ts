@@ -120,12 +120,8 @@ async function triggerAgentRun(agentName: string): Promise<void> {
   if (claimed.length === 0) return;
 
   const message = claimed
-    .map((n) => {
-      const runId = (n.detail as Record<string, unknown>)?.run_id;
-      const header = `[notification from ${n.source_id}${runId ? ` | run_id: ${runId}` : ""}]`;
-      return `${header} ${n.summary}`;
-    })
-    .join("\n");
+    .map((n) => `[notification from ${n.source_id}]\n${n.summary}`)
+    .join("\n\n");
 
   const threadId = resolveThreadId(definition);
   const run = await createTaskRun({
