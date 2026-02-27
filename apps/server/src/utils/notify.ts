@@ -37,7 +37,7 @@ export interface NotifyParams {
   summary: string;
   detail?: Record<string, unknown>;
   priority?: "low" | "normal" | "high";
-  expiresAfter?: string;
+  expiresAfter?: string | null;
 }
 
 /**

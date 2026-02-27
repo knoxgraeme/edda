@@ -35,6 +35,25 @@ export async function PATCH(
     return badRequest("enabled must be a boolean");
   }
 
+  const NOTIFY_TARGET_RE = /^(inbox|agent:[a-z][a-z0-9_]*(:(active))?|announce:[a-z][a-z0-9_]*)$/;
+  if (body.notify !== undefined) {
+    if (!Array.isArray(body.notify) || body.notify.length > 20) {
+      return badRequest("notify must be an array (max 20 targets)");
+    }
+    for (const t of body.notify) {
+      if (typeof t !== "string" || !NOTIFY_TARGET_RE.test(t)) {
+        return badRequest(`Invalid notification target: ${t}`);
+      }
+    }
+  }
+
+  const VALID_EXPIRES = new Set(["1 hour", "24 hours", "72 hours", "168 hours", "720 hours", "never"]);
+  if (body.notify_expires_after !== undefined) {
+    if (typeof body.notify_expires_after !== "string" || !VALID_EXPIRES.has(body.notify_expires_after)) {
+      return badRequest("Invalid notify_expires_after");
+    }
+  }
+
   try {
     const schedule = await updateSchedule(id, body);
     return NextResponse.json(schedule);

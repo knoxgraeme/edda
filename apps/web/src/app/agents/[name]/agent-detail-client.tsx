@@ -182,7 +182,7 @@ function ScheduleDialogInner({
   const [threadLifetime, setThreadLifetime] = useState(schedule?.thread_lifetime ?? "");
   const [notify, setNotify] = useState<string[]>(schedule?.notify ?? []);
   const [notifyExpiresAfter, setNotifyExpiresAfter] = useState(
-    schedule?.notify_expires_after ?? "72 hours",
+    schedule?.notify_expires_after === null ? "never" : (schedule?.notify_expires_after ?? "72 hours"),
   );
 
   const isEdit = !!schedule;

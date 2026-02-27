@@ -8,7 +8,7 @@
 import { getPool } from "./connection.js";
 import type { AgentSchedule, ThreadLifetime } from "./types.js";
 
-const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after, enabled, created_at`;
+const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after::text, enabled, created_at::text`;
 
 /** Schedule row joined with its parent agent's name. */
 export interface EnabledSchedule extends AgentSchedule {
@@ -22,7 +22,7 @@ export interface EnabledSchedule extends AgentSchedule {
 export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime, s.notify, s.notify_expires_after, s.enabled, s.created_at, a.name AS agent_name
+    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime, s.notify, s.notify_expires_after::text, s.enabled, s.created_at::text, a.name AS agent_name
      FROM agent_schedules s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.enabled = true AND a.enabled = true
@@ -56,22 +56,31 @@ export async function createSchedule(input: {
   prompt: string;
   thread_lifetime?: ThreadLifetime;
   notify?: string[];
-  notify_expires_after?: string;
+  notify_expires_after?: string | null;
 }): Promise<AgentSchedule> {
   const pool = getPool();
+  // notify_expires_after: undefined = use DB default (72 hours), null = no expiry
+  const hasExpires = input.notify_expires_after !== undefined;
+  const cols = hasExpires
+    ? `agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after`
+    : `agent_id, name, cron, prompt, thread_lifetime, notify`;
+  const placeholders = hasExpires
+    ? `$1, $2, $3, $4, $5, $6, $7::interval`
+    : `$1, $2, $3, $4, $5, $6`;
+  const params: unknown[] = [
+    input.agent_id,
+    input.name,
+    input.cron,
+    input.prompt,
+    input.thread_lifetime ?? null,
+    input.notify ?? [],
+  ];
+  if (hasExpires) params.push(input.notify_expires_after);
   const { rows } = await pool.query(
-    `INSERT INTO agent_schedules (agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::interval, '72 hours'))
+    `INSERT INTO agent_schedules (${cols})
+     VALUES (${placeholders})
      RETURNING ${SCHEDULE_COLS}`,
-    [
-      input.agent_id,
-      input.name,
-      input.cron,
-      input.prompt,
-      input.thread_lifetime ?? null,
-      input.notify ?? [],
-      input.notify_expires_after ?? null,
-    ],
+    params,
   );
   return rows[0] as AgentSchedule;
 }

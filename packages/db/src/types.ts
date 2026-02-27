@@ -328,12 +328,24 @@ export interface EntitySearchResult extends Entity {
 
 export interface PendingItem {
   id: string;
-  table: "items" | "entities" | "item_types";
+  table: "items" | "entities" | "item_types" | "telegram_paired_users";
   type: string;
   label: string;
   description: string | null;
   pendingAction: string | null;
   createdAt: string;
+}
+
+// ──────────────────────────────────────────────
+// Telegram Paired Users
+// ──────────────────────────────────────────────
+
+export interface TelegramPairedUser {
+  id: string;
+  telegram_id: number;
+  display_name: string | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
 }
 
 // ──────────────────────────────────────────────
@@ -423,7 +435,7 @@ export interface AgentSchedule {
   prompt: string;
   thread_lifetime: ThreadLifetime | null;
   notify: string[];
-  notify_expires_after: string;
+  notify_expires_after: string | null;
   enabled: boolean;
   created_at: string;
 }

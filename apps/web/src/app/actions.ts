@@ -55,13 +55,15 @@ function isValidCron(expr: string): boolean {
   return fields.length === 5 && fields.every((f) => CRON_FIELD_RE.test(f));
 }
 
-const VALID_TABLES = new Set(["items", "entities", "item_types"] as const);
+const VALID_TABLES = new Set(["items", "entities", "item_types", "telegram_paired_users"] as const);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_STATUSES = new Set(["active", "done", "archived", "snoozed"] as const);
 const MAX_BATCH_SIZE = 500;
 
-function validateTable(table: string): asserts table is "items" | "entities" | "item_types" {
-  if (!VALID_TABLES.has(table as "items" | "entities" | "item_types")) {
+type ConfirmableTable = "items" | "entities" | "item_types" | "telegram_paired_users";
+
+function validateTable(table: string): asserts table is ConfirmableTable {
+  if (!VALID_TABLES.has(table as ConfirmableTable)) {
     throw new Error("Invalid table");
   }
 }
@@ -75,7 +77,7 @@ function validateId(id: string, table: string): void {
 }
 
 export async function confirmPendingAction(
-  table: "items" | "entities" | "item_types",
+  table: ConfirmableTable,
   id: string,
 ) {
   validateTable(table);
@@ -91,7 +93,7 @@ export async function confirmPendingAction(
 }
 
 export async function rejectPendingAction(
-  table: "items" | "entities" | "item_types",
+  table: ConfirmableTable,
   id: string,
 ) {
   validateTable(table);
@@ -102,7 +104,7 @@ export async function rejectPendingAction(
 }
 
 export async function confirmAllPendingAction(
-  items: Array<{ table: "items" | "entities" | "item_types"; id: string }>,
+  items: Array<{ table: ConfirmableTable; id: string }>,
 ) {
   if (!Array.isArray(items) || items.length > MAX_BATCH_SIZE) {
     throw new Error("Invalid batch size");
@@ -335,12 +337,36 @@ export async function toggleAgentAction(name: string, enabled: boolean) {
 
 // ─── Schedules ──────────────────────────────────────────────────────
 
+const NOTIFY_TARGET_RE = /^(inbox|agent:[a-z][a-z0-9_]*(:(active))?|announce:[a-z][a-z0-9_]*)$/;
+
+function validateNotifyTargets(targets: unknown): string[] {
+  if (!Array.isArray(targets)) throw new Error("notify must be an array");
+  if (targets.length > 20) throw new Error("Too many notification targets (max 20)");
+  for (const t of targets) {
+    if (typeof t !== "string" || !NOTIFY_TARGET_RE.test(t)) {
+      throw new Error(`Invalid notification target: ${t}`);
+    }
+  }
+  return targets as string[];
+}
+
+const VALID_EXPIRES = new Set(["1 hour", "24 hours", "72 hours", "168 hours", "720 hours", "never"]);
+
+function validateNotifyExpires(value: unknown): string {
+  if (typeof value !== "string" || !VALID_EXPIRES.has(value)) {
+    throw new Error("Invalid notification expiry");
+  }
+  return value;
+}
+
 export async function createScheduleAction(data: {
   agent_name: string;
   name: string;
   cron: string;
   prompt: string;
   thread_lifetime?: ThreadLifetime;
+  notify?: string[];
+  notify_expires_after?: string;
 }) {
   validateAgentName(data.agent_name);
   if (!data.name || data.name.length > 100)
@@ -349,6 +375,13 @@ export async function createScheduleAction(data: {
   if (!isValidCron(data.cron)) throw new Error("Invalid cron expression — expected 5 fields: minute hour day month weekday");
   if (!data.prompt || data.prompt.length > 5000)
     throw new Error("Prompt is required (max 5000 chars)");
+
+  const notify = data.notify?.length ? validateNotifyTargets(data.notify) : undefined;
+  const notifyExpires = data.notify_expires_after
+    ? validateNotifyExpires(data.notify_expires_after)
+    : undefined;
+  // "never" → null in the DB (no expiry)
+  const notifyExpiresDb = notifyExpires === "never" ? null : notifyExpires;
 
   const agent = await getAgentByName(data.agent_name);
   if (!agent) throw new Error("Agent not found");
@@ -360,6 +393,8 @@ export async function createScheduleAction(data: {
       cron: data.cron,
       prompt: data.prompt,
       thread_lifetime: data.thread_lifetime,
+      notify,
+      notify_expires_after: notifyExpiresDb,
     });
     revalidatePath(`/agents/${data.agent_name}`);
     return schedule;
@@ -380,6 +415,8 @@ export async function updateScheduleAction(
     prompt: string;
     thread_lifetime: ThreadLifetime | null;
     enabled: boolean;
+    notify: string[];
+    notify_expires_after: string;
   }>,
 ) {
   if (!UUID_RE.test(id)) throw new Error("Invalid id");
@@ -398,8 +435,18 @@ export async function updateScheduleAction(
     throw new Error("Invalid thread_lifetime");
   if (updates.enabled !== undefined && typeof updates.enabled !== "boolean")
     throw new Error("enabled must be a boolean");
+  if (updates.notify !== undefined) validateNotifyTargets(updates.notify);
+  if (updates.notify_expires_after !== undefined)
+    validateNotifyExpires(updates.notify_expires_after);
+  // "never" → null in the DB (no expiry)
+  const dbUpdates = {
+    ...updates,
+    ...(updates.notify_expires_after === "never"
+      ? { notify_expires_after: null }
+      : {}),
+  };
   try {
-    await updateScheduleDb(id, updates);
+    await updateScheduleDb(id, dbUpdates);
     revalidatePath(`/agents/${agentName}`);
   } catch (err: unknown) {
     console.error("Failed to update schedule:", err);
