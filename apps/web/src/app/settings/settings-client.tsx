@@ -339,6 +339,30 @@ export function SettingsClient({
                 </CardContent>
               </Card>
 
+              {/* Sandbox */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Sandbox Execution</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Enable shell execution for agents with the &quot;coding&quot; skill.
+                  </p>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <FieldGroup label="Provider" htmlFor="sandbox_provider">
+                    <Select
+                      id="sandbox_provider"
+                      value={form.sandbox_provider}
+                      onChange={(e) =>
+                        update("sandbox_provider", e.target.value as Settings["sandbox_provider"])
+                      }
+                    >
+                      <option value="none">Disabled</option>
+                      <option value="node-vfs">Node VFS (in-memory, dev only)</option>
+                    </Select>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
               {/* Approvals */}
               <Card>
                 <CardHeader>

@@ -53,6 +53,9 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
 
+  // Sandbox
+  SANDBOX_TIMEOUT_MS: z.coerce.number().optional().default(30000),
+
   // Logging
   LOG_LEVEL: z
     .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])

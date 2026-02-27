@@ -55,6 +55,7 @@ const SETTINGS_UPDATE_COLUMNS = [
   "user_timezone",
   "task_max_concurrency",
   "default_agent",
+  "sandbox_provider",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {
