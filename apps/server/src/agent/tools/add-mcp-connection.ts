@@ -11,6 +11,7 @@ import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { createMcpConnection, updateMcpConnection } from "@edda/db";
 import { invalidateMCPClient, ssrfSafeFetch } from "../mcp.js";
 import { MCPOAuthProvider } from "../mcp-oauth-provider.js";
+import { getLogger } from "../../logger.js";
 
 export const addMcpConnectionSchema = z.object({
   name: z.string().describe("User-facing label"),
@@ -100,7 +101,7 @@ export const addMcpConnectionTool = tool(
             } as Partial<typeof connection>);
           }
         } catch (err) {
-          console.warn(`[add_mcp_connection] OAuth auth failed for "${name}":`, err);
+          getLogger().warn({ connection: name, err }, "OAuth auth failed for MCP connection");
           await updateMcpConnection(connection.id, {
             auth_type: "oauth",
             auth_status: "error",

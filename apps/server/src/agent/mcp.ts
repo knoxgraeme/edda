@@ -12,6 +12,7 @@ import { getMcpConnections, updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
 import { withTimeout } from "../utils/with-timeout.js";
 import { MCPOAuthProvider } from "./mcp-oauth-provider.js";
+import { getLogger } from "../logger.js";
 
 let _client: MultiServerMCPClient | null = null;
 let _initPromise: Promise<DynamicStructuredTool[]> | null = null;
@@ -291,7 +292,7 @@ async function _initMCPClient(): Promise<DynamicStructuredTool[]> {
     prefixToolNameWithServerName: true,
     additionalToolNamePrefix: "mcp",
     onConnectionError: (err: { serverName: string; error?: unknown }) => {
-      console.warn(`[MCP] Connection failed for "${err.serverName}": ${err.error}`);
+      getLogger().warn({ server: err.serverName, err: err.error }, "MCP connection failed");
     },
     mcpServers: Object.fromEntries(
       connections.map((c) => [sanitizeName(c.name), toMCPServerConfig(c)]),
@@ -309,13 +310,13 @@ async function _initMCPClient(): Promise<DynamicStructuredTool[]> {
     const connTools = tools.filter((t) => t.name.startsWith(prefix)).map((t) => t.name);
     if (connTools.length > 0) {
       updateMcpConnection(conn.id, { discovered_tools: connTools }).catch((err) =>
-        console.warn(`[MCP] Failed to cache tools for "${conn.name}": ${err}`),
+        getLogger().warn({ connection: conn.name, err }, "Failed to cache MCP tools"),
       );
     }
   }
 
   if (tools.length > 0) {
-    console.log(`[MCP] Loaded ${tools.length} tools from ${connections.length} connections`);
+    getLogger().info({ tools: tools.length, connections: connections.length }, "MCP tools loaded");
   }
 
   return tools;

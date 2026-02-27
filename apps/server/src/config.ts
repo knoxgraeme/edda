@@ -53,6 +53,11 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
 
+  // Logging
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
+    .default('info'),
+
   // Server
   PORT: z.coerce.number().int().positive().default(8000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

@@ -24,6 +24,7 @@ import { z } from "zod";
 import { getSharedCheckpointer } from "../checkpointer/index.js";
 import { embed } from "../embed/index.js";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
+import { getLogger, withTraceId } from "../logger.js";
 import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
 import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
@@ -115,10 +116,10 @@ export async function rebuildDefaultAgent(): Promise<void> {
 
   const rebuilt = await getOrBuildAgent(defaultAgentName);
   if (!rebuilt) {
-    console.warn(`[rebuild] Agent "${defaultAgentName}" not found — skipping rebuild`);
+    getLogger().warn({ agent: defaultAgentName }, "Agent not found — skipping rebuild");
     return;
   }
-  console.log(`[rebuild] Default agent "${defaultAgentName}" rebuilt`);
+  getLogger().info({ agent: defaultAgentName }, "Default agent rebuilt");
 }
 
 const StreamRequestSchema = z.object({
@@ -189,130 +190,132 @@ async function handleHealth(res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
   } catch (err) {
-    console.error("[health] Health check failed:", err);
+    getLogger().error({ err }, "Health check failed");
     res.writeHead(503, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "error", error: "Health check failed" }));
   }
 }
 
 async function handleStream(req: IncomingMessage, res: ServerResponse) {
-  try {
-    const raw = await readBody(req);
-    const parsed = StreamRequestSchema.safeParse(JSON.parse(raw));
+  return withTraceId({ module: "stream" }, async () => {
+    try {
+      const raw = await readBody(req);
+      const parsed = StreamRequestSchema.safeParse(JSON.parse(raw));
 
-    if (!parsed.success) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: parsed.error.issues[0].message }));
-      return;
-    }
+      if (!parsed.success) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: parsed.error.issues[0].message }));
+        return;
+      }
 
-    const { messages, agent_name } = parsed.data;
-    const userContent = messages[messages.length - 1].content;
+      const { messages, agent_name } = parsed.data;
+      const userContent = messages[messages.length - 1].content;
 
-    const state = await getOrBuildAgent(agent_name);
-    if (!state) {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: `Agent "${agent_name}" not found` }));
-      return;
-    }
+      const state = await getOrBuildAgent(agent_name);
+      if (!state) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `Agent "${agent_name}" not found` }));
+        return;
+      }
 
-    // Resolve thread ID: use provided or resolve from agent config
-    const thread_id = parsed.data.thread_id
-      ? parsed.data.thread_id
-      : state.agentRow
-        ? resolveThreadId(state.agentRow, { platform: "web", external_id: "default" })
-        : randomUUID();
+      // Resolve thread ID: use provided or resolve from agent config
+      const thread_id = parsed.data.thread_id
+        ? parsed.data.thread_id
+        : state.agentRow
+          ? resolveThreadId(state.agentRow, { platform: "web", external_id: "default" })
+          : randomUUID();
 
-    // Ensure thread exists and set title from first message
-    upsertThread(thread_id, agent_name)
-      .then(() => {
-        const title = userContent.length > 80 ? userContent.slice(0, 77) + "..." : userContent;
-        return setThreadTitle(thread_id, title);
-      })
-      .catch((err) => console.error("[stream] Failed to set thread title:", err));
+      // Ensure thread exists and set title from first message
+      upsertThread(thread_id, agent_name)
+        .then(() => {
+          const title = userContent.length > 80 ? userContent.slice(0, 77) + "..." : userContent;
+          return setThreadTitle(thread_id, title);
+        })
+        .catch((err) => getLogger().error({ err, threadId: thread_id }, "Failed to set thread title"));
 
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
 
-    // Emit resolved thread_id as initial SSE event
-    res.write(`data: ${JSON.stringify({ thread_id })}\n\n`);
+      // Emit resolved thread_id as initial SSE event
+      res.write(`data: ${JSON.stringify({ thread_id })}\n\n`);
 
-    const stream = state.agent.streamEvents(
-      { messages: [new HumanMessage(userContent)] },
-      {
-        configurable: {
-          thread_id,
-          agent_name: state.agentName,
-          retrieval_context: state.retrievalContext,
+      const stream = state.agent.streamEvents(
+        { messages: [new HumanMessage(userContent)] },
+        {
+          configurable: {
+            thread_id,
+            agent_name: state.agentName,
+            retrieval_context: state.retrievalContext,
+          },
+          version: "v2",
         },
-        version: "v2",
-      },
-    );
+      );
 
-    for await (const event of stream) {
-      if (event.event === "on_chat_model_stream") {
-        const chunk = event.data?.chunk;
-        if (!chunk) continue;
+      for await (const event of stream) {
+        if (event.event === "on_chat_model_stream") {
+          const chunk = event.data?.chunk;
+          if (!chunk) continue;
 
-        // Normalize content to string — Anthropic sends array of content blocks
-        let content = "";
-        if (typeof chunk.content === "string") {
-          content = chunk.content;
-        } else if (Array.isArray(chunk.content)) {
-          for (const block of chunk.content) {
-            if (typeof block === "string") content += block;
-            else if (block?.type === "text" && block.text) content += block.text;
-            else if (block?.type === "text_delta" && block.text) content += block.text;
+          // Normalize content to string — Anthropic sends array of content blocks
+          let content = "";
+          if (typeof chunk.content === "string") {
+            content = chunk.content;
+          } else if (Array.isArray(chunk.content)) {
+            for (const block of chunk.content) {
+              if (typeof block === "string") content += block;
+              else if (block?.type === "text" && block.text) content += block.text;
+              else if (block?.type === "text_delta" && block.text) content += block.text;
+            }
           }
+
+          const hasToolCalls = chunk.tool_calls && chunk.tool_calls.length > 0;
+          if (!content && !hasToolCalls) continue;
+
+          const plain = {
+            id: chunk.id,
+            type: "ai",
+            content,
+            tool_calls: chunk.tool_calls,
+            tool_call_id: chunk.tool_call_id,
+            additional_kwargs: chunk.additional_kwargs,
+            name: chunk.name,
+          };
+
+          const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
+          res.write(`data: ${data}\n\n`);
+        } else if (event.event === "on_tool_end") {
+          const output = event.data?.output;
+          if (!output) continue;
+
+          const plain = {
+            id: output.id ?? event.run_id,
+            type: "tool",
+            content: typeof output.content === "string" ? output.content : JSON.stringify(output.content),
+            tool_call_id: output.tool_call_id,
+            name: output.name,
+          };
+
+          const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
+          res.write(`data: ${data}\n\n`);
         }
+      }
 
-        const hasToolCalls = chunk.tool_calls && chunk.tool_calls.length > 0;
-        if (!content && !hasToolCalls) continue;
-
-        const plain = {
-          id: chunk.id,
-          type: "ai",
-          content,
-          tool_calls: chunk.tool_calls,
-          tool_call_id: chunk.tool_call_id,
-          additional_kwargs: chunk.additional_kwargs,
-          name: chunk.name,
-        };
-
-        const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
-        res.write(`data: ${data}\n\n`);
-      } else if (event.event === "on_tool_end") {
-        const output = event.data?.output;
-        if (!output) continue;
-
-        const plain = {
-          id: output.id ?? event.run_id,
-          type: "tool",
-          content: typeof output.content === "string" ? output.content : JSON.stringify(output.content),
-          tool_call_id: output.tool_call_id,
-          name: output.name,
-        };
-
-        const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
-        res.write(`data: ${data}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } catch (err) {
+      getLogger().error({ err }, "Stream error");
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      } else {
+        res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
+        res.end();
       }
     }
-
-    res.write("data: [DONE]\n\n");
-    res.end();
-  } catch (err) {
-    console.error("[stream] Error:", err);
-    if (!res.headersSent) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Internal server error" }));
-    } else {
-      res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
-      res.end();
-    }
-  }
+  });
 }
 
 async function handleThreadList(req: IncomingMessage, res: ServerResponse) {
@@ -329,7 +332,7 @@ async function handleThreadList(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(threads));
   } catch (err) {
-    console.error("[threads] List error:", err);
+    getLogger().error({ err }, "Thread list error");
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Internal server error" }));
   }
@@ -350,7 +353,7 @@ async function handleAgentThread(agentName: string, res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ thread_id }));
   } catch (err) {
-    console.error("[agent-thread] Error:", err);
+    getLogger().error({ err, agent: agentName }, "Agent thread error");
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Internal server error" }));
   }
@@ -402,7 +405,7 @@ async function handleThreadDetail(threadId: string, res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(messages));
   } catch (err) {
-    console.error("[threads] Detail error:", err);
+    getLogger().error({ err, threadId }, "Thread detail error");
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Internal server error" }));
   }
@@ -480,7 +483,7 @@ async function handleMcpOAuthComplete(req: IncomingMessage, res: ServerResponse)
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
   } catch (err) {
-    console.error("[mcp-oauth] Token exchange failed:", err);
+    getLogger().error({ err, connectionId }, "MCP OAuth token exchange failed");
 
     // Set error state (best-effort)
     if (connectionId) {
@@ -524,7 +527,7 @@ async function handleSearchItems(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ data: results }));
   } catch (err) {
-    console.error("[search] Error:", err);
+    getLogger().error({ err }, "Search error");
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Search failed" }));
   }
@@ -551,7 +554,7 @@ async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) 
     const raw = await readBody(req);
     update = JSON.parse(raw);
   } catch (err) {
-    console.error("[telegram] Failed to parse webhook body:", err);
+    getLogger().error({ err }, "Failed to parse Telegram webhook body");
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Invalid request body" }));
     return;
@@ -559,7 +562,7 @@ async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) 
 
   // Process asynchronously — always return 200 for valid Telegram updates
   handleWebhookUpdate(update).catch((err) => {
-    console.error("[telegram] Webhook update processing failed:", err);
+    getLogger().error({ err }, "Telegram webhook update processing failed");
   });
 
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -580,42 +583,44 @@ export async function executeAgentRun(opts: {
   trigger: string;
 }): Promise<string | undefined> {
   const { agentDef, runId, threadId, prompt, trigger } = opts;
-  const startTime = Date.now();
-  try {
-    await startTaskRun(runId);
-    console.log(`  [run] Executing: ${agentDef.name} (${trigger} trigger)`);
+  return withTraceId({ module: "run", agent: agentDef.name, runId, trigger }, async () => {
+    const startTime = Date.now();
+    try {
+      await startTaskRun(runId);
+      getLogger().info({ agent: agentDef.name, runId, trigger }, "Executing agent run");
 
-    const agent = await buildAgent(agentDef);
-    const result: AgentResult = await withTimeout(
-      agent.invoke(
-        { messages: [{ role: "user", content: prompt }] },
-        {
-          configurable: {
-            thread_id: threadId,
-            agent_name: agentDef.name,
-            retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+      const agent = await buildAgent(agentDef);
+      const result: AgentResult = await withTimeout(
+        agent.invoke(
+          { messages: [{ role: "user", content: prompt }] },
+          {
+            configurable: {
+              thread_id: threadId,
+              agent_name: agentDef.name,
+              retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+            },
           },
-        },
-      ),
-      AGENT_TIMEOUT_MS,
-      agentDef.name,
-    );
+        ),
+        AGENT_TIMEOUT_MS,
+        agentDef.name,
+      );
 
-    const duration = Date.now() - startTime;
-    const lastMessage = extractLastAssistantMessage(result);
-    await completeTaskRun(runId, {
-      output_summary: lastMessage?.slice(0, 500),
-      duration_ms: duration,
-    });
-    console.log(`  [run] ${agentDef.name} completed in ${duration}ms`);
-    return lastMessage;
-  } catch (err) {
-    console.error(`  [run] ${agentDef.name} error:`, err);
-    await failTaskRun(runId, sanitizeError(err)).catch((dbErr) =>
-      console.error(`  [run] Failed to record task_run failure for ${runId}:`, dbErr),
-    );
-    throw err;
-  }
+      const duration = Date.now() - startTime;
+      const lastMessage = extractLastAssistantMessage(result);
+      await completeTaskRun(runId, {
+        output_summary: lastMessage?.slice(0, 500),
+        duration_ms: duration,
+      });
+      getLogger().info({ agent: agentDef.name, runId, durationMs: duration }, "Agent run completed");
+      return lastMessage;
+    } catch (err) {
+      getLogger().error({ agent: agentDef.name, runId, err }, "Agent run failed");
+      await failTaskRun(runId, sanitizeError(err)).catch((dbErr) =>
+        getLogger().error({ runId, err: dbErr }, "Failed to record task_run failure"),
+      );
+      throw err;
+    }
+  });
 }
 
 const AgentRunRequestSchema = z.object({
@@ -695,7 +700,7 @@ async function handleAgentRun(agentName: string, req: IncomingMessage, res: Serv
       await deliverRunResults({ ...deliverParams, lastMessage: undefined, error: err });
     }
   }).catch((err) => {
-    console.error(`  [run] ${agentDef.name} concurrency error:`, err);
+    getLogger().error({ agent: agentDef.name, err }, "Agent run concurrency error");
   });
 }
 

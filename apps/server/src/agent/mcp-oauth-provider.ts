@@ -13,8 +13,9 @@ import type {
   OAuthClientMetadata,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createHash, randomBytes } from "crypto";
-import { encrypt, decrypt } from "../utils/crypto.js";
+import { encrypt, decrypt } from "@edda/db";
 import { getOAuthState, upsertOAuthState } from "@edda/db";
+import { getLogger } from "../logger.js";
 
 export class MCPOAuthProvider implements OAuthClientProvider {
   private _capturedAuthUrl: URL | null = null;
@@ -56,7 +57,7 @@ export class MCPOAuthProvider implements OAuthClientProvider {
     try {
       return JSON.parse(decrypt(state.tokens_encrypted)) as OAuthTokens;
     } catch {
-      console.warn(`[MCPOAuthProvider] Failed to decrypt tokens for ${this.connectionId}`);
+      getLogger().warn({ connectionId: this.connectionId }, "Failed to decrypt MCP OAuth tokens");
       return undefined;
     }
   }
@@ -77,7 +78,7 @@ export class MCPOAuthProvider implements OAuthClientProvider {
     try {
       return JSON.parse(decrypt(state.client_info_encrypted)) as OAuthClientInformationMixed;
     } catch {
-      console.warn(`[MCPOAuthProvider] Failed to decrypt client info for ${this.connectionId}`);
+      getLogger().warn({ connectionId: this.connectionId }, "Failed to decrypt MCP OAuth client info");
       return undefined;
     }
   }

@@ -23,6 +23,7 @@ import { deliverToChannel } from "../channels/deliver.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import { sanitizeError } from "./sanitize-error.js";
 import { withTimeout } from "./with-timeout.js";
+import { getLogger } from "../logger.js";
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -54,7 +55,7 @@ export async function notify(params: NotifyParams): Promise<void> {
     // announce targets bypass notification rows — direct channel delivery
     if (parsed.announce && parsed.targetId) {
       announceToChannels(parsed.targetId, summary).catch((err) => {
-        console.error(`[notify] Announce delivery failed for ${parsed.targetId}:`, err);
+        getLogger().error({ agent: parsed.targetId, err }, "Announce delivery failed");
       });
       continue;
     }
@@ -72,7 +73,7 @@ export async function notify(params: NotifyParams): Promise<void> {
 
     if (parsed.active && parsed.targetId) {
       triggerAgentRun(parsed.targetId).catch((err) => {
-        console.error(`[notify] Failed to trigger active run for ${parsed.targetId}:`, err);
+        getLogger().error({ agent: parsed.targetId, err }, "Failed to trigger active run");
       });
     }
   }
@@ -106,7 +107,7 @@ function parseTarget(target: string): ParsedTarget {
   if (target.startsWith("announce:")) {
     const agentName = target.slice("announce:".length);
     if (!agentName || !/^[a-z0-9_-]+$/i.test(agentName)) {
-      console.warn(`[notify] Invalid agent name in announce target '${target}', skipping`);
+      getLogger().warn({ target }, "Invalid agent name in announce target, skipping");
       return { targetType: "inbox", targetId: null, active: false, announce: false };
     }
     return { targetType: "agent", targetId: agentName, active: false, announce: true };
@@ -116,7 +117,7 @@ function parseTarget(target: string): ParsedTarget {
     const parts = target.split(":");
     const agentName = parts[1];
     if (!agentName || !/^[a-z0-9_-]+$/i.test(agentName)) {
-      console.warn(`[notify] Invalid agent name in target '${target}', falling back to inbox`);
+      getLogger().warn({ target }, "Invalid agent name in target, falling back to inbox");
       return { targetType: "inbox", targetId: null, active: false, announce: false };
     }
     const active = parts[2] === "active";
@@ -135,21 +136,22 @@ function parseTarget(target: string): ParsedTarget {
  * receive_announcements channels. No agent invocation — zero cost, instant.
  */
 async function announceToChannels(agentName: string, text: string): Promise<void> {
+  const log = getLogger();
   const definition = await getAgentByName(agentName);
   if (!definition) {
-    console.warn(`[notify] Announce target agent "${agentName}" not found, skipping`);
+    log.warn({ agent: agentName }, "Announce target agent not found, skipping");
     return;
   }
 
   const channels = await getChannelsByAgent(definition.id, { receiveAnnouncements: true });
   if (channels.length === 0) return;
 
-  console.log(`[notify] Announcing to ${channels.length} channel(s) for ${agentName}`);
+  log.info({ agent: agentName, channels: channels.length }, "Announcing to channels");
   for (const channel of channels) {
     try {
       await deliverToChannel(channel, text);
     } catch (err) {
-      console.error(`[notify] Announce delivery to ${channel.platform}/${channel.external_id} failed:`, err);
+      log.error({ platform: channel.platform, externalId: channel.external_id, err }, "Announce delivery to channel failed");
     }
   }
 }
@@ -190,6 +192,7 @@ export async function deliverRunResults(params: DeliverRunResultsParams): Promis
     detail,
     expiresAfter,
   } = params;
+  const log = getLogger();
 
   if (error) {
     // Failure path — notify targets about the error
@@ -205,7 +208,7 @@ export async function deliverRunResults(params: DeliverRunResultsParams): Promis
           expiresAfter,
         });
       } catch (notifyErr) {
-        console.error(`[notify] ${agentName} failure notification failed:`, notifyErr);
+        log.error({ agent: agentName, err: notifyErr }, "Failure notification failed");
       }
     }
     return;
@@ -229,7 +232,7 @@ export async function deliverRunResults(params: DeliverRunResultsParams): Promis
         expiresAfter,
       });
     } catch (notifyErr) {
-      console.error(`[notify] ${agentName} notification failed:`, notifyErr);
+      log.error({ agent: agentName, err: notifyErr }, "Notification failed");
     }
   }
 }
@@ -238,20 +241,21 @@ export async function deliverRunResults(params: DeliverRunResultsParams): Promis
  * Deliver an agent's response to its announcement channels after a triggered run.
  */
 async function deliverToAnnouncementChannels(agentId: string, agentName: string, text: string): Promise<void> {
+  const log = getLogger();
   try {
     const channels = await getChannelsByAgent(agentId, { receiveAnnouncements: true });
     if (channels.length === 0) return;
 
-    console.log(`[notify] Delivering to ${channels.length} announcement channel(s) for ${agentName}`);
+    log.info({ agent: agentName, channels: channels.length }, "Delivering to announcement channels");
     for (const channel of channels) {
       try {
         await deliverToChannel(channel, text);
       } catch (err) {
-        console.error(`[notify] Channel delivery to ${channel.platform}/${channel.external_id} failed:`, err);
+        log.error({ agent: agentName, platform: channel.platform, externalId: channel.external_id, err }, "Channel delivery failed");
       }
     }
   } catch (err) {
-    console.error(`[notify] Failed to query announcement channels for ${agentName}:`, err);
+    log.error({ agent: agentName, err }, "Failed to query announcement channels");
   }
 }
 
@@ -260,6 +264,7 @@ async function deliverToAnnouncementChannels(agentId: string, agentName: string,
  * Uses atomic claim to prevent duplicate runs from concurrent notifications.
  */
 async function triggerAgentRun(agentName: string): Promise<void> {
+  const log = getLogger();
   const definition = await getAgentByName(agentName);
   if (!definition?.enabled) return;
 
@@ -286,7 +291,7 @@ async function triggerAgentRun(agentName: string): Promise<void> {
       const startTime = Date.now();
       try {
         await startTaskRun(run.id);
-        console.log(`[notify] Triggered active run for ${agentName} (${claimed.length} notification(s))`);
+        log.info({ agent: agentName, runId: run.id, notifications: claimed.length }, "Triggered active run");
         const agent = await buildAgent(definition);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result: any = await withTimeout(
@@ -315,15 +320,15 @@ async function triggerAgentRun(agentName: string): Promise<void> {
           await deliverToAnnouncementChannels(definition.id, agentName, fullResponse);
         }
       } catch (err) {
-        console.error(`[notify] Active run for ${agentName} failed:`, err);
+        log.error({ agent: agentName, runId: run.id, err }, "Active run failed");
         await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
-          console.error(`[notify] Failed to record failure for ${run.id}:`, dbErr);
+          log.error({ runId: run.id, err: dbErr }, "Failed to record failure");
         });
       }
     }).catch((err) => {
-      console.error(`[notify] Concurrency/setup failure for ${agentName}:`, err);
+      log.error({ agent: agentName, err }, "Concurrency/setup failure");
       failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
-        console.error(`[notify] Failed to record failure for ${run.id}:`, dbErr);
+        log.error({ runId: run.id, err: dbErr }, "Failed to record failure");
       });
     });
   });

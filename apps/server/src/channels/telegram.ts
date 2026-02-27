@@ -24,9 +24,10 @@ import {
 } from "@edda/db";
 import type { Agent } from "@edda/db";
 import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
-import { resolveRetrievalContext } from "../agent/tool-helpers.js";
+import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import { registerSender } from "./deliver.js";
+import { getLogger, withTraceId } from "../logger.js";
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -59,7 +60,7 @@ export async function initTelegram(token: string): Promise<Bot> {
     }
 
     if (paired?.status === "rejected") {
-      console.log(`[telegram] Dropping message from rejected user ${userId}`);
+      getLogger().info({ userId }, "Dropping message from rejected Telegram user");
       return;
     }
 
@@ -69,7 +70,7 @@ export async function initTelegram(token: string): Promise<Bot> {
       ctx.from.username ||
       undefined;
     await createPairingRequest(userId, displayName);
-    console.log(`[telegram] New pairing request from ${displayName ?? userId}`);
+    getLogger().info({ userId, displayName }, "New Telegram pairing request");
     await ctx.reply(
       "Access requested — waiting for approval. You'll be able to use the bot once an admin approves your request.",
     );
@@ -89,7 +90,7 @@ export async function initTelegram(token: string): Promise<Bot> {
     send: sendToTelegram,
   });
 
-  console.log("  Telegram bot initialized");
+  getLogger().info("Telegram bot initialized");
   return bot;
 }
 
@@ -107,7 +108,7 @@ export async function registerWebhook(webhookUrl: string, secret?: string): Prom
   });
 
   const info = await bot.api.getWebhookInfo();
-  console.log(`  Telegram webhook: ${info.url} (pending: ${info.pending_update_count})`);
+  getLogger().info({ url: info.url, pendingUpdates: info.pending_update_count }, "Telegram webhook registered");
 }
 
 /**
@@ -224,7 +225,7 @@ async function handleLinkCommand(ctx: CommandContext<Context>): Promise<void> {
       { message_thread_id: threadId },
     );
   } catch (err) {
-    console.error("[telegram] /link failed:", err);
+    getLogger().error({ err }, "Telegram /link failed");
     await ctx.reply("Failed to create channel link. Check server logs for details.", {
       message_thread_id: threadId,
     });
@@ -253,7 +254,7 @@ async function handleUnlinkCommand(ctx: CommandContext<Context>): Promise<void> 
       message_thread_id: threadId,
     });
   } catch (err) {
-    console.error("[telegram] /unlink failed:", err);
+    getLogger().error({ err }, "Telegram /unlink failed");
     await ctx.reply("Failed to remove channel link. Check server logs for details.", {
       message_thread_id: threadId,
     });
@@ -327,9 +328,9 @@ async function handleTextMessage(ctx: Context): Promise<void> {
 
   if (!text) return;
 
-  console.log(
-    `[telegram] message in chat=${chatId} thread=${threadId ?? "none"}: ${text.slice(0, 80)}`,
-  );
+  const log = getLogger();
+  log.info({ chatId, threadId: threadId ?? "none" }, "Telegram message received");
+  log.debug({ chatId, preview: text.slice(0, 80) }, "Message preview");
 
   // Build external_id: "{chat_id}:{thread_id}" for topics, "{chat_id}:dm" for DMs
   const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
@@ -376,43 +377,45 @@ async function handleTextMessage(ctx: Context): Promise<void> {
       .catch((err: Error) => {
         if (!typingFailLogged) {
           typingFailLogged = true;
-          console.warn(`[telegram] Typing indicator failed for chat=${chatId}:`, err.message);
+          getLogger().warn({ chatId, err }, "Typing indicator failed");
         }
       });
   }, 4000);
 
   try {
-    await ctx.api.sendChatAction(chatId, "typing", {
-      message_thread_id: threadId,
-    });
+    await withTraceId({ module: "telegram", chatId, agent: agentDef.name }, async () => {
+      await ctx.api.sendChatAction(chatId, "typing", {
+        message_thread_id: threadId,
+      });
 
-    const agent = await buildAgent(agentDef);
-    const agentThreadId = resolveThreadId(agentDef, {
-      platform: "telegram",
-      external_id: externalId,
-    });
+      const agent = await buildAgent(agentDef);
+      const agentThreadId = resolveThreadId(agentDef, {
+        platform: "telegram",
+        external_id: externalId,
+      });
 
-    const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } = await withTimeout(
-      agent.invoke(
-        { messages: [{ role: "user", content: text }] },
-        {
-          configurable: {
-            thread_id: agentThreadId,
-            agent_name: agentDef.name,
-            retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+      const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } = await withTimeout(
+        agent.invoke(
+          { messages: [{ role: "user", content: text }] },
+          {
+            configurable: {
+              thread_id: agentThreadId,
+              agent_name: agentDef.name,
+              retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+            },
           },
-        },
-      ),
-      AGENT_TIMEOUT_MS,
-      agentDef.name,
-    );
+        ),
+        AGENT_TIMEOUT_MS,
+        agentDef.name,
+      );
 
-    const lastMsg = extractLastAssistantMessage(result);
-    if (lastMsg) {
-      await sendSplitMessage(ctx, lastMsg, threadId);
-    }
+      const lastMsg = extractLastAssistantMessage(result);
+      if (lastMsg) {
+        await sendSplitMessage(ctx, lastMsg, threadId);
+      }
+    });
   } catch (err) {
-    console.error(`[telegram] Agent invocation failed:`, err);
+    getLogger().error({ err, chatId, agent: agentDef.name }, "Telegram agent invocation failed");
     await ctx.reply("Sorry, something went wrong processing your message.", {
       message_thread_id: threadId,
     });
@@ -448,19 +451,6 @@ async function sendToTelegram(externalId: string, text: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function extractLastAssistantMessage(result: {
-  messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }>;
-}): string | undefined {
-  const messages = result?.messages ?? [];
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if ((m.role === "assistant" || m._getType?.() === "ai") && typeof m.content === "string") {
-      return m.content;
-    }
-  }
-  return undefined;
-}
 
 function splitMessage(text: string): string[] {
   if (text.length <= TELEGRAM_MAX_LENGTH) return [text];

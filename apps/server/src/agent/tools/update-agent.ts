@@ -6,6 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getAgentByName, updateAgent, modifyAgentTools } from "@edda/db";
 import { rebuildDefaultAgent } from "../../server/index.js";
+import { getLogger } from "../../logger.js";
 
 export const updateAgentSchema = z.object({
   agent_name: z.string().describe("Name of the agent to update"),
@@ -64,7 +65,7 @@ export const updateAgentTool = tool(
 
     // Rebuild the live agent so changes take effect without restart
     rebuildDefaultAgent().catch((err) =>
-      console.warn("[update_agent] Background rebuild failed:", err),
+      getLogger().warn({ err }, "update_agent background rebuild failed"),
     );
 
     return JSON.stringify({
