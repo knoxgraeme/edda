@@ -8,12 +8,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { DEFAULT_SETTINGS } = vi.hoisted(() => ({
   DEFAULT_SETTINGS: {
+    default_agent: "edda",
     user_display_name: null,
     user_timezone: "America/New_York",
     web_search_enabled: false,
     web_search_max_results: 5,
-    memory_extraction_enabled: true,
-    user_crons_enabled: false,
     approval_new_type: "confirm",
     approval_archive_stale: "confirm",
     approval_merge_entity: "confirm",
@@ -22,6 +21,8 @@ const { DEFAULT_SETTINGS } = vi.hoisted(() => ({
     agents_md_max_versions: 3,
     agents_md_max_entities: 10,
     llm_provider: "anthropic",
+    default_model: "claude-sonnet-4-20250514",
+    task_max_concurrency: 3,
     embedding_model: "voyage-3",
   },
 }));
@@ -64,8 +65,10 @@ describe("getSettingsTool", () => {
     // Should include agent-visible keys
     expect(parsed).toHaveProperty("user_timezone");
     expect(parsed).toHaveProperty("web_search_enabled");
+    // Should include operational keys added for agent parity
+    expect(parsed).toHaveProperty("llm_provider");
+    expect(parsed).toHaveProperty("default_agent");
     // Should NOT include infrastructure keys
-    expect(parsed).not.toHaveProperty("llm_provider");
     expect(parsed).not.toHaveProperty("embedding_model");
   });
 });
@@ -92,7 +95,7 @@ describe("updateSettingsTool", () => {
 });
 
 describe("addMcpConnectionTool", () => {
-  it("calls createMcpConnection with SSE transport", async () => {
+  it("calls createMcpConnection with streamable-http transport", async () => {
     vi.mocked(createMcpConnection).mockResolvedValueOnce({
       id: "mcp-1",
       name: "TestMCP",
@@ -107,7 +110,7 @@ describe("addMcpConnectionTool", () => {
     expect(vi.mocked(createMcpConnection)).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "TestMCP",
-        transport: "sse",
+        transport: "streamable-http",
         config: expect.objectContaining({ url: "https://mcp.example.com/sse" }),
       }),
     );

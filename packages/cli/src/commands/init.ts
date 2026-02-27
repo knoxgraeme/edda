@@ -67,7 +67,7 @@ const SEARCH_PROVIDERS = [
 ];
 
 const CRON_RUNNERS = [
-  { value: "standalone", label: "Standalone (node-cron)", hint: "self-hosted" },
+  { value: "local", label: "Local (node-cron)", hint: "self-hosted" },
   { value: "platform", label: "LangGraph Platform", hint: "managed" },
 ];
 

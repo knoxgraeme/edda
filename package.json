@@ -11,6 +11,11 @@
   "devDependencies": {
     "turbo": "^2.8.1"
   },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": ">=5.3.6"
+    }
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",

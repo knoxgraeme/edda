@@ -1,0 +1,35 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { parseBody, badRequest, getServerUrl } from "../../_lib/helpers";
+
+const SERVER_URL = getServerUrl();
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
+
+const SearchSchema = z.object({
+  query: z.string().min(1).max(1000),
+  type: z.string().max(100).optional(),
+  limit: z.number().int().min(1).max(100).default(20),
+});
+
+export async function POST(request: Request) {
+  const body = await parseBody(request);
+  if (body instanceof NextResponse) return body;
+
+  const parsed = SearchSchema.safeParse(body);
+  if (!parsed.success) return badRequest(parsed.error.issues[0].message);
+
+  const res = await fetch(`${SERVER_URL}/api/search/items`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(INTERNAL_API_SECRET ? { Authorization: `Bearer ${INTERNAL_API_SECRET}` } : {}),
+    },
+    body: JSON.stringify(parsed.data),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    return NextResponse.json({ error: "Search failed" }, { status: res.status });
+  }
+  return NextResponse.json(await res.json());
+}

@@ -22,14 +22,17 @@ const envSchema = z.object({
   VOYAGE_API_KEY: z.string().optional(),
 
   // Web search (optional)
-  SEARCH_PROVIDER: z.enum(['tavily', 'brave', 'serper', 'serpapi']).optional(),
+  SEARCH_PROVIDER: z.enum(['tavily', 'brave', 'serper', 'serpapi', 'duckduckgo']).optional(),
   TAVILY_API_KEY: z.string().optional(),
   BRAVE_API_KEY: z.string().optional(),
   SERPER_API_KEY: z.string().optional(),
   SERPAPI_API_KEY: z.string().optional(),
 
+  // Community tools (optional)
+  WOLFRAM_APP_ID: z.string().min(1).optional(),
+
   // Cron runner
-  CRON_RUNNER: z.enum(['standalone', 'platform']).default('standalone'),
+  CRON_RUNNER: z.enum(['local', 'langgraph']).default('local'),
 
   // Checkpointer
   CHECKPOINTER_BACKEND: z.enum(['postgres', 'sqlite', 'memory']).default('postgres'),
@@ -40,6 +43,23 @@ const envSchema = z.object({
 
   // Auth
   EDDA_PASSWORD: z.string().optional(),
+  INTERNAL_API_SECRET: z.string().optional(),
+
+  // OAuth encryption + callback
+  EDDA_ENCRYPTION_KEY: z.string().optional(),
+  EDDA_BASE_URL: z.string().url().default('http://localhost:3000'),
+
+  // Telegram (optional — omit to disable; requires INTERNAL_API_SECRET)
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
+
+  // Sandbox
+  SANDBOX_TIMEOUT_MS: z.coerce.number().optional().default(30000),
+
+  // Logging
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
+    .default('info'),
 
   // Server
   PORT: z.coerce.number().int().positive().default(8000),

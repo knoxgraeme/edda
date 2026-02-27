@@ -29,7 +29,7 @@ describe("items", () => {
   // ── createItem ──────────────────────────────────────────────────
 
   describe("createItem", () => {
-    it("binds 12 parameters in correct order and uses ITEM_COLS in RETURNING", async () => {
+    it("binds 13 parameters in correct order and uses ITEM_COLS in RETURNING", async () => {
       const fakeItem = {
         id: "item-1",
         type: "note",
@@ -41,6 +41,7 @@ describe("items", () => {
         day: "2026-02-21",
         confirmed: true,
         parent_id: null,
+        list_id: null,
         embedding_model: null,
         pending_action: null,
         created_at: "2026-02-21",
@@ -59,6 +60,7 @@ describe("items", () => {
         day: "2026-02-21",
         confirmed: true,
         parent_id: "parent-1",
+        list_id: "list-1",
         embedding: [0.1, 0.2],
         embedding_model: "voyage-3",
         pending_action: "review",
@@ -71,8 +73,8 @@ describe("items", () => {
       expect(sql).toEqual(expect.stringContaining("INSERT INTO items"));
       expect(sql).toEqual(expect.stringContaining(`RETURNING ${ITEM_COLS}`));
 
-      // 12 parameters in order
-      expect(params).toHaveLength(12);
+      // 13 parameters in order
+      expect(params).toHaveLength(13);
       expect(params[0]).toBe("note"); // type
       expect(params[1]).toBe("hello"); // content
       expect(params[2]).toBe("sum"); // summary
@@ -82,9 +84,10 @@ describe("items", () => {
       expect(params[6]).toBe("2026-02-21"); // day
       expect(params[7]).toBe(true); // confirmed
       expect(params[8]).toBe("parent-1"); // parent_id
-      expect(params[9]).toBe(JSON.stringify([0.1, 0.2])); // embedding serialized
-      expect(params[10]).toBe("voyage-3"); // embedding_model
-      expect(params[11]).toBe("review"); // pending_action
+      expect(params[9]).toBe("list-1"); // list_id
+      expect(params[10]).toBe(JSON.stringify([0.1, 0.2])); // embedding serialized
+      expect(params[11]).toBe("voyage-3"); // embedding_model
+      expect(params[12]).toBe("review"); // pending_action
 
       expect(result).toEqual(fakeItem);
     });
@@ -163,11 +166,13 @@ describe("items", () => {
 
       expect(query).toHaveBeenCalledOnce();
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toEqual(expect.stringContaining("1 - (embedding <=> $1::vector)"));
+      expect(sql).toEqual(expect.stringContaining("1 - (i.embedding <=> $1::vector)"));
       expect(sql).toEqual(expect.stringContaining("ORDER BY similarity DESC"));
       expect(params[0]).toBe(JSON.stringify([0.1, 0.2, 0.3])); // embedding
       expect(params[1]).toBe(0.9); // threshold
-      expect(params[2]).toBe(5); // limit (at end)
+      // CTE uses inner limit (limit * RERANK_MULTIPLIER) then outer limit
+      expect(params[2]).toBe(15); // inner limit (5 * 3)
+      expect(params[3]).toBe(5);  // outer limit
     });
 
     it("adds optional filters for type, after date, and agentKnowledgeOnly", async () => {
@@ -193,14 +198,137 @@ describe("items", () => {
     it("increments parameter indices correctly across optional filters", async () => {
       query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-      // With type + after, LIMIT should be $5
+      // With type + after: inner LIMIT $5, outer LIMIT $6
       await searchItems([0.1], { type: "note", after: "2026-01-01", limit: 20 });
 
       const [sql, params] = query.mock.calls[0];
       expect(sql).toEqual(expect.stringContaining("LIMIT $5"));
-      // params: [embedding, threshold, type, after, limit]
+      expect(sql).toEqual(expect.stringContaining("LIMIT $6"));
+      // params: [embedding, threshold, type, after, innerLimit, outerLimit]
+      expect(params).toHaveLength(6);
+      expect(params[4]).toBe(60); // inner limit (20 * 3)
+      expect(params[5]).toBe(20); // outer limit
+    });
+
+    // ── Retrieval context ─────────────────────────────────────────
+
+    it("no retrieval_context produces original query (no authorship/type CASE, no extra WHERE)", async () => {
+      query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await searchItems([0.1], { limit: 5 });
+
+      const [sql, params] = query.mock.calls[0];
+      // Decay CASE WHEN is always present; authorship/type boosts should NOT be
+      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN c.metadata->>'created_by'"));
+      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN c.type"));
+      expect(sql).not.toEqual(expect.stringContaining("created_by"));
+      // params: [embedding, threshold, innerLimit, outerLimit]
+      expect(params).toHaveLength(4);
+    });
+
+    it("authorship_mode: 'boost' adds CASE multiplier in outer SELECT", async () => {
+      query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await searchItems([0.1], {
+        limit: 5,
+        retrieval_context: {
+          authorship_mode: "boost",
+          authors: ["memory_catchup"],
+          authorship_boost: 1.3,
+        },
+      });
+
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toEqual(expect.stringContaining("CASE WHEN c.metadata->>'created_by'"));
+      // Should NOT add a WHERE filter
+      expect(sql).not.toEqual(expect.stringMatching(/WHERE.*created_by/));
+      // params: [embedding, threshold, innerLimit, outerLimit, authors, boost]
+      expect(params).toHaveLength(6);
+      expect(params[4]).toEqual(["memory_catchup"]);
+      expect(params[5]).toBe(1.3);
+    });
+
+    it("authorship_mode: 'filter' adds WHERE clause in inner CTE", async () => {
+      query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await searchItems([0.1], {
+        limit: 5,
+        retrieval_context: {
+          authorship_mode: "filter",
+          authors: ["memory_catchup", "memory_writer"],
+        },
+      });
+
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toEqual(expect.stringContaining("metadata->>'created_by' = ANY($3)"));
+      // Should NOT add an authorship CASE boost (decay CASE is always present)
+      expect(sql).not.toEqual(expect.stringContaining("CASE WHEN c.metadata->>'created_by'"));
+      // params: [embedding, threshold, authors, innerLimit, outerLimit]
       expect(params).toHaveLength(5);
-      expect(params[4]).toBe(20);
+      expect(params[2]).toEqual(["memory_catchup", "memory_writer"]);
+    });
+
+    it("type_mode: 'boost' adds CASE multiplier for types", async () => {
+      query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await searchItems([0.1], {
+        limit: 5,
+        retrieval_context: {
+          type_mode: "boost",
+          types: ["preference", "learned_fact"],
+          type_boost: 1.2,
+        },
+      });
+
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toEqual(expect.stringContaining("CASE WHEN c.type = ANY("));
+      expect(params).toHaveLength(6);
+      expect(params[4]).toEqual(["preference", "learned_fact"]);
+      expect(params[5]).toBe(1.2);
+    });
+
+    it("type_mode: 'filter' adds WHERE clause for types", async () => {
+      query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await searchItems([0.1], {
+        limit: 5,
+        retrieval_context: {
+          type_mode: "filter",
+          types: ["preference", "pattern"],
+        },
+      });
+
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toEqual(expect.stringContaining("type = ANY($3)"));
+      // params: [embedding, threshold, types, innerLimit, outerLimit]
+      expect(params).toHaveLength(5);
+      expect(params[2]).toEqual(["preference", "pattern"]);
+    });
+
+    it("combined: both dimensions applied independently", async () => {
+      query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await searchItems([0.1], {
+        limit: 5,
+        retrieval_context: {
+          authorship_mode: "filter",
+          authors: ["memory_catchup"],
+          type_mode: "boost",
+          types: ["preference"],
+          type_boost: 1.15,
+        },
+      });
+
+      const [sql, params] = query.mock.calls[0];
+      // Authorship filter in WHERE
+      expect(sql).toEqual(expect.stringContaining("metadata->>'created_by' = ANY($3)"));
+      // Type boost as CASE
+      expect(sql).toEqual(expect.stringContaining("CASE WHEN c.type = ANY("));
+      // params: [embedding, threshold, authors(filter), innerLimit, outerLimit, types(boost), type_boost]
+      expect(params).toHaveLength(7);
+      expect(params[2]).toEqual(["memory_catchup"]);
+      expect(params[5]).toEqual(["preference"]);
+      expect(params[6]).toBe(1.15);
     });
   });
 

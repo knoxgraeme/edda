@@ -1,0 +1,8 @@
+[build]
+buildCommand = "pnpm --filter @edda/db build && pnpm --filter @edda/server build"
+
+[deploy]
+startCommand = "node packages/db/dist/migrate.js && node packages/db/dist/seed-settings.js && node apps/server/dist/index.js"
+healthcheckPath = "/api/health"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

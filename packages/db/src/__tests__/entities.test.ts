@@ -49,7 +49,7 @@ describe("entities", () => {
       expect(sql).toContain("COALESCE(EXCLUDED.description, entities.description)");
       expect(sql).toContain("COALESCE(EXCLUDED.embedding, entities.embedding)");
       expect(sql).toContain(`RETURNING ${ENTITY_COLS}`);
-      expect(params).toEqual(["Acme Corp", "company", [], "A company", null]);
+      expect(params).toEqual(["Acme Corp", "company", [], "A company", null, true, null]);
     });
 
     it("aliases default to empty array when not provided", async () => {
@@ -125,10 +125,13 @@ describe("entities", () => {
 
       expect(query).toHaveBeenCalledOnce();
       const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain("WITH candidates AS");
       expect(sql).toContain("1 - (embedding <=> $1::vector)");
       expect(sql).toContain("type = $3");
+      // Inner LIMIT $4, outer LIMIT $5
       expect(sql).toContain("LIMIT $4");
-      expect(params).toEqual([JSON.stringify(embedding), 0.7, "person", 10]);
+      expect(sql).toContain("LIMIT $5");
+      expect(params).toEqual([JSON.stringify(embedding), 0.7, "person", 30, 10]);
     });
 
     it("omits type filter when not provided", async () => {
@@ -137,9 +140,12 @@ describe("entities", () => {
       await searchEntities([0.1, 0.2], { limit: 5 });
 
       const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain("WITH candidates AS");
       expect(sql).not.toContain("type =");
+      // Inner LIMIT $3, outer LIMIT $4
       expect(sql).toContain("LIMIT $3");
-      expect(params).toEqual([JSON.stringify([0.1, 0.2]), 0.8, 5]);
+      expect(sql).toContain("LIMIT $4");
+      expect(params).toEqual([JSON.stringify([0.1, 0.2]), 0.8, 15, 5]);
     });
   });
 

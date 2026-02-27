@@ -13,7 +13,7 @@ services:
   - type: web
     name: edda-server
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.render
     dockerContext: .
     dockerTarget: server
     plan: starter
@@ -31,7 +31,7 @@ services:
       - key: EMBEDDING_PROVIDER
         value: voyage
       - key: CRON_RUNNER
-        value: standalone
+        value: local
       - key: CHECKPOINTER_BACKEND
         value: postgres
       - key: NODE_ENV
@@ -43,7 +43,7 @@ services:
   - type: web
     name: edda-web
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.render
     dockerContext: .
     dockerTarget: web
     plan: starter

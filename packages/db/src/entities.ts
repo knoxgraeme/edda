@@ -3,6 +3,7 @@
  */
 
 import { getPool } from "./connection.js";
+import { DECAY_HALF_LIFE_DAYS, LN2, RERANK_MULTIPLIER } from "./items.js";
 
 import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
 
@@ -16,16 +17,20 @@ export async function upsertEntity(input: {
   aliases?: string[];
   description?: string;
   embedding?: number[];
+  confirmed?: boolean;
+  pending_action?: string | null;
 }): Promise<Entity> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO entities (name, type, aliases, description, embedding)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO entities (name, type, aliases, description, embedding, confirmed, pending_action)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (name) DO UPDATE SET
        type = EXCLUDED.type,
        aliases = EXCLUDED.aliases,
        description = COALESCE(EXCLUDED.description, entities.description),
        embedding = COALESCE(EXCLUDED.embedding, entities.embedding),
+       confirmed = COALESCE(EXCLUDED.confirmed, entities.confirmed),
+       pending_action = COALESCE(EXCLUDED.pending_action, entities.pending_action),
        mention_count = entities.mention_count + 1,
        last_seen_at = now(),
        updated_at = now()
@@ -36,23 +41,30 @@ export async function upsertEntity(input: {
       input.aliases ?? [],
       input.description ?? null,
       input.embedding ? JSON.stringify(input.embedding) : null,
+      input.confirmed ?? true,
+      input.pending_action ?? null,
     ],
   );
   return rows[0] as Entity;
 }
 
 const ENTITY_UPDATE_COLUMNS = [
-  'name', 'type', 'aliases', 'description', 'mention_count',
-  'last_seen_at', 'embedding', 'confirmed', 'pending_action', 'metadata',
+  "name",
+  "type",
+  "aliases",
+  "description",
+  "mention_count",
+  "last_seen_at",
+  "embedding",
+  "confirmed",
+  "pending_action",
+  "metadata",
 ] as const;
 
-export async function updateEntity(
-  id: string,
-  updates: Partial<Entity>,
-): Promise<Entity | null> {
+export async function updateEntity(id: string, updates: Partial<Entity>): Promise<Entity | null> {
   const pool = getPool();
-  const entries = Object.entries(updates).filter(
-    ([k]) => ENTITY_UPDATE_COLUMNS.includes(k as typeof ENTITY_UPDATE_COLUMNS[number])
+  const entries = Object.entries(updates).filter(([k]) =>
+    ENTITY_UPDATE_COLUMNS.includes(k as (typeof ENTITY_UPDATE_COLUMNS)[number]),
   );
   if (entries.length === 0) return getEntityById(id);
 
@@ -90,6 +102,7 @@ export async function searchEntities(
   const pool = getPool();
   const { threshold = 0.8, limit = 5, type } = options;
 
+  // ── Build WHERE conditions for the inner CTE (ANN retrieval) ──
   const conditions = ["1 - (embedding <=> $1::vector) > $2"];
   const params: unknown[] = [JSON.stringify(embedding), threshold];
   let paramIdx = 3;
@@ -99,13 +112,33 @@ export async function searchEntities(
     params.push(type);
   }
 
+  const innerLimit = limit * RERANK_MULTIPLIER;
+  const innerLimitIdx = paramIdx++;
+  params.push(innerLimit);
+
+  const outerLimitIdx = paramIdx++;
+  params.push(limit);
+
   const { rows } = await pool.query(
-    `SELECT ${ENTITY_COLS}, 1 - (embedding <=> $1::vector) AS similarity
-     FROM entities
-     WHERE ${conditions.join(" AND ")}
+    `WITH candidates AS (
+       SELECT ${ENTITY_COLS},
+              1 - (embedding <=> $1::vector) AS raw_similarity
+       FROM entities
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY embedding <=> $1::vector
+       LIMIT $${innerLimitIdx}
+     )
+     SELECT ${ENTITY_COLS.split(",")
+       .map((c) => `c.${c.trim()}`)
+       .join(", ")},
+            c.raw_similarity,
+            c.raw_similarity
+              * EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_seen_at, c.created_at))) / (${DECAY_HALF_LIFE_DAYS} * 86400))
+            AS similarity
+     FROM candidates c
      ORDER BY similarity DESC
-     LIMIT $${paramIdx}`,
-    [...params, limit],
+     LIMIT $${outerLimitIdx}`,
+    params,
   );
 
   return rows as EntitySearchResult[];
@@ -186,6 +219,40 @@ export async function listEntities(
     params,
   );
   return rows as Entity[];
+}
+
+// ── Entity connections ("Roam backlinks") ────────────────────
+
+export interface EntityConnection {
+  id: string;
+  name: string;
+  type: EntityType;
+  shared_items: number;
+  top_relationship: string;
+}
+
+export async function getEntityConnections(
+  entityId: string,
+  limit = 10,
+): Promise<EntityConnection[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT e2.id, e2.name, e2.type,
+            COUNT(DISTINCT ie1.item_id)::int AS shared_items,
+            MODE() WITHIN GROUP (ORDER BY ie2.relationship) AS top_relationship
+     FROM item_entities ie1
+     JOIN item_entities ie2
+       ON ie1.item_id = ie2.item_id
+       AND ie2.entity_id != $1
+     JOIN entities e2 ON ie2.entity_id = e2.id
+     WHERE ie1.entity_id = $1
+       AND e2.confirmed = true
+     GROUP BY e2.id, e2.name, e2.type
+     ORDER BY shared_items DESC
+     LIMIT $2`,
+    [entityId, limit],
+  );
+  return rows as EntityConnection[];
 }
 
 export async function getTopEntities(limit: number = 15): Promise<Entity[]> {

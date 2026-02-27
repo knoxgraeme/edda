@@ -4,8 +4,10 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createItem, getSettingsSync, searchItems, updateItem } from "@edda/db";
-import { embed, buildEmbeddingText } from "../../embed/index.js";
+import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById, type List } from "@edda/db";
+import { embed, buildEmbeddingText } from "../../embed.js";
+import type { EmbeddingContext } from "../../embed.js";
+import { getAgentName } from "../tool-helpers.js";
 
 export const createItemSchema = z.object({
   type: z.string().describe("The item type (e.g. note, task, event, preference)"),
@@ -17,20 +19,61 @@ export const createItemSchema = z.object({
     .enum(["active", "done", "archived", "snoozed"])
     .optional()
     .describe("Item status (default: active)"),
-  parent_id: z.string().optional().describe("Parent item ID for hierarchical items"),
+  parent_id: z.string().optional().describe("Parent item ID (for hierarchical items, not lists)"),
+  list_id: z.string().uuid().optional().describe("List UUID to add this item to"),
+  list_name: z.string().optional().describe("List name to add this item to (resolved automatically)"),
+  source: z
+    .enum(["chat", "cli", "api", "cron", "agent", "posthook"])
+    .optional()
+    .describe("Origin of this item (default: chat)"),
+  confirmed: z
+    .boolean()
+    .optional()
+    .describe("Whether confirmed (default: true)"),
+  pending_action: z
+    .string()
+    .optional()
+    .describe("Pending action (e.g. 'confirm', 'merge')"),
 });
 
 const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);
 
 export const createItemTool = tool(
-  async ({ type, content, summary, metadata, day, status, parent_id }) => {
+  async ({ type, content, summary, metadata, day, status, parent_id, list_id, list_name, source, confirmed, pending_action }, config) => {
+    const agentName = getAgentName(config);
+    const finalMetadata = agentName
+      ? { ...(metadata ?? {}), created_by: agentName }
+      : metadata;
     const settings = getSettingsSync();
-    const embedding = await embed(buildEmbeddingText(type, content, summary));
+
+    // List resolution
+    let resolvedListId = list_id ?? null;
+    let resolvedList: List | null = null;
+    if (list_name && !resolvedListId) {
+      resolvedList = await getListByName(list_name);
+      if (!resolvedList) {
+        return JSON.stringify({
+          error: `No list found with name "${list_name}". Create it first with create_list.`,
+        });
+      }
+      resolvedListId = resolvedList.id;
+    }
+
+    // Embedding context from list — reuse resolvedList if available
+    let embeddingContext: EmbeddingContext | null = null;
+    if (resolvedListId) {
+      const list = resolvedList ?? await getListById(resolvedListId);
+      if (list) {
+        embeddingContext = { listName: list.name, listSummary: list.summary ?? undefined };
+      }
+    }
+
+    const embedding = await embed(buildEmbeddingText(type, content, summary, embeddingContext));
 
     // Dedup check — only for knowledge types (preference, learned_fact, pattern)
     if (DEDUP_TYPES.has(type)) {
       const similar = await searchItems(embedding, {
-        threshold: settings.memory_reinforce_threshold,
+        threshold: 0.95, // near-exact duplicate threshold for reinforcement
         limit: 1,
         type,
         confirmedOnly: false,
@@ -54,13 +97,16 @@ export const createItemTool = tool(
       type,
       content,
       summary,
-      metadata,
+      metadata: finalMetadata,
       day,
       status,
       parent_id,
+      list_id: resolvedListId ?? undefined,
       embedding,
       embedding_model: settings.embedding_model,
-      source: "chat",
+      source: source ?? "chat",
+      confirmed,
+      pending_action,
     });
 
     return JSON.stringify({

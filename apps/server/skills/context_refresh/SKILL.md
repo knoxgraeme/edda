@@ -1,49 +1,76 @@
 ---
 name: context_refresh
 description: >
-  Maintains the AGENTS.md user context document. Runs daily via cron. A subagent
-  compares the current AGENTS.md against fresh data from the database, makes
-  surgical edits to reflect changes, and saves a new version. Prevents prompt
-  bloat through curation and token budgeting.
+  Checks for new user data (preferences, facts, patterns, entities) and
+  incorporates relevant changes into the AGENTS.md procedural memory.
+  Runs on a schedule to keep the agent's operating notes current with
+  recently learned information.
+allowed-tools:
+  - get_context_diff
+  - save_agents_md
 ---
 
 # context_refresh
 
-## Trigger
-Cron: settings.context_refresh_cron (default "0 5 * * *")
+## Purpose
 
-## Architecture
+AGENTS.md is your procedural memory — operating notes about how to serve this
+user. This skill detects when new raw data (preferences, facts, patterns,
+entities) has been added to the database and helps you decide if any of it
+should be reflected in your operating notes.
 
-AGENTS.md is stored in the `agents_md_versions` table (not on disk). Each edit
-creates a new version row. The system prompt reads the latest version directly
-from Postgres.
+## Workflow
 
-### Data flow
-1. **Deterministic template** built from DB queries (preferences, facts, patterns,
-   entities, item types, recent items, settings) — fast, free
-2. **Diff computed** between previous template and current template
-3. **Subagent receives**: current AGENTS.md + diff + raw materials
-4. **Subagent makes surgical edits** — preserves stable content, adds new, drops removed
-5. **Subagent saves** new version via `save_agents_md` tool
+1. **Call `get_context_diff`** to check for changes
+2. If status is `no_changes` — respond "No context changes detected" and stop
+3. If status is `changes_detected` — you receive:
+   - `current_content`: the live AGENTS.md text
+   - `diff`: what changed in raw data (+ added, - removed lines)
+   - `raw_template`: full data snapshot (preferences, facts, patterns, entities)
+   - `token_budget`: max token count for the document
+4. **Review the diff** and decide what belongs in your operating notes:
+   - New preference about communication style? → update **## Communication**
+   - New behavioral pattern observed? → update **## Patterns**
+   - New correction or feedback captured? → update **## Corrections**
+   - New quality expectation? → update **## Standards**
+   - Raw factual data (birthdays, job titles, etc.)? → skip, it's already searchable via items
+5. **Call `save_agents_md`** with your edited content
 
-### Change detection
-A SHA-256 hash of the deterministic template is stored with each version.
-If the hash hasn't changed since the last run, the cron is a no-op.
+## AGENTS.md Structure
 
-## Subagent Tool Scoping
-- **Tool**: save_agents_md (writes new version to agents_md_versions)
-- **Read data**: provided via prompt (deterministic template + diff from DB queries), not via tools
-- **Cannot**: create_item, update_item, delete_item — cannot modify user data
+```
+## Communication
+- {how the user prefers to receive information}
+- {shorthand, tone preferences, format preferences}
 
-## What Goes In AGENTS.md
-- **Identity** — who the user is (from learned_facts)
-- **Directives** — imperative rules from preferences + patterns
-- **Key entities** — top people, projects, companies with descriptions
-- **Item types** — available types with classification hints and metadata schemas
-- **Active context** — what the user is currently working on
-- **Boundaries** — privacy rules, confirmation settings
-- **Recall guide** — which tools to use for deeper context
+## Patterns
+- {recurring behaviors, rhythms, habits}
+- {how the user typically works with the system}
 
-## Cost
-Uses settings.context_refresh_model (default: same as memory_extraction_model).
-Typical cost: ~$0.01-0.05/day. No-op when nothing has changed.
+## Standards
+- {what "good output" looks like for this user}
+- {quality expectations for summaries, tasks, captures}
+
+## Corrections
+- {specific things the user has told the agent to stop/start doing}
+- {mistakes the agent made and should not repeat}
+```
+
+## What Belongs in AGENTS.md vs Items
+
+- **AGENTS.md**: Operating notes that shape behavior — "user prefers bullets",
+  "summaries should be 3 lines max", "don't merge entities with same first name"
+- **Items DB**: Granular facts searchable via tools — "user likes Thai food",
+  "Tom's birthday is March 15", "user works at Acme Corp"
+
+If a new preference is about HOW you should behave, add it to AGENTS.md.
+If it's WHAT the user knows/likes/has, it's already in items — skip it.
+
+## Rules
+
+- Stay within the token budget (~budget * 4 characters)
+- Synthesize, don't dump — turn raw data into clear operating guidance
+- Preserve stable content — don't rewrite sections that haven't changed
+- Merge similar entries into single clear statements
+- On first run (empty current_content), create the document from scratch
+  using the starter template above

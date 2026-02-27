@@ -1,0 +1,115 @@
+/**
+ * Tool: create_agent — Create a new agent definition.
+ */
+
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { createAgent, getAgents, getSettings, saveAgentsMdVersion } from "@edda/db";
+import { getLogger } from "../../logger.js";
+
+export const createAgentSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z][a-z0-9_]*$/, "Agent name must be snake_case (lowercase letters, digits, underscores; must start with a letter)")
+    .describe("Unique agent name (snake_case)"),
+  description: z.string().max(500).describe("What this agent does"),
+  system_prompt: z.string().max(10000).optional().describe("Custom system prompt (overrides skills)"),
+  skills: z
+    .array(z.string())
+    .max(10)
+    .optional()
+    .default([])
+    .describe("Skill names to use (e.g. ['daily_digest'])"),
+  trigger: z
+    .enum(["schedule", "on_demand"])
+    .default("on_demand")
+    .describe("How this agent is triggered"),
+  thread_lifetime: z
+    .enum(["ephemeral", "daily", "persistent"])
+    .default("ephemeral")
+    .describe("ephemeral | daily | persistent"),
+  metadata: z
+    .record(z.unknown())
+    .optional()
+    .refine(
+      (m) => !m || !Object.keys(m).some((k) => ["stores", "hooks"].includes(k)),
+      "Cannot set privileged metadata keys (stores, hooks) via tool",
+    )
+    .describe("Arbitrary metadata for the agent (e.g. retrieval_context)"),
+});
+
+export const createAgentTool = tool(
+  async ({
+    name,
+    description,
+    system_prompt,
+    skills,
+    trigger,
+    thread_lifetime,
+    metadata,
+  }) => {
+    const [existing, settings] = await Promise.all([getAgents(), getSettings()]);
+    if (existing.length >= 30) {
+      throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
+    }
+
+    // Auto-add self_improvement skill so the agent can refine itself
+    const resolvedSkills = skills ?? [];
+    if (!resolvedSkills.includes("self_improvement")) {
+      resolvedSkills.push("self_improvement");
+    }
+
+    const agent = await createAgent({
+      name,
+      description,
+      system_prompt,
+      skills: resolvedSkills,
+      thread_lifetime,
+      trigger,
+      model: settings.default_model,
+      metadata,
+    });
+
+    // Seed an empty AGENTS.md (procedural memory) for the new agent
+    const seedContent = [
+      "## Communication",
+      "(Learning — will update as I observe your preferences)",
+      "",
+      "## Patterns",
+      "(No patterns observed yet)",
+      "",
+      "## Standards",
+      "(No specific standards established yet)",
+      "",
+      "## Corrections",
+      "(No corrections yet)",
+    ].join("\n");
+
+    try {
+      await saveAgentsMdVersion({
+        content: seedContent,
+        template: "",
+        inputHash: "",
+        agentName: name,
+      });
+    } catch (err) {
+      getLogger().error({ agent: name, err }, "Agent created but AGENTS.md seed failed");
+    }
+
+    return JSON.stringify({
+      created: true,
+      agent_id: agent.id,
+      name: agent.name,
+      trigger: agent.trigger,
+      skills: resolvedSkills,
+    });
+  },
+  {
+    name: "create_agent",
+    description:
+      "Create a new agent definition. Use trigger='schedule' for cron-driven agents, trigger='on_demand' for manually triggered agents.",
+    schema: createAgentSchema,
+  },
+);

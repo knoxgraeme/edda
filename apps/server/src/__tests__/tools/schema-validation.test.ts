@@ -11,15 +11,14 @@ import { ZodError } from "zod";
 import { addMcpConnectionSchema } from "../../agent/tools/add-mcp-connection.js";
 import { batchCreateItemsSchema } from "../../agent/tools/batch-create-items.js";
 import { confirmPendingSchema } from "../../agent/tools/confirm-pending.js";
-import { getPendingItemsSchema } from "../../agent/tools/get-pending-items.js";
+import { listPendingItemsSchema } from "../../agent/tools/list-pending-items.js";
 import { createItemTypeSchema } from "../../agent/tools/create-item-type.js";
 import { createItemSchema } from "../../agent/tools/create-item.js";
 import { deleteItemSchema } from "../../agent/tools/delete-item.js";
-import { getAgentKnowledgeSchema } from "../../agent/tools/get-agent-knowledge.js";
-import { getDashboardSchema } from "../../agent/tools/get-dashboard.js";
-import { getEntityItemsSchema } from "../../agent/tools/get-entity-items.js";
+import { getDailySummarySchema } from "../../agent/tools/get-daily-summary.js";
+import { listEntityItemsSchema } from "../../agent/tools/list-entity-items.js";
 import { getItemByIdSchema } from "../../agent/tools/get-item-by-id.js";
-import { getListItemsSchema } from "../../agent/tools/get-list-items.js";
+import { getListContentsSchema } from "../../agent/tools/list-contents.js";
 import { getSettingsSchema } from "../../agent/tools/get-settings.js";
 import { getTimelineSchema } from "../../agent/tools/get-timeline.js";
 import { linkItemEntitySchema } from "../../agent/tools/link-item-entity.js";
@@ -50,10 +49,10 @@ describe("addMcpConnectionSchema", () => {
       name: "My MCP Server",
       url: "https://mcp.example.com/sse",
       description: "A test server",
-      auth_env_var: "MCP_TOKEN",
+      auth_env_var: "MCP_AUTH_TOKEN",
     });
     expect(result.description).toBe("A test server");
-    expect(result.auth_env_var).toBe("MCP_TOKEN");
+    expect(result.auth_env_var).toBe("MCP_AUTH_TOKEN");
   });
 
   it("rejects missing required fields", () => {
@@ -122,7 +121,7 @@ describe("createItemTypeSchema", () => {
     const result = createItemTypeSchema.parse({
       name: "recipe",
       description: "A cooking recipe",
-      extraction_hint: "Look for ingredients and steps",
+      classification_hint: "Use when the user shares a recipe or cooking instructions.",
     });
     expect(result.name).toBe("recipe");
   });
@@ -131,12 +130,8 @@ describe("createItemTypeSchema", () => {
     const result = createItemTypeSchema.parse({
       name: "recipe",
       description: "A cooking recipe",
-      extraction_hint: "Look for ingredients",
+      classification_hint: "Use when the user shares a recipe or cooking instructions.",
       icon: "🍳",
-      dashboard_section: "captured",
-      completable: true,
-      has_due_date: false,
-      is_list: false,
       metadata_schema: { type: "object" },
     });
     expect(result.icon).toBe("🍳");
@@ -151,7 +146,7 @@ describe("createItemTypeSchema", () => {
       createItemTypeSchema.parse({
         name: 123,
         description: "test",
-        extraction_hint: "test",
+        classification_hint: "test",
       }),
     ).toThrow(ZodError);
   });
@@ -214,70 +209,48 @@ describe("deleteItemSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// get-agent-knowledge
+// get-daily-summary
 // ---------------------------------------------------------------------------
-describe("getAgentKnowledgeSchema", () => {
-  it("accepts empty input (all optional)", () => {
-    const result = getAgentKnowledgeSchema.parse({});
-    expect(result).toBeDefined();
-  });
-
-  it("accepts valid optional fields", () => {
-    const result = getAgentKnowledgeSchema.parse({ order_by: "reinforced", limit: 50 });
-    expect(result.order_by).toBe("reinforced");
-    expect(result.limit).toBe(50);
-  });
-
-  it("rejects invalid order_by enum", () => {
-    expect(() => getAgentKnowledgeSchema.parse({ order_by: "alphabetical" })).toThrow(
-      ZodError,
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// get-dashboard
-// ---------------------------------------------------------------------------
-describe("getDashboardSchema", () => {
+describe("getDailySummarySchema", () => {
   it("accepts empty input", () => {
-    const result = getDashboardSchema.parse({});
+    const result = getDailySummarySchema.parse({});
     expect(result).toBeDefined();
   });
 
   it("accepts valid date", () => {
-    const result = getDashboardSchema.parse({ date: "2026-02-21" });
+    const result = getDailySummarySchema.parse({ date: "2026-02-21" });
     expect(result.date).toBe("2026-02-21");
   });
 
   it("rejects wrong type for date", () => {
-    expect(() => getDashboardSchema.parse({ date: 12345 })).toThrow(ZodError);
+    expect(() => getDailySummarySchema.parse({ date: 12345 })).toThrow(ZodError);
   });
 });
 
 // ---------------------------------------------------------------------------
-// get-entity-items
+// list-entity-items
 // ---------------------------------------------------------------------------
-describe("getEntityItemsSchema", () => {
+describe("listEntityItemsSchema", () => {
   it("accepts valid input", () => {
-    const result = getEntityItemsSchema.parse({ name: "Alice" });
+    const result = listEntityItemsSchema.parse({ name: "Alice" });
     expect(result.name).toBe("Alice");
     expect(result.limit).toBe(20); // default
   });
 
   it("accepts custom limit", () => {
-    const result = getEntityItemsSchema.parse({ name: "Alice", limit: 50 });
+    const result = listEntityItemsSchema.parse({ name: "Alice", limit: 50 });
     expect(result.limit).toBe(50);
   });
 
   it("rejects missing name", () => {
-    expect(() => getEntityItemsSchema.parse({})).toThrow(ZodError);
+    expect(() => listEntityItemsSchema.parse({})).toThrow(ZodError);
   });
 
   it("rejects limit out of range", () => {
-    expect(() => getEntityItemsSchema.parse({ name: "Alice", limit: 0 })).toThrow(ZodError);
-    expect(() => getEntityItemsSchema.parse({ name: "Alice", limit: 200 })).toThrow(
-      ZodError,
-    );
+    expect(() => listEntityItemsSchema.parse({ name: "Alice", limit: 0 })).toThrow(ZodError);
+    expect(() =>
+      listEntityItemsSchema.parse({ name: "Alice", limit: 200 }),
+    ).toThrow(ZodError);
   });
 });
 
@@ -286,7 +259,9 @@ describe("getEntityItemsSchema", () => {
 // ---------------------------------------------------------------------------
 describe("getItemByIdSchema", () => {
   it("accepts valid input", () => {
-    const result = getItemByIdSchema.parse({ item_id: "00000000-0000-4000-8000-000000000002" });
+    const result = getItemByIdSchema.parse({
+      item_id: "00000000-0000-4000-8000-000000000002",
+    });
     expect(result.item_id).toBe("00000000-0000-4000-8000-000000000002");
   });
 
@@ -304,41 +279,43 @@ describe("getItemByIdSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// get-pending-items
+// list-pending-items
 // ---------------------------------------------------------------------------
-describe("getPendingItemsSchema", () => {
+describe("listPendingItemsSchema", () => {
   it("accepts empty input (defaults to all)", () => {
-    const result = getPendingItemsSchema.parse({});
+    const result = listPendingItemsSchema.parse({});
     expect(result.table).toBe("all");
   });
 
   it("accepts valid table values", () => {
-    expect(getPendingItemsSchema.parse({ table: "items" }).table).toBe("items");
-    expect(getPendingItemsSchema.parse({ table: "entities" }).table).toBe("entities");
-    expect(getPendingItemsSchema.parse({ table: "item_types" }).table).toBe("item_types");
-    expect(getPendingItemsSchema.parse({ table: "all" }).table).toBe("all");
+    expect(listPendingItemsSchema.parse({ table: "items" }).table).toBe("items");
+    expect(listPendingItemsSchema.parse({ table: "entities" }).table).toBe("entities");
+    expect(listPendingItemsSchema.parse({ table: "item_types" }).table).toBe("item_types");
+    expect(listPendingItemsSchema.parse({ table: "all" }).table).toBe("all");
   });
 
   it("rejects invalid table enum", () => {
-    expect(() => getPendingItemsSchema.parse({ table: "users" })).toThrow(ZodError);
+    expect(() => listPendingItemsSchema.parse({ table: "users" })).toThrow(ZodError);
   });
 });
 
 // ---------------------------------------------------------------------------
-// get-list-items
+// get-list-contents
 // ---------------------------------------------------------------------------
-describe("getListItemsSchema", () => {
+describe("getListContentsSchema", () => {
   it("accepts valid input", () => {
-    const result = getListItemsSchema.parse({ list_name: "groceries" });
-    expect(result.list_name).toBe("groceries");
+    const result = getListContentsSchema.parse({ list_id: "550e8400-e29b-41d4-a716-446655440000" });
+    expect(result.list_id).toBe("550e8400-e29b-41d4-a716-446655440000");
   });
 
-  it("rejects missing list_name", () => {
-    expect(() => getListItemsSchema.parse({})).toThrow(ZodError);
+  it("accepts empty object (no-args mode for listing all lists)", () => {
+    const result = getListContentsSchema.parse({});
+    expect(result.list_id).toBeUndefined();
+    expect(result.list_name).toBeUndefined();
   });
 
-  it("rejects wrong type", () => {
-    expect(() => getListItemsSchema.parse({ list_name: 123 })).toThrow(ZodError);
+  it("rejects non-uuid string", () => {
+    expect(() => getListContentsSchema.parse({ list_id: "not-a-uuid" })).toThrow(ZodError);
   });
 });
 
@@ -415,7 +392,9 @@ describe("linkItemEntitySchema", () => {
 
   it("rejects missing required fields", () => {
     expect(() => linkItemEntitySchema.parse({})).toThrow(ZodError);
-    expect(() => linkItemEntitySchema.parse({ item_id: "00000000-0000-4000-8000-000000000001" })).toThrow(ZodError);
+    expect(() =>
+      linkItemEntitySchema.parse({ item_id: "00000000-0000-4000-8000-000000000001" }),
+    ).toThrow(ZodError);
   });
 
   it("rejects invalid relationship enum", () => {
@@ -430,10 +409,16 @@ describe("linkItemEntitySchema", () => {
 
   it("rejects non-UUID item_id and entity_id", () => {
     expect(() =>
-      linkItemEntitySchema.parse({ item_id: "short", entity_id: "00000000-0000-4000-8000-000000000010" }),
+      linkItemEntitySchema.parse({
+        item_id: "short",
+        entity_id: "00000000-0000-4000-8000-000000000010",
+      }),
     ).toThrow(ZodError);
     expect(() =>
-      linkItemEntitySchema.parse({ item_id: "00000000-0000-4000-8000-000000000001", entity_id: "short" }),
+      linkItemEntitySchema.parse({
+        item_id: "00000000-0000-4000-8000-000000000001",
+        entity_id: "short",
+      }),
     ).toThrow(ZodError);
   });
 });
@@ -471,9 +456,7 @@ describe("rejectPendingSchema", () => {
   });
 
   it("rejects invalid table enum", () => {
-    expect(() =>
-      rejectPendingSchema.parse({ id: "abc", table: "users" }),
-    ).toThrow(ZodError);
+    expect(() => rejectPendingSchema.parse({ id: "abc", table: "users" })).toThrow(ZodError);
   });
 });
 
@@ -499,7 +482,7 @@ describe("removeMcpConnectionSchema", () => {
 // search-items
 // ---------------------------------------------------------------------------
 describe("searchItemsSchema", () => {
-  it("accepts valid input", () => {
+  it("accepts valid input with query", () => {
     const result = searchItemsSchema.parse({ query: "find my notes" });
     expect(result.query).toBe("find my notes");
     expect(result.limit).toBe(20); // default
@@ -517,8 +500,18 @@ describe("searchItemsSchema", () => {
     expect(result.agent_knowledge_only).toBe(true);
   });
 
-  it("rejects missing query", () => {
-    expect(() => searchItemsSchema.parse({})).toThrow(ZodError);
+  it("accepts listing mode (no query + agent_knowledge_only)", () => {
+    const result = searchItemsSchema.parse({
+      agent_knowledge_only: true,
+      order_by: "reinforced",
+    });
+    expect(result.query).toBeUndefined();
+    expect(result.order_by).toBe("reinforced");
+  });
+
+  it("accepts empty input (query is optional)", () => {
+    const result = searchItemsSchema.parse({});
+    expect(result.query).toBeUndefined();
   });
 
   it("rejects invalid after date format", () => {
@@ -531,6 +524,12 @@ describe("searchItemsSchema", () => {
     expect(() => searchItemsSchema.parse({ query: "test", limit: 0 })).toThrow(ZodError);
     expect(() => searchItemsSchema.parse({ query: "test", limit: 200 })).toThrow(ZodError);
   });
+
+  it("rejects invalid order_by enum", () => {
+    expect(() =>
+      searchItemsSchema.parse({ agent_knowledge_only: true, order_by: "alphabetical" }),
+    ).toThrow(ZodError);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -538,7 +537,10 @@ describe("searchItemsSchema", () => {
 // ---------------------------------------------------------------------------
 describe("updateItemSchema", () => {
   it("accepts valid input", () => {
-    const result = updateItemSchema.parse({ item_id: "00000000-0000-4000-8000-000000000001", status: "done" });
+    const result = updateItemSchema.parse({
+      item_id: "00000000-0000-4000-8000-000000000001",
+      status: "done",
+    });
     expect(result.item_id).toBe("00000000-0000-4000-8000-000000000001");
     expect(result.status).toBe("done");
   });
@@ -558,7 +560,10 @@ describe("updateItemSchema", () => {
 
   it("rejects invalid status enum", () => {
     expect(() =>
-      updateItemSchema.parse({ item_id: "00000000-0000-4000-8000-000000000001", status: "deleted" }),
+      updateItemSchema.parse({
+        item_id: "00000000-0000-4000-8000-000000000001",
+        status: "deleted",
+      }),
     ).toThrow(ZodError);
   });
 

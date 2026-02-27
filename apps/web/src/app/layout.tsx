@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { ClientProvider } from "@/providers/ClientProvider";
-import { ChatProvider } from "@/providers/ChatProvider";
 import { SideNav } from "@/app/components/SideNav";
 import "./globals.css";
 
@@ -15,6 +14,8 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Edda — Your Second Brain",
@@ -33,13 +34,11 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ClientProvider>
-          <ChatProvider>
-            <div className="flex h-screen">
-              <SideNav />
-              <div className="flex-1 overflow-hidden">{children}</div>
-            </div>
-            <Toaster />
-          </ChatProvider>
+          <div className="flex h-screen">
+            <SideNav />
+            <div className="flex-1 overflow-auto">{children}</div>
+          </div>
+          <Toaster />
         </ClientProvider>
       </body>
     </html>

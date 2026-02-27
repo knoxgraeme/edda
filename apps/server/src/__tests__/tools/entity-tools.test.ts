@@ -19,16 +19,16 @@ vi.mock("@edda/db", () => ({
   ENTITY_COLS: "e.id, e.name, e.type",
 }));
 
-vi.mock("../../embed/index.js", () => ({
+vi.mock("../../embed.js", () => ({
   embed: vi.fn().mockResolvedValue(ZERO_VECTOR),
 }));
 
 import { upsertEntity, linkItemEntity, resolveEntity, getEntityItems } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { embed } from "../../embed.js";
 
 import { upsertEntityTool } from "../../agent/tools/upsert-entity.js";
 import { linkItemEntityTool } from "../../agent/tools/link-item-entity.js";
-import { getEntityItemsTool } from "../../agent/tools/get-entity-items.js";
+import { listEntityItemsTool } from "../../agent/tools/list-entity-items.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -78,25 +78,36 @@ describe("linkItemEntityTool", () => {
     });
     const parsed = JSON.parse(result);
 
-    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000010", "about");
+    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000010",
+      "about",
+    );
     expect(parsed.status).toBe("linked");
   });
 
   it("defaults relationship to mentioned", async () => {
     vi.mocked(linkItemEntity).mockResolvedValueOnce(undefined as never);
 
-    await linkItemEntityTool.invoke({ item_id: "00000000-0000-4000-8000-000000000002", entity_id: "00000000-0000-4000-8000-000000000020" });
+    await linkItemEntityTool.invoke({
+      item_id: "00000000-0000-4000-8000-000000000002",
+      entity_id: "00000000-0000-4000-8000-000000000020",
+    });
 
-    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000020", "mentioned");
+    expect(vi.mocked(linkItemEntity)).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000020",
+      "mentioned",
+    );
   });
 });
 
-describe("getEntityItemsTool", () => {
+describe("listEntityItemsTool", () => {
   it("resolves entity by name then fetches items", async () => {
     vi.mocked(resolveEntity).mockResolvedValueOnce({ id: "ent-1", name: "Alice" } as never);
     vi.mocked(getEntityItems).mockResolvedValueOnce([{ id: "item-1" }] as never);
 
-    const result = await getEntityItemsTool.invoke({ name: "Alice", limit: 10 });
+    const result = await listEntityItemsTool.invoke({ name: "Alice", limit: 10 });
     const parsed = JSON.parse(result);
 
     expect(vi.mocked(resolveEntity)).toHaveBeenCalledWith("Alice");
@@ -108,7 +119,7 @@ describe("getEntityItemsTool", () => {
   it("returns not found when entity does not exist", async () => {
     vi.mocked(resolveEntity).mockResolvedValueOnce(null as never);
 
-    const result = await getEntityItemsTool.invoke({ name: "Unknown", limit: 20 });
+    const result = await listEntityItemsTool.invoke({ name: "Unknown", limit: 20 });
     const parsed = JSON.parse(result);
 
     expect(parsed.found).toBe(false);

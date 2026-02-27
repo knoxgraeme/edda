@@ -40,29 +40,10 @@ const SETTINGS_UPDATE_COLUMNS = [
   "web_search_enabled",
   "web_search_max_results",
   "checkpointer_backend",
-  "memory_extraction_enabled",
-  "memory_extraction_cron",
-  "memory_extraction_model",
-  "memory_reinforce_threshold",
-  "memory_update_threshold",
-  "entity_exact_threshold",
-  "entity_fuzzy_threshold",
   "agents_md_token_budget",
   "agents_md_max_per_category",
   "agents_md_max_versions",
   "agents_md_max_entities",
-  "tool_call_limit_global",
-  "tool_call_limit_delete",
-  "tool_call_limit_archive",
-  "daily_digest_cron",
-  "daily_digest_model",
-  "weekly_review_cron",
-  "weekly_review_model",
-  "type_evolution_cron",
-  "type_evolution_model",
-  "user_crons_enabled",
-  "user_cron_check_interval",
-  "user_cron_model",
   "cron_runner",
   "langgraph_platform_url",
   "approval_new_type",
@@ -72,10 +53,9 @@ const SETTINGS_UPDATE_COLUMNS = [
   "setup_completed",
   "user_display_name",
   "user_timezone",
-  "memory_sync_cron",
-  "memory_sync_model",
-  "memory_file_activity_threshold",
-  "memory_file_stale_days",
+  "task_max_concurrency",
+  "default_agent",
+  "sandbox_provider",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {
@@ -88,10 +68,7 @@ export async function updateSettings(updates: Partial<Settings>): Promise<Settin
   const sets = entries.map(([k], i) => `"${k}" = $${i + 1}`).join(", ");
   const vals = entries.map(([, v]) => v);
 
-  await pool.query(
-    `UPDATE settings SET ${sets}, updated_at = now() WHERE id = true`,
-    vals,
-  );
+  await pool.query(`UPDATE settings SET ${sets}, updated_at = now() WHERE id = true`, vals);
 
   return refreshSettings();
 }

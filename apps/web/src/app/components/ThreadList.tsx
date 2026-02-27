@@ -27,11 +27,21 @@ function formatTime(date: Date, now = new Date()): string {
   return format(date, "MM/dd");
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({ onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center p-8 text-center">
-      <p className="text-sm text-red-600">Failed to load threads</p>
-      <p className="mt-1 text-xs text-muted-foreground">{message}</p>
+      <p className="text-sm font-medium text-muted-foreground">Couldn&apos;t load threads</p>
+      <p className="mt-1 text-xs text-muted-foreground">Check that the server is running</p>
+      {onRetry && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={onRetry}
+        >
+          Retry
+        </Button>
+      )}
     </div>
   );
 }
@@ -56,13 +66,14 @@ function EmptyState() {
 }
 
 interface ThreadListProps {
+  agentName?: string;
   currentThreadId?: string;
   onThreadSelect: (id: string) => void;
   onClose?: () => void;
 }
 
-export function ThreadList({ currentThreadId, onThreadSelect, onClose }: ThreadListProps) {
-  const { threads, error, isLoading, mutate } = useEddaThreads();
+export function ThreadList({ agentName, currentThreadId, onThreadSelect, onClose }: ThreadListProps) {
+  const { threads, error, isLoading, mutate } = useEddaThreads(agentName);
 
   const isEmpty = threads.length === 0;
 
@@ -124,7 +135,7 @@ export function ThreadList({ currentThreadId, onThreadSelect, onClose }: ThreadL
       </div>
 
       <ScrollArea className="h-0 flex-1">
-        {error && <ErrorState message={(error as Error).message} />}
+        {error && <ErrorState message={(error as Error).message} onRetry={() => mutate()} />}
 
         {!error && isLoading && isEmpty && <LoadingState />}
 

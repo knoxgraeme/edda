@@ -7,29 +7,32 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { updateSettings } from "@edda/db";
+import { updateSettings, getAgentByName } from "@edda/db";
 
 export const updateSettingsSchema = z.object({
   updates: z
     .object({
+      default_agent: z
+        .string()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Default conversational agent name"),
       user_display_name: z.string().optional(),
       user_timezone: z.string().optional(),
-      daily_digest_time: z
-        .string()
-        .regex(/^\d{2}:\d{2}$/, "HH:MM format")
-        .optional(),
       web_search_enabled: z.boolean().optional(),
       web_search_max_results: z.number().int().min(1).max(20).optional(),
-      memory_extraction_enabled: z.boolean().optional(),
-      user_crons_enabled: z.boolean().optional(),
-      type_evolution_enabled: z.boolean().optional(),
       approval_new_type: z.enum(["auto", "confirm"]).optional(),
       approval_archive_stale: z.enum(["auto", "confirm"]).optional(),
       approval_merge_entity: z.enum(["auto", "confirm"]).optional(),
       agents_md_token_budget: z.number().int().min(100).max(10000).optional(),
       agents_md_max_versions: z.number().int().min(1).max(50).optional(),
+      sandbox_provider: z
+        .enum(["none", "node-vfs"])
+        .optional()
+        .describe("Sandbox execution provider: 'none' (disabled) or 'node-vfs' (in-memory VFS)"),
     })
-    .describe("Settings key-value pairs to update. Only user-facing settings are modifiable."),
+    .describe("Settings to update"),
 });
 
 /** Settings the agent is allowed to modify — derived from the Zod schema */
@@ -56,6 +59,17 @@ export const updateSettingsTool = tool(
         rejected_keys: rejected,
         message: "None of the provided keys are agent-mutable.",
       });
+    }
+
+    // Validate default_agent exists before updating
+    if (typeof safeUpdates.default_agent === "string") {
+      const agent = await getAgentByName(safeUpdates.default_agent);
+      if (!agent) {
+        return JSON.stringify({
+          status: "error",
+          message: `Agent "${safeUpdates.default_agent}" does not exist. Use list_agents to see available agents.`,
+        });
+      }
     }
 
     await updateSettings(safeUpdates);

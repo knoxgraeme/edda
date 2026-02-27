@@ -2,19 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Save, AlertTriangle, RefreshCw, LogOut } from "lucide-react";
+import { Save, AlertTriangle, RefreshCw, LogOut, ChevronDown } from "lucide-react";
 import type { Settings } from "../types/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
 import { saveSettingsAction, logoutAction } from "../actions";
 
 type SettingsForm = Omit<Settings, "id" | "created_at" | "updated_at">;
+
+const ADVANCED_EXPANDED_KEY = "edda-settings-advanced-expanded";
 
 function FieldGroup({
   label,
@@ -38,7 +38,15 @@ function FieldGroup({
   );
 }
 
-export function SettingsClient({ initial, authEnabled }: { initial: Settings; authEnabled: boolean }) {
+export function SettingsClient({
+  initial,
+  authEnabled,
+  agentNames,
+}: {
+  initial: Settings;
+  authEnabled: boolean;
+  agentNames: string[];
+}) {
   const [form, setForm] = useState<SettingsForm>(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, created_at, updated_at, ...rest } = initial;
@@ -46,6 +54,25 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
   });
   const [isPending, startTransition] = useTransition();
   const [dirty, setDirty] = useState(false);
+  const [advancedExpanded, setAdvancedExpanded] = useState(() => {
+    try {
+      return localStorage.getItem(ADVANCED_EXPANDED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleAdvanced() {
+    setAdvancedExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(ADVANCED_EXPANDED_KEY, String(next));
+      } catch {
+        // localStorage unavailable
+      }
+      return next;
+    });
+  }
 
   const providerChanged =
     form.llm_provider !== initial.llm_provider ||
@@ -72,17 +99,9 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
   }
 
   return (
-    <main className="max-w-3xl mx-auto p-6">
+    <main className="max-w-3xl mx-auto p-6 pb-24">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Settings</h1>
-        <Button
-          onClick={handleSave}
-          disabled={!dirty || isPending}
-          className="gap-2"
-        >
-          <Save className="h-4 w-4" />
-          {isPending ? "Saving..." : "Save"}
-        </Button>
       </div>
 
       {providerChanged && (
@@ -105,6 +124,8 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
       )}
 
       <div className="grid gap-6">
+        {/* ===== General Section ===== */}
+
         {/* Profile */}
         <Card>
           <CardHeader>
@@ -201,16 +222,12 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Web Search</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Configure the search provider. Add &quot;web_search&quot; to an
+              agent&apos;s tools to enable it.
+            </p>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="web_search_enabled">Enable web search</Label>
-              <Switch
-                id="web_search_enabled"
-                checked={form.web_search_enabled}
-                onCheckedChange={(v) => update("web_search_enabled", v)}
-              />
-            </div>
             <FieldGroup label="Provider" htmlFor="search_provider">
               <Select
                 id="search_provider"
@@ -219,8 +236,9 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
                   update("search_provider", e.target.value as Settings["search_provider"])
                 }
               >
+                <option value="brave">Brave (free tier available)</option>
                 <option value="tavily">Tavily</option>
-                <option value="brave">Brave</option>
+                <option value="duckduckgo">DuckDuckGo (no API key, unreliable)</option>
                 <option value="serper">Serper</option>
                 <option value="serpapi">SerpAPI</option>
               </Select>
@@ -236,314 +254,252 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
           </CardContent>
         </Card>
 
-        {/* Crons */}
+        {/* Agents & Concurrency */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Scheduled Tasks</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="memory_extraction_enabled">Memory extraction</Label>
-              <Switch
-                id="memory_extraction_enabled"
-                checked={form.memory_extraction_enabled}
-                onCheckedChange={(v) => update("memory_extraction_enabled", v)}
-              />
-            </div>
-            <FieldGroup
-              label="Extraction schedule"
-              htmlFor="memory_extraction_cron"
-              description="Cron expression (e.g. '0 2 * * *' for 2am daily)"
-            >
-              <Input
-                id="memory_extraction_cron"
-                value={form.memory_extraction_cron}
-                onChange={(e) => update("memory_extraction_cron", e.target.value)}
-              />
-            </FieldGroup>
-            <FieldGroup label="Extraction model" htmlFor="memory_extraction_model">
-              <Input
-                id="memory_extraction_model"
-                value={form.memory_extraction_model}
-                onChange={(e) => update("memory_extraction_model", e.target.value)}
-              />
-            </FieldGroup>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <Label htmlFor="user_crons_enabled">User crons</Label>
-              <Switch
-                id="user_crons_enabled"
-                checked={form.user_crons_enabled}
-                onCheckedChange={(v) => update("user_crons_enabled", v)}
-              />
-            </div>
-            <FieldGroup
-              label="Check interval"
-              htmlFor="user_cron_check_interval"
-              description="Cron expression for how often to check user scheduled tasks"
-            >
-              <Input
-                id="user_cron_check_interval"
-                value={form.user_cron_check_interval}
-                onChange={(e) => update("user_cron_check_interval", e.target.value)}
-              />
-            </FieldGroup>
-            <FieldGroup label="Cron runner" htmlFor="cron_runner">
-              <Select
-                id="cron_runner"
-                value={form.cron_runner}
-                onChange={(e) =>
-                  update("cron_runner", e.target.value as Settings["cron_runner"])
-                }
-              >
-                <option value="standalone">Standalone (node-cron)</option>
-                <option value="platform">LangGraph Platform</option>
-              </Select>
-            </FieldGroup>
-          </CardContent>
-        </Card>
-
-        {/* Approvals */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Approval Modes</CardTitle>
+            <CardTitle className="text-base">Agents & Concurrency</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <FieldGroup
-              label="New item types"
-              htmlFor="approval_new_type"
-              description="Whether new item types require confirmation"
+              label="Default Agent"
+              htmlFor="default_agent"
+              description="The agent used as the primary conversational interface"
             >
               <Select
-                id="approval_new_type"
-                value={form.approval_new_type}
-                onChange={(e) =>
-                  update("approval_new_type", e.target.value as Settings["approval_new_type"])
-                }
+                id="default_agent"
+                value={form.default_agent}
+                onChange={(e) => update("default_agent", e.target.value)}
               >
-                <option value="auto">Auto-approve</option>
-                <option value="confirm">Require confirmation</option>
+                {agentNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </Select>
             </FieldGroup>
             <FieldGroup
-              label="Archive stale items"
-              htmlFor="approval_archive_stale"
-              description="Whether archiving stale items requires confirmation"
-            >
-              <Select
-                id="approval_archive_stale"
-                value={form.approval_archive_stale}
-                onChange={(e) =>
-                  update(
-                    "approval_archive_stale",
-                    e.target.value as Settings["approval_archive_stale"],
-                  )
-                }
-              >
-                <option value="auto">Auto-approve</option>
-                <option value="confirm">Require confirmation</option>
-              </Select>
-            </FieldGroup>
-            <FieldGroup
-              label="Merge entities"
-              htmlFor="approval_merge_entity"
-              description="Whether entity merges require confirmation"
-            >
-              <Select
-                id="approval_merge_entity"
-                value={form.approval_merge_entity}
-                onChange={(e) =>
-                  update(
-                    "approval_merge_entity",
-                    e.target.value as Settings["approval_merge_entity"],
-                  )
-                }
-              >
-                <option value="auto">Auto-approve</option>
-                <option value="confirm">Require confirmation</option>
-              </Select>
-            </FieldGroup>
-          </CardContent>
-        </Card>
-
-        {/* Thresholds */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Deduplication Thresholds</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <FieldGroup
-              label="Memory reinforce"
-              htmlFor="memory_reinforce_threshold"
-              description="Cosine similarity above this reinforces (default 0.95)"
+              label="Max concurrent tasks"
+              htmlFor="task_max_concurrency"
+              description="Maximum number of agent tasks running in parallel (1-10)"
             >
               <Input
-                id="memory_reinforce_threshold"
+                id="task_max_concurrency"
                 type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                value={form.memory_reinforce_threshold}
-                onChange={(e) =>
-                  update("memory_reinforce_threshold", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup
-              label="Memory update"
-              htmlFor="memory_update_threshold"
-              description="Similarity above this updates existing (default 0.85)"
-            >
-              <Input
-                id="memory_update_threshold"
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                value={form.memory_update_threshold}
-                onChange={(e) =>
-                  update("memory_update_threshold", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup
-              label="Entity exact match"
-              htmlFor="entity_exact_threshold"
-              description="Similarity for exact entity merge (default 0.95)"
-            >
-              <Input
-                id="entity_exact_threshold"
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                value={form.entity_exact_threshold}
-                onChange={(e) =>
-                  update("entity_exact_threshold", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup
-              label="Entity fuzzy match"
-              htmlFor="entity_fuzzy_threshold"
-              description="Similarity for fuzzy entity merge (default 0.80)"
-            >
-              <Input
-                id="entity_fuzzy_threshold"
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                value={form.entity_fuzzy_threshold}
-                onChange={(e) =>
-                  update("entity_fuzzy_threshold", Number(e.target.value))
-                }
+                min={1}
+                max={10}
+                value={form.task_max_concurrency}
+                onChange={(e) => update("task_max_concurrency", Number(e.target.value))}
               />
             </FieldGroup>
           </CardContent>
         </Card>
 
-        {/* Budgets & Limits */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Budgets & Limits</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <FieldGroup label="AGENTS.md token budget" htmlFor="agents_md_token_budget">
-              <Input
-                id="agents_md_token_budget"
-                type="number"
-                value={form.agents_md_token_budget}
-                onChange={(e) => update("agents_md_token_budget", Number(e.target.value))}
-              />
-            </FieldGroup>
-            <FieldGroup label="Max per category" htmlFor="agents_md_max_per_category">
-              <Input
-                id="agents_md_max_per_category"
-                type="number"
-                value={form.agents_md_max_per_category}
-                onChange={(e) =>
-                  update("agents_md_max_per_category", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup label="Max AGENTS.md versions" htmlFor="agents_md_max_versions">
-              <Input
-                id="agents_md_max_versions"
-                type="number"
-                value={form.agents_md_max_versions}
-                onChange={(e) =>
-                  update("agents_md_max_versions", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup label="Max entities in AGENTS.md" htmlFor="agents_md_max_entities">
-              <Input
-                id="agents_md_max_entities"
-                type="number"
-                value={form.agents_md_max_entities}
-                onChange={(e) =>
-                  update("agents_md_max_entities", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <Separator className="sm:col-span-2" />
-            <FieldGroup label="Global tool call limit" htmlFor="tool_call_limit_global">
-              <Input
-                id="tool_call_limit_global"
-                type="number"
-                value={form.tool_call_limit_global}
-                onChange={(e) =>
-                  update("tool_call_limit_global", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup label="Delete tool limit" htmlFor="tool_call_limit_delete">
-              <Input
-                id="tool_call_limit_delete"
-                type="number"
-                value={form.tool_call_limit_delete}
-                onChange={(e) =>
-                  update("tool_call_limit_delete", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-            <FieldGroup label="Archive tool limit" htmlFor="tool_call_limit_archive">
-              <Input
-                id="tool_call_limit_archive"
-                type="number"
-                value={form.tool_call_limit_archive}
-                onChange={(e) =>
-                  update("tool_call_limit_archive", Number(e.target.value))
-                }
-              />
-            </FieldGroup>
-          </CardContent>
-        </Card>
+        {/* ===== Advanced Section Toggle ===== */}
+        <button
+          type="button"
+          onClick={toggleAdvanced}
+          className="flex items-center gap-2 py-3 px-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform duration-200 ${
+              advancedExpanded ? "rotate-0" : "-rotate-90"
+            }`}
+          />
+          Advanced Settings
+        </button>
 
-        {/* System Prompt */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">System Prompt Override</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FieldGroup
-              label="Custom system prompt"
-              htmlFor="system_prompt_override"
-              description="Leave empty to use the default. This is prepended to the built-in system prompt."
-            >
-              <textarea
-                id="system_prompt_override"
-                rows={4}
-                className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={form.system_prompt_override ?? ""}
-                onChange={(e) =>
-                  update("system_prompt_override", e.target.value || null)
-                }
-              />
-            </FieldGroup>
-          </CardContent>
-        </Card>
+        {/* ===== Advanced Section (collapsible) ===== */}
+        <div
+          className={`grid gap-6 transition-all duration-300 ease-in-out ${
+            advancedExpanded
+              ? "grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div className="grid gap-6">
+              {/* Cron Runner */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Scheduled Tasks</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <FieldGroup label="Cron runner" htmlFor="cron_runner">
+                    <Select
+                      id="cron_runner"
+                      value={form.cron_runner}
+                      onChange={(e) =>
+                        update("cron_runner", e.target.value as Settings["cron_runner"])
+                      }
+                    >
+                      <option value="local">Local (node-cron)</option>
+                      <option value="platform">LangGraph Platform</option>
+                    </Select>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              {/* Sandbox */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Sandbox Execution</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Enable shell execution for agents with the &quot;coding&quot; skill.
+                  </p>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <FieldGroup label="Provider" htmlFor="sandbox_provider">
+                    <Select
+                      id="sandbox_provider"
+                      value={form.sandbox_provider}
+                      onChange={(e) =>
+                        update("sandbox_provider", e.target.value as Settings["sandbox_provider"])
+                      }
+                    >
+                      <option value="none">Disabled</option>
+                      <option value="node-vfs">Node VFS (in-memory, dev only)</option>
+                    </Select>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              {/* Approvals */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Approval Modes</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <FieldGroup
+                    label="New item types"
+                    htmlFor="approval_new_type"
+                    description="Whether new item types require confirmation"
+                  >
+                    <Select
+                      id="approval_new_type"
+                      value={form.approval_new_type}
+                      onChange={(e) =>
+                        update("approval_new_type", e.target.value as Settings["approval_new_type"])
+                      }
+                    >
+                      <option value="auto">Auto-approve</option>
+                      <option value="confirm">Require confirmation</option>
+                    </Select>
+                  </FieldGroup>
+                  <FieldGroup
+                    label="Archive stale items"
+                    htmlFor="approval_archive_stale"
+                    description="Whether archiving stale items requires confirmation"
+                  >
+                    <Select
+                      id="approval_archive_stale"
+                      value={form.approval_archive_stale}
+                      onChange={(e) =>
+                        update(
+                          "approval_archive_stale",
+                          e.target.value as Settings["approval_archive_stale"],
+                        )
+                      }
+                    >
+                      <option value="auto">Auto-approve</option>
+                      <option value="confirm">Require confirmation</option>
+                    </Select>
+                  </FieldGroup>
+                  <FieldGroup
+                    label="Merge entities"
+                    htmlFor="approval_merge_entity"
+                    description="Whether entity merges require confirmation"
+                  >
+                    <Select
+                      id="approval_merge_entity"
+                      value={form.approval_merge_entity}
+                      onChange={(e) =>
+                        update(
+                          "approval_merge_entity",
+                          e.target.value as Settings["approval_merge_entity"],
+                        )
+                      }
+                    >
+                      <option value="auto">Auto-approve</option>
+                      <option value="confirm">Require confirmation</option>
+                    </Select>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              {/* Budgets & Limits */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Budgets & Limits</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 sm:grid-cols-2">
+                  <FieldGroup label="AGENTS.md token budget" htmlFor="agents_md_token_budget">
+                    <Input
+                      id="agents_md_token_budget"
+                      type="number"
+                      value={form.agents_md_token_budget}
+                      onChange={(e) => update("agents_md_token_budget", Number(e.target.value))}
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Max per category" htmlFor="agents_md_max_per_category">
+                    <Input
+                      id="agents_md_max_per_category"
+                      type="number"
+                      value={form.agents_md_max_per_category}
+                      onChange={(e) =>
+                        update("agents_md_max_per_category", Number(e.target.value))
+                      }
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Max AGENTS.md versions" htmlFor="agents_md_max_versions">
+                    <Input
+                      id="agents_md_max_versions"
+                      type="number"
+                      value={form.agents_md_max_versions}
+                      onChange={(e) =>
+                        update("agents_md_max_versions", Number(e.target.value))
+                      }
+                    />
+                  </FieldGroup>
+                  <FieldGroup label="Max entities in AGENTS.md" htmlFor="agents_md_max_entities">
+                    <Input
+                      id="agents_md_max_entities"
+                      type="number"
+                      value={form.agents_md_max_entities}
+                      onChange={(e) =>
+                        update("agents_md_max_entities", Number(e.target.value))
+                      }
+                    />
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              {/* System Prompt */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">System Prompt Override</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FieldGroup
+                    label="Custom system prompt"
+                    htmlFor="system_prompt_override"
+                    description="Leave empty to use the default. This is prepended to the built-in system prompt."
+                  >
+                    <textarea
+                      id="system_prompt_override"
+                      rows={4}
+                      className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={form.system_prompt_override ?? ""}
+                      onChange={(e) =>
+                        update("system_prompt_override", e.target.value || null)
+                      }
+                    />
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+
         {/* Logout */}
         {authEnabled && (
           <Card>
@@ -557,6 +513,27 @@ export function SettingsClient({ initial, authEnabled }: { initial: Settings; au
             </CardContent>
           </Card>
         )}
+      </div>
+
+      {/* ===== Sticky Save Bar ===== */}
+      <div
+        className={`fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 transition-all duration-300 ease-in-out ${
+          dirty
+            ? "translate-y-0 opacity-100"
+            : "translate-y-full opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">You have unsaved changes</p>
+          <Button
+            onClick={handleSave}
+            disabled={isPending}
+            className="gap-2"
+          >
+            <Save className="h-4 w-4" />
+            {isPending ? "Saving..." : "Save"}
+          </Button>
+        </div>
       </div>
     </main>
   );

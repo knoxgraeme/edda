@@ -9,12 +9,20 @@
 // Settings
 // ──────────────────────────────────────────────
 
-export type LlmProvider = "anthropic" | "openai" | "google" | "groq" | "ollama" | "mistral" | "bedrock";
+export type LlmProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "groq"
+  | "ollama"
+  | "mistral"
+  | "bedrock";
 export type EmbeddingProvider = "voyage" | "openai" | "google";
-export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi";
+export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckduckgo";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
-export type CronRunner = "standalone" | "platform";
+export type CronRunner = "local" | "langgraph";
 export type ApprovalMode = "auto" | "confirm";
+export type SandboxProvider = "none" | "node-vfs";
 
 export interface Settings {
   id: true;
@@ -36,40 +44,13 @@ export interface Settings {
   // Checkpointer
   checkpointer_backend: CheckpointerBackend;
 
-  // Memory extraction
-  memory_extraction_enabled: boolean;
-  memory_extraction_cron: string;
-  memory_extraction_model: string;
-
-  // Memory dedup thresholds
-  memory_reinforce_threshold: number;
-  memory_update_threshold: number;
-  entity_exact_threshold: number;
-  entity_fuzzy_threshold: number;
-
   // AGENTS.md budget
   agents_md_token_budget: number;
   agents_md_max_per_category: number;
   agents_md_max_versions: number;
   agents_md_max_entities: number;
 
-  // Tool call limits
-  tool_call_limit_global: number;
-  tool_call_limit_delete: number;
-  tool_call_limit_archive: number;
-
-  // System cron schedules
-  daily_digest_cron: string;
-  daily_digest_model: string;
-  weekly_review_cron: string;
-  weekly_review_model: string;
-  type_evolution_cron: string;
-  type_evolution_model: string;
-
-  // User crons
-  user_crons_enabled: boolean;
-  user_cron_check_interval: string;
-  user_cron_model: string;
+  // Crons
   cron_runner: CronRunner;
   langgraph_platform_url: string | null;
 
@@ -86,15 +67,14 @@ export interface Settings {
   user_display_name: string | null;
   user_timezone: string;
 
-  // Context refresh
-  context_refresh_cron: string;
-  context_refresh_model: string;
+  // Agent channels
+  task_max_concurrency: number;
 
-  // Memory sync
-  memory_sync_cron: string;
-  memory_sync_model: string;
-  memory_file_activity_threshold: number;
-  memory_file_stale_days: number;
+  // Default agent
+  default_agent: string;
+
+  // Sandbox
+  sandbox_provider: SandboxProvider;
 
   // Meta
   created_at: string;
@@ -110,7 +90,49 @@ export interface AgentsMdVersion {
   content: string;
   template: string;
   input_hash: string | null;
+  agent_name: string;
   created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Lists
+// ──────────────────────────────────────────────
+
+export type ListType = 'rolling' | 'one_off';
+export type ListStatus = 'active' | 'archived';
+
+export interface List {
+  id: string;
+  name: string;
+  normalized_name: string;
+  summary: string | null;
+  icon: string;
+  list_type: ListType;
+  status: ListStatus;
+  embedding: number[] | null;
+  embedding_model: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateListInput {
+  name: string;
+  normalized_name?: string;
+  summary?: string;
+  icon?: string;
+  list_type?: ListType;
+  embedding?: number[];
+  embedding_model?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ListWithCount extends List {
+  item_count: number;
+}
+
+export interface ListSearchResult extends List {
+  similarity: number;
 }
 
 // ──────────────────────────────────────────────
@@ -131,6 +153,7 @@ export interface Item {
   day: string; // YYYY-MM-DD
   confirmed: boolean;
   parent_id: string | null;
+  list_id: string | null;
   embedding: number[] | null;
   embedding_model: string | null;
   superseded_by: string | null;
@@ -151,6 +174,7 @@ export interface CreateItemInput {
   day?: string;
   confirmed?: boolean;
   parent_id?: string;
+  list_id?: string;
   embedding?: number[];
   embedding_model?: string;
   pending_action?: string;
@@ -188,20 +212,10 @@ export interface ItemType {
   description: string;
   metadata_schema: Record<string, unknown>;
   classification_hint: string;
-  extraction_hint: string;
-  dashboard_section: string;
-  dashboard_priority: number;
-  completable: boolean;
-  has_due_date: boolean;
-  is_list: boolean;
-  include_in_recall: boolean;
-  private: boolean;
   agent_internal: boolean;
-  built_in: boolean;
-  is_user_created: boolean;
-  created_by: string;
   confirmed: boolean;
   pending_action: string | null;
+  decay_half_life_days: number | null;
   created_at: string;
 }
 
@@ -209,13 +223,34 @@ export interface ItemType {
 // MCP Connections
 // ──────────────────────────────────────────────
 
+export type McpAuthType = "none" | "bearer" | "oauth";
+export type McpAuthStatus = "active" | "pending_auth" | "error";
+
 export interface McpConnection {
   id: string;
   name: string;
   transport: "stdio" | "sse" | "streamable-http";
   config: Record<string, unknown>;
   enabled: boolean;
+  discovered_tools: string[];
+  auth_type: McpAuthType;
+  auth_status: McpAuthStatus;
   created_at: string;
+}
+
+export interface McpOAuthStateRow {
+  connection_id: string;
+  client_info_encrypted: string | null;
+  tokens_encrypted: string | null;
+  expires_at: string | null;
+  discovery_state: Record<string, unknown> | null;
+  pending_auth: {
+    code_verifier_encrypted: string;
+    state_param: string;
+    completion_secret: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ──────────────────────────────────────────────
@@ -226,42 +261,28 @@ export interface DashboardData {
   due_today: Item[];
   captured_today: Item[];
   open_items: Item[];
-  lists: Record<string, Item[]>;
+  lists: Record<string, { list: List; items: Item[] }>;
   pending_confirmations: Item[];
 }
 
 // ──────────────────────────────────────────────
-// Agent Log
+// Retrieval Context (search-time affinity)
 // ──────────────────────────────────────────────
 
-export interface AgentLog {
-  id: string;
-  skill: string;
-  trigger: string;
-  input_summary: string | null;
-  output_summary: string | null;
-  items_created: string[];
-  items_retrieved: string[];
-  entities_created: string[];
-  model: string | null;
-  tokens_in: number | null;
-  tokens_out: number | null;
-  duration_ms: number | null;
-  created_at: string;
-}
-
-export interface CreateAgentLogInput {
-  skill: string;
-  trigger: string;
-  input_summary?: string;
-  output_summary?: string;
-  items_created?: string[];
-  items_retrieved?: string[];
-  entities_created?: string[];
-  model?: string;
-  tokens_in?: number;
-  tokens_out?: number;
-  duration_ms?: number;
+export interface RetrievalContext {
+  /** Agent names to match against metadata->>'created_by' on items.
+   *  Defaults to [self] when authorship_mode is set but authors is omitted. */
+  authors?: string[];
+  /** "boost" = prefer these authors' items. "filter" = only these authors' items. */
+  authorship_mode?: "boost" | "filter";
+  /** Score multiplier for authorship boost (e.g. 1.3 = 30% boost). Ignored in filter mode. */
+  authorship_boost?: number;
+  /** Item types to prefer or restrict to. */
+  types?: string[];
+  /** "boost" = prefer these types. "filter" = only these types. */
+  type_mode?: "boost" | "filter";
+  /** Score multiplier for type boost (e.g. 1.2 = 20% boost). Ignored in filter mode. */
+  type_boost?: number;
 }
 
 // ──────────────────────────────────────────────
@@ -270,10 +291,12 @@ export interface CreateAgentLogInput {
 
 export interface SearchResult extends Item {
   similarity: number;
+  raw_similarity: number;
 }
 
 export interface EntitySearchResult extends Entity {
   similarity: number;
+  raw_similarity: number;
 }
 
 // ──────────────────────────────────────────────
@@ -282,12 +305,24 @@ export interface EntitySearchResult extends Entity {
 
 export interface PendingItem {
   id: string;
-  table: "items" | "entities" | "item_types";
+  table: "items" | "entities" | "item_types" | "telegram_paired_users";
   type: string;
   label: string;
   description: string | null;
   pendingAction: string | null;
   createdAt: string;
+}
+
+// ──────────────────────────────────────────────
+// Telegram Paired Users
+// ──────────────────────────────────────────────
+
+export interface TelegramPairedUser {
+  id: string;
+  telegram_id: number;
+  display_name: string | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
 }
 
 // ──────────────────────────────────────────────
@@ -316,17 +351,113 @@ export interface UpsertSkillInput {
 }
 
 // ──────────────────────────────────────────────
-// Memory Types
+// Agents
 // ──────────────────────────────────────────────
 
-export interface MemoryType {
+export type ThreadLifetime = "ephemeral" | "daily" | "persistent";
+/** @deprecated Use ThreadLifetime instead */
+export type AgentContextMode = ThreadLifetime;
+export type AgentTrigger = "schedule" | "on_demand";
+export type ThreadScope = "shared" | "per_channel";
+export type ChannelPlatform = "telegram" | "slack" | "discord";
+export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent" | "notification";
+
+export interface Agent {
+  id: string;
   name: string;
   description: string;
-  entity_types: EntityType[];
-  activity_threshold: number;
-  stale_days: number;
-  synthesis_style: string;
-  split_threshold: number;
-  built_in: boolean;
+  system_prompt: string | null;
+  skills: string[];
+  thread_lifetime: ThreadLifetime;
+  thread_scope: ThreadScope;
+  trigger: AgentTrigger | null;
+  tools: string[];
+  subagents: string[];
+  model: string;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskRun {
+  id: string;
+  agent_id: string | null;
+  agent_name: string;
+  trigger: TaskRunTrigger;
+  status: TaskRunStatus;
+  thread_id: string | null;
+  schedule_id: string | null;
+  input_summary: string | null;
+  output_summary: string | null;
+  model: string | null;
+  tokens_used: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Agent Schedules
+// ──────────────────────────────────────────────
+
+export interface AgentSchedule {
+  id: string;
+  agent_id: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  thread_lifetime: ThreadLifetime | null;
+  notify: string[];
+  notify_expires_after: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Notifications
+// ──────────────────────────────────────────────
+
+export type NotificationSourceType = "schedule" | "agent" | "system";
+export type NotificationTargetType = "inbox" | "agent";
+export type NotificationPriority = "low" | "normal" | "high";
+export type NotificationStatus = "unread" | "read" | "dismissed" | "scheduled" | "sending" | "sent";
+
+// ──────────────────────────────────────────────
+// Agent Channels
+// ──────────────────────────────────────────────
+
+export interface AgentChannel {
+  id: string;
+  agent_id: string;
+  platform: ChannelPlatform;
+  external_id: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  receive_announcements: boolean;
+  created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Notifications
+// ──────────────────────────────────────────────
+
+export interface Notification {
+  id: string;
+  source_type: NotificationSourceType;
+  source_id: string;
+  target_type: NotificationTargetType;
+  target_id: string | null;
+  summary: string;
+  detail: Record<string, unknown>;
+  priority: NotificationPriority;
+  status: NotificationStatus;
+  expires_at: string;
+  scheduled_at: string | null;
+  recurrence: string | null;
+  targets: string[];
   created_at: string;
 }

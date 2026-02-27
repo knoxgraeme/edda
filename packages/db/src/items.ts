@@ -3,18 +3,32 @@
  */
 
 import { getPool } from "./connection.js";
-import type { Item, CreateItemInput, SearchResult } from "./types.js";
+import type { Item, CreateItemInput, SearchResult, RetrievalContext } from "./types.js";
+
+// ── Search re-ranking constants ──────────────────────────────────────────────
+
+/** Default fallback decay half-life (days) for item types without a configured value */
+export const DECAY_HALF_LIFE_DAYS = 30;
+
+/** ln(2) — used in exponential decay formula: exp(-LN2 * age / half_life) */
+export const LN2 = 0.693;
+
+/** Inner-to-outer limit multiplier — fetch N*RERANK_MULTIPLIER candidates for re-ranking */
+export const RERANK_MULTIPLIER = 3;
 
 /** All item columns except embedding — use for queries that don't need the vector */
 export const ITEM_COLS = `id, type, content, summary, metadata, status, source, day, confirmed,
-  parent_id, embedding_model, superseded_by, completed_at, pending_action,
+  parent_id, list_id, embedding_model, superseded_by, completed_at, pending_action,
   last_reinforced_at, created_at, updated_at`;
+
+/** ITEM_COLS qualified with "i." prefix for use in JOINs where items is aliased as "i" */
+export const QUALIFIED_ITEM_COLS = ITEM_COLS.split(",").map((c) => `i.${c.trim()}`).join(", ");
 
 export async function createItem(input: CreateItemInput): Promise<Item> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding, embedding_model, pending_action)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, list_id, embedding, embedding_model, pending_action)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${ITEM_COLS}`,
     [
       input.type,
@@ -26,6 +40,7 @@ export async function createItem(input: CreateItemInput): Promise<Item> {
       input.day ?? new Date().toISOString().split("T")[0],
       input.confirmed ?? true,
       input.parent_id ?? null,
+      input.list_id ?? null,
       input.embedding ? JSON.stringify(input.embedding) : null,
       input.embedding_model ?? null,
       input.pending_action ?? null,
@@ -42,7 +57,7 @@ export async function getItemById(id: string): Promise<Item | null> {
 
 const ITEM_UPDATE_COLUMNS = [
   'type', 'content', 'summary', 'metadata', 'status', 'source', 'day',
-  'confirmed', 'parent_id', 'embedding', 'embedding_model', 'superseded_by',
+  'confirmed', 'parent_id', 'list_id', 'embedding', 'embedding_model', 'superseded_by',
   'completed_at', 'pending_action', 'last_reinforced_at',
 ] as const;
 
@@ -94,37 +109,57 @@ export async function searchItems(
     limit?: number;
     type?: string;
     after?: string;
+    list_id?: string;
     agentKnowledgeOnly?: boolean;
     confirmedOnly?: boolean;
     excludeSuperseded?: boolean;
     metadata?: Record<string, string>;
+    retrieval_context?: RetrievalContext;
   } = {},
 ): Promise<SearchResult[]> {
   const pool = getPool();
-  const { threshold = 0.65, limit = 10, type, after, agentKnowledgeOnly, confirmedOnly, excludeSuperseded, metadata } = options;
+  const {
+    threshold = 0.65,
+    limit = 10,
+    type,
+    after,
+    list_id,
+    agentKnowledgeOnly,
+    confirmedOnly,
+    excludeSuperseded,
+    metadata,
+    retrieval_context: rc,
+  } = options;
 
-  const conditions = ["1 - (embedding <=> $1::vector) > $2"];
+  // ── Build WHERE conditions for the inner CTE (ANN retrieval) ──
+  // All conditions are qualified with "i." since the CTE JOINs item_types.
+  const conditions = ["1 - (i.embedding <=> $1::vector) > $2"];
   if (excludeSuperseded !== false) {
-    conditions.push("superseded_by IS NULL");
+    conditions.push("i.superseded_by IS NULL");
   }
   if (confirmedOnly !== false) {
-    conditions.push("confirmed = true");
+    conditions.push("i.confirmed = true");
   }
   const params: unknown[] = [JSON.stringify(embedding), threshold];
   let paramIdx = 3;
 
   if (type) {
-    conditions.push(`type = $${paramIdx++}`);
+    conditions.push(`i.type = $${paramIdx++}`);
     params.push(type);
   }
 
   if (after) {
-    conditions.push(`day >= $${paramIdx++}::date`);
+    conditions.push(`i.day >= $${paramIdx++}::date`);
     params.push(after);
   }
 
+  if (list_id) {
+    conditions.push(`i.list_id = $${paramIdx++}`);
+    params.push(list_id);
+  }
+
   if (agentKnowledgeOnly) {
-    conditions.push(`type IN ('preference', 'learned_fact', 'pattern')`);
+    conditions.push(`i.type IN ('preference', 'learned_fact', 'pattern')`);
   }
 
   if (metadata) {
@@ -132,18 +167,76 @@ export async function searchItems(
       if (!SAFE_KEY_RE.test(key)) {
         throw new Error(`Invalid metadata key: ${key}`);
       }
-      conditions.push(`metadata->>'${key}' = $${paramIdx++}`);
+      conditions.push(`i.metadata->>'${key}' = $${paramIdx++}`);
       params.push(value);
     }
   }
 
+  // ── Retrieval context: filter-mode conditions (inner CTE) ──
+  if (rc?.authorship_mode === "filter" && rc.authors?.length) {
+    conditions.push(`i.metadata->>'created_by' = ANY($${paramIdx++})`);
+    params.push(rc.authors);
+  }
+  if (rc?.type_mode === "filter" && rc.types?.length) {
+    conditions.push(`i.type = ANY($${paramIdx++})`);
+    params.push(rc.types);
+  }
+
+  // Inner limit: fetch extra candidates for re-ranking headroom
+  const innerLimit = limit * RERANK_MULTIPLIER;
+  const innerLimitIdx = paramIdx++;
+  params.push(innerLimit);
+
+  const outerLimitIdx = paramIdx++;
+  params.push(limit);
+
+  // ── Retrieval context: boost-mode multipliers (outer SELECT) ──
+  const boostClauses: string[] = [];
+
+  if (rc?.authorship_mode === "boost" && rc.authors?.length && rc.authorship_boost) {
+    const authorsIdx = paramIdx++;
+    const boostIdx = paramIdx++;
+    params.push(rc.authors, rc.authorship_boost);
+    boostClauses.push(
+      `CASE WHEN c.metadata->>'created_by' = ANY($${authorsIdx}) THEN $${boostIdx}::float ELSE 1 END`,
+    );
+  }
+
+  if (rc?.type_mode === "boost" && rc.types?.length && rc.type_boost) {
+    const typesIdx = paramIdx++;
+    const boostIdx = paramIdx++;
+    params.push(rc.types, rc.type_boost);
+    boostClauses.push(
+      `CASE WHEN c.type = ANY($${typesIdx}) THEN $${boostIdx}::float ELSE 1 END`,
+    );
+  }
+
+  const boostExpr = boostClauses.length > 0
+    ? boostClauses.map((c) => `\n              * ${c}`).join("")
+    : "";
+
   const { rows } = await pool.query(
-    `SELECT ${ITEM_COLS}, 1 - (embedding <=> $1::vector) AS similarity
-     FROM items
-     WHERE ${conditions.join(" AND ")}
+    `WITH candidates AS (
+       SELECT ${QUALIFIED_ITEM_COLS},
+              1 - (i.embedding <=> $1::vector) AS raw_similarity,
+              COALESCE(it.decay_half_life_days, ${DECAY_HALF_LIFE_DAYS}) AS decay_days
+       FROM items i
+       LEFT JOIN item_types it ON it.name = i.type
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY i.embedding <=> $1::vector
+       LIMIT $${innerLimitIdx}
+     )
+     SELECT ${ITEM_COLS.split(",").map((c) => `c.${c.trim()}`).join(", ")},
+            c.raw_similarity,
+            c.raw_similarity
+              * CASE WHEN c.decay_days = 0 THEN 1.0
+                     ELSE EXP(-${LN2} * EXTRACT(EPOCH FROM (now() - COALESCE(c.last_reinforced_at, c.created_at))) / (c.decay_days * 86400))
+                END${boostExpr}
+            AS similarity
+     FROM candidates c
      ORDER BY similarity DESC
-     LIMIT $${paramIdx}`,
-    [...params, limit],
+     LIMIT $${outerLimitIdx}`,
+    params,
   );
 
   return rows as SearchResult[];
@@ -172,8 +265,8 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
     const items: Item[] = [];
     for (const input of inputs) {
       const { rows } = await client.query(
-        `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, embedding, embedding_model, pending_action)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO items (type, content, summary, metadata, status, source, day, confirmed, parent_id, list_id, embedding, embedding_model, pending_action)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING ${ITEM_COLS}`,
         [
           input.type,
@@ -185,6 +278,7 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
           input.day ?? new Date().toISOString().split("T")[0],
           input.confirmed ?? true,
           input.parent_id ?? null,
+          input.list_id ?? null,
           input.embedding ? JSON.stringify(input.embedding) : null,
           input.embedding_model ?? null,
           input.pending_action ?? null,
@@ -200,20 +294,6 @@ export async function batchCreateItems(inputs: CreateItemInput[]): Promise<Item[
   } finally {
     client.release();
   }
-}
-
-export async function getListItems(listName: string, limit: number = 200): Promise<Item[]> {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT ${ITEM_COLS}
-     FROM items
-     WHERE confirmed = true AND status = 'active' AND type = 'list_item'
-       AND metadata->>'list_name' = $1
-     ORDER BY created_at
-     LIMIT $2`,
-    [listName, limit],
-  );
-  return rows as Item[];
 }
 
 export async function getTimeline(
