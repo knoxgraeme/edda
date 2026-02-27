@@ -28,7 +28,6 @@ describe("getChatModel", () => {
     vi.clearAllMocks();
     mockGetSettingsSync.mockReturnValue(DEFAULT_TEST_SETTINGS);
     process.env = { ...originalEnv };
-    delete process.env.LLM_PROVIDER;
     process.env.ANTHROPIC_API_KEY = "test-key-anthropic";
     process.env.OPENAI_API_KEY = "test-key-openai";
   });
@@ -37,8 +36,7 @@ describe("getChatModel", () => {
     process.env = originalEnv;
   });
 
-  it("selects provider: env LLM_PROVIDER > settings.llm_provider > default", async () => {
-    // Default: settings say "anthropic", no env override — should create Anthropic model
+  it("selects provider from settings.llm_provider", async () => {
     mockGetSettingsSync.mockReturnValue({
       ...DEFAULT_TEST_SETTINGS,
       llm_provider: "anthropic",
@@ -46,18 +44,19 @@ describe("getChatModel", () => {
     const anthropicModel = await getChatModel();
     expect(anthropicModel.constructor.name).toMatch(/Anthropic/);
 
-    // Env override takes precedence over settings
-    process.env.LLM_PROVIDER = "openai";
     mockGetSettingsSync.mockReturnValue({
       ...DEFAULT_TEST_SETTINGS,
-      llm_provider: "anthropic", // settings say anthropic, but env says openai
+      llm_provider: "openai",
     });
     const openaiModel = await getChatModel();
     expect(openaiModel.constructor.name).toMatch(/OpenAI/);
   });
 
   it("unknown provider throws", async () => {
-    process.env.LLM_PROVIDER = "nonexistent";
+    mockGetSettingsSync.mockReturnValue({
+      ...DEFAULT_TEST_SETTINGS,
+      llm_provider: "nonexistent",
+    });
     await expect(getChatModel()).rejects.toThrow("Unknown LLM provider: nonexistent");
   });
 

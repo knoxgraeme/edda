@@ -129,7 +129,7 @@ export const ChatInterface = React.memo(function ChatInterface() {
           message,
           toolCalls: toolCallsWithStatus,
         });
-      } else if (message.type === "human") {
+      } else if (message.type === "human" || message.type === "system") {
         messageMap.set(message.id, {
           message,
           toolCalls: [],

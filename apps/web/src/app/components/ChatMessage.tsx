@@ -14,6 +14,7 @@ interface ChatMessageProps {
 
 export const ChatMessage = React.memo<ChatMessageProps>(({ message, toolCalls }) => {
   const isUser = message.type === "human";
+  const isSystem = message.type === "system";
   const messageContent = extractStringFromMessageContent(message);
   const hasContent = messageContent && messageContent.trim() !== "";
   const hasToolCalls = toolCalls.length > 0;
@@ -30,7 +31,9 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, toolCalls })
                 "mt-4 overflow-hidden break-words text-sm font-normal leading-[150%]",
                 isUser
                   ? "rounded-xl rounded-br-none border border-border px-3 py-2 text-foreground"
-                  : "text-primary"
+                  : isSystem
+                    ? "rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive"
+                    : "text-primary"
               )}
               style={
                 isUser ? { backgroundColor: "var(--color-user-message-bg)" } : undefined

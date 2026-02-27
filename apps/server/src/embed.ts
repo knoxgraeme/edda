@@ -1,8 +1,7 @@
 /**
- * Embedding factory — returns an Embeddings instance based on settings + env override
+ * Embedding factory — returns an Embeddings instance based on DB settings.
  *
- * Precedence: env EMBEDDING_PROVIDER → settings.embedding_provider → "voyage"
- *
+ * Provider and model are read from the `settings` table (managed via the web UI).
  * The instance is cached as a singleton and invalidated when the
  * provider/model configuration changes.
  */
@@ -17,7 +16,7 @@ const EMBED_BATCH_SIZE = 96;
 
 async function getCachedEmbeddings(): Promise<Embeddings> {
   const settings = getSettingsSync();
-  const provider = process.env.EMBEDDING_PROVIDER || settings.embedding_provider || "voyage";
+  const provider = settings.embedding_provider || "voyage";
   const model = settings.embedding_model;
   const key = `${provider}:${model}`;
 

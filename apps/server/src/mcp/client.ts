@@ -301,6 +301,17 @@ async function _initMCPClient(): Promise<DynamicStructuredTool[]> {
 
   const tools = await withTimeout(client.getTools(), MCP_INIT_TIMEOUT_MS, "MCP tool discovery");
 
+  // Normalize MCP tool schemas — some servers omit "type": "object" at the
+  // top level, which causes Anthropic API to reject the request with
+  // "input_schema.type: Field required".
+  for (const tool of tools) {
+    const schema = tool.schema as Record<string, unknown> | undefined;
+    if (schema && !schema.type) {
+      schema.type = "object";
+      getLogger().debug({ tool: tool.name }, "Patched missing schema type on MCP tool");
+    }
+  }
+
   // Only cache the client after getTools() succeeds
   _client = client;
 

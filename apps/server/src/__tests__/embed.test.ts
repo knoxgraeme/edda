@@ -41,7 +41,6 @@ describe("embed factory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env = { ...originalEnv };
-    delete process.env.EMBEDDING_PROVIDER;
     settingsValue = { ...DEFAULT_TEST_SETTINGS };
     // Reset module registry so embed.ts singleton cache is cleared
     vi.resetModules();

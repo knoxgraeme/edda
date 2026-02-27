@@ -307,11 +307,17 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       res.end();
     } catch (err) {
       getLogger().error({ err }, "Stream error");
+      const errStr = String(err);
+      const userMessage = errStr.includes("overloaded")
+        ? "The AI service is temporarily overloaded. Please try again in a moment."
+        : errStr.includes("input_schema")
+          ? "A tool has an invalid schema configuration. Check MCP connections."
+          : "An error occurred while processing your request. Please try again.";
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Internal server error" }));
+        res.end(JSON.stringify({ error: userMessage }));
       } else {
-        res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: userMessage })}\n\n`);
         res.end();
       }
     }

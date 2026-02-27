@@ -4,13 +4,7 @@ const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid PostgreSQL connection string'),
 
-  // LLM Provider
-  LLM_PROVIDER: z
-    .enum(['anthropic', 'openai', 'google', 'groq', 'ollama', 'mistral', 'bedrock'])
-    .default('anthropic'),
-  LLM_MODEL: z.string().default('claude-sonnet-4-20250514'),
-
-  // Provider API keys (optional — depends on selected provider)
+  // Provider API keys (optional — depends on selected provider in DB settings)
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   GOOGLE_API_KEY: z.string().optional(),
@@ -18,7 +12,6 @@ const envSchema = z.object({
   MISTRAL_API_KEY: z.string().optional(),
 
   // Embeddings
-  EMBEDDING_PROVIDER: z.enum(['voyage', 'openai', 'google']).default('voyage'),
   VOYAGE_API_KEY: z.string().optional(),
 
   // Web search (optional)

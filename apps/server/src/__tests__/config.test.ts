@@ -23,7 +23,6 @@ describe("loadConfig", () => {
     process.env.DATABASE_URL = "postgresql://localhost:5432/edda";
     const config = loadConfig();
     expect(config.DATABASE_URL).toBe("postgresql://localhost:5432/edda");
-    expect(config.LLM_PROVIDER).toBe("anthropic");
   });
 
   it("missing DATABASE_URL throws descriptive error", () => {
@@ -38,9 +37,6 @@ describe("loadConfig", () => {
   it("optional vars use correct defaults", () => {
     process.env.DATABASE_URL = "postgresql://localhost:5432/edda";
     const config = loadConfig();
-    expect(config.LLM_PROVIDER).toBe("anthropic");
-    expect(config.LLM_MODEL).toBe("claude-sonnet-4-20250514");
-    expect(config.EMBEDDING_PROVIDER).toBe("voyage");
     expect(config.CRON_RUNNER).toBe("local");
     expect(config.CHECKPOINTER_BACKEND).toBe("postgres");
     expect(config.PORT).toBe(8000);

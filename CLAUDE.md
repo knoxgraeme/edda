@@ -118,8 +118,7 @@ LLM provider, model, embedding provider, and feature flags are stored in the **`
 
 Critical env vars (see `.env.example`):
 - `DATABASE_URL` — PostgreSQL connection string
-- `LLM_PROVIDER` / `LLM_MODEL` — defaults to `anthropic` / `claude-sonnet-4-20250514`
-- `EMBEDDING_PROVIDER` — defaults to `voyage`
+- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` — API keys for whichever LLM/embedding provider is selected in DB settings
 - `CHECKPOINTER` — `postgres`, `sqlite`, or `memory`
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
 - `TELEGRAM_BOT_TOKEN` — optional; enables Telegram channel integration for agent message delivery

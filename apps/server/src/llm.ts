@@ -1,7 +1,7 @@
 /**
- * LLM factory — returns a BaseChatModel based on settings + env override
+ * LLM factory — returns a BaseChatModel based on DB settings.
  *
- * Precedence: env LLM_PROVIDER → settings.llm_provider → "anthropic"
+ * Provider and model are read from the `settings` table (managed via the web UI).
  */
 
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
@@ -20,7 +20,7 @@ async function lazyImport(specifier: string): Promise<any> {
 
 export async function getChatModel(modelName?: string): Promise<BaseChatModel> {
   const settings = getSettingsSync();
-  const provider = process.env.LLM_PROVIDER || settings.llm_provider || "anthropic";
+  const provider = settings.llm_provider || "anthropic";
   const model = modelName || settings.default_model;
 
   switch (provider) {
