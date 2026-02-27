@@ -6,7 +6,7 @@ const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 const ChatSchema = z.object({
-  message: z.string().min(1).max(50_000),
+  messages: z.array(z.object({ content: z.string().min(1) })).min(1),
   thread_id: z.string().optional(),
   agent_name: z.string().min(1),
 });
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       ...(INTERNAL_API_SECRET ? { Authorization: `Bearer ${INTERNAL_API_SECRET}` } : {}),
     },
     body: JSON.stringify({
-      messages: [{ content: parsed.data.message }],
+      messages: parsed.data.messages,
       agent_name: parsed.data.agent_name,
       ...(parsed.data.thread_id ? { thread_id: parsed.data.thread_id } : {}),
     }),
