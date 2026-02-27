@@ -58,7 +58,8 @@ export async function GET(req: NextRequest) {
 
   // 4. Delegate token exchange to the server
   try {
-    const serverBase = process.env.INTERNAL_SERVER_URL ?? "http://localhost:8000";
+    const rawBase = process.env.INTERNAL_SERVER_URL ?? "http://localhost:8000";
+    const serverBase = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `http://${rawBase}`;
     const secret = process.env.INTERNAL_API_SECRET;
 
     const res = await fetch(`${serverBase}/internal/mcp-oauth/complete`, {

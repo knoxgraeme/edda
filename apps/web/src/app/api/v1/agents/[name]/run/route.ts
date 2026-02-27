@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { getServerUrl } from "../../../_lib/helpers";
 
-const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
+const SERVER_URL = getServerUrl();
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 export async function POST(
