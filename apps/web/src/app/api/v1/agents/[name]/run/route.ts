@@ -1,19 +1,28 @@
-import { getAgentByName } from "@edda/db";
 import { NextResponse } from "next/server";
-import { notFound } from "../../../_lib/helpers";
 
 const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
-  const definition = await getAgentByName(name);
-  if (!definition) return notFound("Agent");
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   const res = await fetch(`${SERVER_URL}/api/agents/${encodeURIComponent(name)}/run`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(INTERNAL_API_SECRET ? { Authorization: `Bearer ${INTERNAL_API_SECRET}` } : {}),
+    },
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {

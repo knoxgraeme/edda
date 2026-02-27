@@ -22,8 +22,12 @@ export function AgentsClient({ agents, lastRuns }: Props) {
       if (triggeringAgent) return;
       setTriggeringAgent(name);
       try {
+        const agent = agents.find((a) => a.name === name);
+        const prompt = agent?.description ?? `Execute the ${name} task now.`;
         const res = await fetch(`/api/v1/agents/${encodeURIComponent(name)}/run`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, notify: ["inbox"] }),
         });
         if (res.ok) toast.success(`${name} triggered`);
         else toast.error(`Failed to trigger ${name}`);
@@ -31,7 +35,7 @@ export function AgentsClient({ agents, lastRuns }: Props) {
         setTriggeringAgent(null);
       }
     },
-    [triggeringAgent],
+    [triggeringAgent, agents],
   );
 
   return (

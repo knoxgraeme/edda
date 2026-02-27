@@ -49,9 +49,8 @@ const envSchema = z.object({
   EDDA_ENCRYPTION_KEY: z.string().optional(),
   EDDA_BASE_URL: z.string().url().default('http://localhost:3000'),
 
-  // Telegram (optional — omit to disable)
+  // Telegram (optional — omit to disable; requires INTERNAL_API_SECRET)
   TELEGRAM_BOT_TOKEN: z.string().optional(),
-  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
 
   // Server

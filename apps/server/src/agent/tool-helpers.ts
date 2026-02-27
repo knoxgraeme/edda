@@ -23,6 +23,20 @@ export const RetrievalContextSchema = z.object({
   type_boost: z.number().optional(),
 });
 
+/** Extract the last assistant/AI message from an agent result. */
+export function extractLastAssistantMessage(result: {
+  messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }>;
+}): string | undefined {
+  const messages = result?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if ((m.role === "assistant" || m._getType?.() === "ai") && typeof m.content === "string") {
+      return m.content;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Resolve retrieval context from an agent's metadata.
  * Validates the shape, applies default-authors logic, and returns undefined

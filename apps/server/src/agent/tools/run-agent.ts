@@ -12,34 +12,48 @@ import {
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
-import { buildAgent, resolveThreadId } from "../build-agent.js";
+import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../build-agent.js";
+import { resolveRetrievalContext, extractLastAssistantMessage } from "../tool-helpers.js";
 import { runWithConcurrencyLimit } from "../../utils/semaphore.js";
 import { sanitizeError } from "../../utils/sanitize-error.js";
 import { withTimeout } from "../../utils/with-timeout.js";
+import { deliverRunResults } from "../../utils/notify.js";
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export const runAgentSchema = z.object({
   agent_name: z.string().describe("Name of the agent to run"),
   input: z.string().optional().describe("Optional task input or instructions"),
+  notify: z
+    .array(z.string().min(1).max(200))
+    .max(20)
+    .optional()
+    .describe("Optional notification targets (e.g. ['inbox', 'announce:edda'])"),
 });
 
 export const runAgentTool = tool(
-  async ({ agent_name, input }) => {
+  async ({ agent_name, input, notify: notifyTargets }) => {
     const definition = await getAgentByName(agent_name);
     if (!definition) throw new Error(`Agent '${agent_name}' not found`);
     if (!definition.enabled) throw new Error(`Agent '${agent_name}' is disabled`);
 
-    const threadId = resolveThreadId(definition);
+    // Force ephemeral thread
+    const threadId = resolveThreadId({ ...definition, thread_lifetime: "ephemeral" });
+    const settings = await refreshSettings();
+    const modelName =
+      definition.model_settings_key && MODEL_SETTINGS_KEYS.has(definition.model_settings_key)
+        ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
+        : undefined;
+
     const run = await createTaskRun({
       agent_id: definition.id,
       agent_name: definition.name,
       trigger: "orchestrator",
       thread_id: threadId,
+      model: modelName,
     });
 
     // Fire-and-forget with task_run tracking and concurrency control
-    const settings = await refreshSettings();
     setImmediate(() => {
       runWithConcurrencyLimit(settings.task_max_concurrency, async () => {
         const startTime = Date.now();
@@ -47,24 +61,50 @@ export const runAgentTool = tool(
           await startTaskRun(run.id);
           const agent = await buildAgent(definition);
           const message = input ?? `Execute the ${definition.name} task now.`;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const result: any = await withTimeout(
+          const result = (await withTimeout(
             agent.invoke(
               { messages: [{ role: "user", content: message }] },
-              { configurable: { thread_id: threadId, agent_name: definition.name } },
+              {
+                configurable: {
+                  thread_id: threadId,
+                  agent_name: definition.name,
+                  retrieval_context: resolveRetrievalContext(definition.metadata, definition.name),
+                },
+              },
             ),
             AGENT_TIMEOUT_MS,
             definition.name,
-          );
-          const lastMsg = result?.messages?.[result.messages.length - 1]?.content;
+          )) as Parameters<typeof extractLastAssistantMessage>[0];
+          const lastMessage = extractLastAssistantMessage(result);
           await completeTaskRun(run.id, {
-            output_summary: typeof lastMsg === "string" ? lastMsg.slice(0, 500) : undefined,
+            output_summary: lastMessage?.slice(0, 500),
             duration_ms: Date.now() - startTime,
+          });
+
+          await deliverRunResults({
+            agentId: definition.id,
+            agentName: definition.name,
+            runId: run.id,
+            lastMessage,
+            targets: notifyTargets ?? [],
+            sourceType: "system",
+            sourceId: run.id,
           });
         } catch (err) {
           console.error(`[run_agent] ${definition.name}:`, err);
           await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
             console.error(`[run_agent] Failed to record failure for ${run.id}:`, dbErr);
+          });
+
+          await deliverRunResults({
+            agentId: definition.id,
+            agentName: definition.name,
+            runId: run.id,
+            lastMessage: undefined,
+            targets: notifyTargets ?? [],
+            sourceType: "system",
+            sourceId: run.id,
+            error: err,
           });
         }
       }).catch((err) => {

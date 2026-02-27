@@ -29,7 +29,8 @@ import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
 import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
-import { resolveRetrievalContext } from "../agent/tool-helpers.js";
+import { deliverRunResults } from "../utils/notify.js";
+import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
 import { sanitizeError } from "../utils/sanitize-error.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
@@ -530,15 +531,19 @@ async function handleSearchItems(req: IncomingMessage, res: ServerResponse) {
 }
 
 async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) {
-  // Validate secret token if configured
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret) {
-    const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
-    if (!validateWebhookSecret(headerSecret, secret)) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Invalid secret token" }));
-      return;
-    }
+  // Validate secret token — reuses INTERNAL_API_SECRET (set as secret_token during webhook registration)
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) {
+    // No secret configured — reject all webhook requests (Telegram should not be enabled without it)
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Webhook authentication not configured" }));
+    return;
+  }
+  const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
+  if (!validateWebhookSecret(headerSecret, secret)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid secret token" }));
+    return;
   }
 
   let update: Update;
@@ -573,7 +578,7 @@ export async function executeAgentRun(opts: {
   threadId: string;
   prompt: string;
   trigger: string;
-}): Promise<void> {
+}): Promise<string | undefined> {
   const { agentDef, runId, threadId, prompt, trigger } = opts;
   const startTime = Date.now();
   try {
@@ -597,32 +602,44 @@ export async function executeAgentRun(opts: {
     );
 
     const duration = Date.now() - startTime;
-    const messages = result?.messages ?? [];
-    let lastMessage: string | undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (
-        (m.role === "assistant" || m._getType?.() === "ai") &&
-        typeof m.content === "string"
-      ) {
-        lastMessage = m.content;
-        break;
-      }
-    }
+    const lastMessage = extractLastAssistantMessage(result);
     await completeTaskRun(runId, {
       output_summary: lastMessage?.slice(0, 500),
       duration_ms: duration,
     });
     console.log(`  [run] ${agentDef.name} completed in ${duration}ms`);
+    return lastMessage;
   } catch (err) {
     console.error(`  [run] ${agentDef.name} error:`, err);
     await failTaskRun(runId, sanitizeError(err)).catch((dbErr) =>
       console.error(`  [run] Failed to record task_run failure for ${runId}:`, dbErr),
     );
+    throw err;
   }
 }
 
-async function handleAgentRun(agentName: string, res: ServerResponse) {
+const AgentRunRequestSchema = z.object({
+  prompt: z.string().min(1).max(10_000),
+  notify: z.array(z.string().min(1).max(200)).max(20).default(["inbox"]),
+});
+
+async function handleAgentRun(agentName: string, req: IncomingMessage, res: ServerResponse) {
+  let body: z.infer<typeof AgentRunRequestSchema>;
+  try {
+    const raw = await readBody(req);
+    const parsed = AgentRunRequestSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: parsed.error.issues[0].message }));
+      return;
+    }
+    body = parsed.data;
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid JSON body" }));
+    return;
+  }
+
   const agentDef = await getAgentByName(agentName);
   if (!agentDef) {
     res.writeHead(404, { "Content-Type": "application/json" });
@@ -641,7 +658,8 @@ async function handleAgentRun(agentName: string, res: ServerResponse) {
       ? ((settings as unknown as Record<string, unknown>)[agentDef.model_settings_key] as string)
       : undefined;
 
-  const threadId = resolveThreadId(agentDef);
+  // Force ephemeral thread — manual runs always get a fresh thread
+  const threadId = resolveThreadId({ ...agentDef, thread_lifetime: "ephemeral" });
 
   const run = await createTaskRun({
     agent_id: agentDef.id,
@@ -655,19 +673,31 @@ async function handleAgentRun(agentName: string, res: ServerResponse) {
   res.writeHead(202, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ run_id: run.id }));
 
-  const prompt =
-    agentDef.description ?? `You have been manually triggered. Perform your primary task.`;
-
   // Execute in background with concurrency limit
-  runWithConcurrencyLimit(settings.task_max_concurrency, () =>
-    executeAgentRun({
-      agentDef,
-      runId: run.id,
-      threadId,
-      prompt,
-      trigger: "manual",
-    }),
-  ).catch((err) => {
+  const deliverParams = {
+    agentId: agentDef.id,
+    agentName: agentDef.name,
+    runId: run.id,
+    targets: body.notify,
+    sourceType: "system" as const,
+    sourceId: run.id,
+  };
+
+  runWithConcurrencyLimit(settings.task_max_concurrency, async () => {
+    try {
+      const lastMessage = await executeAgentRun({
+        agentDef,
+        runId: run.id,
+        threadId,
+        prompt: body.prompt,
+        trigger: "manual",
+      });
+      await deliverRunResults({ ...deliverParams, lastMessage });
+    } catch (err) {
+      // executeAgentRun already recorded the failure — just notify
+      await deliverRunResults({ ...deliverParams, lastMessage: undefined, error: err });
+    }
+  }).catch((err) => {
     console.error(`  [run] ${agentDef.name} concurrency error:`, err);
   });
 }
@@ -710,7 +740,7 @@ export async function startHealthServer(port: number): Promise<void> {
     } else if (agentThreadMatch && req.method === "GET") {
       await handleAgentThread(decodeURIComponent(agentThreadMatch[1]), res);
     } else if (agentRunMatch && req.method === "POST") {
-      await handleAgentRun(decodeURIComponent(agentRunMatch[1]), res);
+      await handleAgentRun(decodeURIComponent(agentRunMatch[1]), req, res);
     } else if (urlPath === "/api/search/items" && req.method === "POST") {
       await handleSearchItems(req, res);
     } else if (urlPath === "/internal/mcp-oauth/complete" && req.method === "POST") {
