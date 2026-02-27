@@ -19,21 +19,21 @@ export const createItemSchema = z.object({
     .enum(["active", "done", "archived", "snoozed"])
     .optional()
     .describe("Item status (default: active)"),
-  parent_id: z.string().optional().describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists — use list_id."),
+  parent_id: z.string().optional().describe("Parent item ID (for hierarchical items, not lists)"),
   list_id: z.string().uuid().optional().describe("List UUID to add this item to"),
   list_name: z.string().optional().describe("List name to add this item to (resolved automatically)"),
   source: z
     .enum(["chat", "cli", "api", "cron", "agent", "posthook"])
     .optional()
-    .describe("Origin of this item (default: chat). Use 'posthook' for post-process extractions."),
+    .describe("Origin of this item (default: chat)"),
   confirmed: z
     .boolean()
     .optional()
-    .describe("Whether this item is confirmed (default: true). Set false for low-confidence extractions."),
+    .describe("Whether confirmed (default: true)"),
   pending_action: z
     .string()
     .optional()
-    .describe("Pending review action (e.g. 'confirm', 'merge'). Used with confirmed=false."),
+    .describe("Pending action (e.g. 'confirm', 'merge')"),
 });
 
 const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);

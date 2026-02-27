@@ -12,21 +12,15 @@ export const createReminderSchema = z.object({
   summary: z.string().max(2000).describe("The reminder message to deliver when it fires"),
   scheduled_at: z
     .string()
-    .describe("ISO 8601 datetime for when the reminder should fire (must be in the future)"),
+    .describe("ISO 8601 datetime (must be in the future)"),
   recurrence: z
     .string()
     .optional()
-    .describe(
-      "Optional recurrence: a cron expression (5 fields, e.g. '0 9 * * 4' for Thu 9am UTC) " +
-        "or a PostgreSQL interval (e.g. '1 day', '2 hours'). Omit for one-shot reminders.",
-    ),
+    .describe("Cron expression (e.g. '0 9 * * 4') or interval (e.g. '1 day'). Omit for one-shot."),
   targets: z
     .array(z.string().regex(/^(inbox|announce:[a-z0-9_-]+)$/i))
     .optional()
-    .describe(
-      "Delivery targets. Default: ['inbox']. Use 'announce:<agent_name>' for channel delivery. " +
-        "Only zero-LLM targets allowed (inbox, announce:*).",
-    ),
+    .describe("Delivery targets (default: ['inbox']). Use 'announce:<agent_name>' for channels."),
   priority: z
     .enum(["low", "normal", "high"])
     .optional()

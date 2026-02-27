@@ -28,7 +28,7 @@ export const createAgentSchema = z.object({
   thread_lifetime: z
     .enum(["ephemeral", "daily", "persistent"])
     .default("ephemeral")
-    .describe("Thread ID strategy: ephemeral (new thread every run), daily (shared per day), persistent (one thread forever)"),
+    .describe("ephemeral | daily | persistent"),
   metadata: z
     .record(z.unknown())
     .optional()

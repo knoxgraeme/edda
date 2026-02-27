@@ -69,8 +69,10 @@ const SANDBOX_ENV_ALLOWLIST = new Set(["HOME", "PATH", "NODE_ENV", "TERM", "LANG
 
 **c) `SecureSandbox` wrapper** — wraps any `SandboxBackendProtocol`:
 - Constructor: `(inner: SandboxBackendProtocol, allowedCommands?: Set<string>)`
+- Must expose `readonly id: string` (from inner) and `execute()` method — deepagents uses duck-typing: `typeof backend.execute === "function" && typeof backend.id === "string"` to detect sandbox support
 - `execute()`: if `allowedCommands` set → strict allowlist check. Otherwise → global denylist check. Then wraps command with `env -i` for env stripping. Delegates to inner.
-- All other methods (`lsInfo`, `read`, `write`, `edit`, `glob`, `grep`, `uploadFiles`, `downloadFiles`) → delegate to inner sandbox
+- All other methods (`lsInfo`, `read`, `readRaw`, `write`, `edit`, `glob`, `grep`, `uploadFiles`, `downloadFiles`) → delegate to inner sandbox
+- Note: VFS has no built-in env stripping — the `env -i` wrapping is essential to prevent secret leakage via `$DATABASE_URL` etc.
 
 **d) `createSandbox()` factory:**
 - Reads `SANDBOX_PROVIDER` from config

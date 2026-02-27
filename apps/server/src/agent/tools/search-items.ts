@@ -12,7 +12,7 @@ import type { RetrievalContext } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed/index.js";
 
 export const searchItemsSchema = z.object({
-  query: z.string().optional().describe("Natural language search query (required unless using agent_knowledge_only listing mode)"),
+  query: z.string().optional().describe("Natural language search query"),
   type: z.string().optional().describe("Filter by item type"),
   after: z
     .string()
@@ -23,7 +23,7 @@ export const searchItemsSchema = z.object({
   agent_knowledge_only: z
     .boolean()
     .optional()
-    .describe("Only search agent knowledge types (preference, learned_fact, pattern)"),
+    .describe("Restrict to agent knowledge types"),
   list_id: z
     .string()
     .uuid()
@@ -36,7 +36,7 @@ export const searchItemsSchema = z.object({
   order_by: z
     .enum(["recent", "reinforced", "updated"])
     .optional()
-    .describe("Sort order for listing mode (no query + agent_knowledge_only): 'recent' (created), 'reinforced' (last reinforced), 'updated' (last modified)"),
+    .describe("Sort order for listing mode: recent | reinforced | updated"),
 });
 
 export const searchItemsTool = tool(
@@ -105,7 +105,7 @@ export const searchItemsTool = tool(
   {
     name: "search_items",
     description:
-      "Semantic search across items. Returns ranked results by similarity. Use for recall, finding related items, or answering questions from stored knowledge. When called with agent_knowledge_only=true and no query, lists all agent knowledge ordered by order_by.",
+      "Semantic search across items. Returns ranked results by similarity. Use for recall, finding related items, or answering questions from stored knowledge.",
     schema: searchItemsSchema,
   },
 );
