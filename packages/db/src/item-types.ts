@@ -23,6 +23,8 @@ const PROTECTED_TYPES = [
   "learned_fact",
   "pattern",
   "notification",
+  "daily_digest",
+  "insight",
 ];
 
 export async function getItemTypes(): Promise<ItemType[]> {

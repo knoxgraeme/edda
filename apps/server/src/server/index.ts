@@ -4,8 +4,20 @@
 
 import { randomUUID, timingSafeEqual } from "crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { getPool, listThreads, upsertThread, setThreadTitle, searchItems } from "@edda/db";
-import type { RetrievalContext } from "@edda/db";
+import {
+  getPool,
+  listThreads,
+  upsertThread,
+  setThreadTitle,
+  searchItems,
+  getAgentByName,
+  createTaskRun,
+  startTaskRun,
+  completeTaskRun,
+  failTaskRun,
+  refreshSettings,
+} from "@edda/db";
+import type { RetrievalContext, Agent } from "@edda/db";
 import { HumanMessage } from "@langchain/core/messages";
 import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod";
@@ -16,21 +28,77 @@ import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
 import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
+import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
+import { resolveRetrievalContext } from "../agent/tool-helpers.js";
+import { sanitizeError } from "../utils/sanitize-error.js";
+import { withTimeout } from "../utils/with-timeout.js";
+import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import type { Update } from "grammy/types";
 
 interface AgentState {
   agent: Runnable;
   agentName: string;
+  agentRow?: Agent;
   retrievalContext?: RetrievalContext;
 }
 
-let agentState: AgentState | null = null;
+interface CachedAgent {
+  state: AgentState;
+  cachedAt: number;
+}
+
+interface AgentResult {
+  messages?: Array<{
+    role?: string;
+    content?: unknown;
+    _getType?: () => string;
+  }>;
+}
+
+const AGENT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const agentCache = new Map<string, CachedAgent>();
+const buildLocks = new Map<string, Promise<AgentState | null>>();
+let defaultAgentName: string | null = null;
+
+async function getOrBuildAgent(name: string): Promise<AgentState | null> {
+  const cached = agentCache.get(name);
+  if (cached && Date.now() - cached.cachedAt < AGENT_CACHE_TTL_MS) return cached.state;
+
+  // Coalesce concurrent builds for the same agent
+  const existing = buildLocks.get(name);
+  if (existing) return existing;
+
+  const buildPromise = (async (): Promise<AgentState | null> => {
+    try {
+      const agentRow = await getAgentByName(name);
+      if (!agentRow) return null;
+
+      const agent = await buildAgent(agentRow);
+      const state: AgentState = {
+        agent,
+        agentName: agentRow.name,
+        agentRow,
+        retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
+      };
+      agentCache.set(name, { state, cachedAt: Date.now() });
+      return state;
+    } finally {
+      buildLocks.delete(name);
+    }
+  })();
+
+  buildLocks.set(name, buildPromise);
+  return buildPromise;
+}
 
 export function setAgent(
   agent: Runnable,
   opts: { agentName: string; retrievalContext?: RetrievalContext },
 ) {
-  agentState = { agent, ...opts };
+  const state: AgentState = { agent, ...opts };
+  agentCache.set(opts.agentName, { state, cachedAt: Date.now() });
+  defaultAgentName = opts.agentName;
 }
 
 /**
@@ -39,27 +107,27 @@ export function setAgent(
  * without a server restart.
  */
 export async function rebuildDefaultAgent(): Promise<void> {
-  if (!agentState) return; // not initialized yet
-  const { buildAgent } = await import("../agent/build-agent.js");
-  const { resolveRetrievalContext } = await import("../agent/tool-helpers.js");
-  const { getAgentByName } = await import("@edda/db");
-  const agentRow = await getAgentByName(agentState.agentName);
-  if (!agentRow) {
-    console.warn(`[rebuild] Agent "${agentState.agentName}" not found — skipping rebuild`);
+  if (!defaultAgentName) return; // not initialized yet
+
+  // Invalidate cached entry so it's rebuilt on next request
+  agentCache.delete(defaultAgentName);
+
+  const rebuilt = await getOrBuildAgent(defaultAgentName);
+  if (!rebuilt) {
+    console.warn(`[rebuild] Agent "${defaultAgentName}" not found — skipping rebuild`);
     return;
   }
-  const agent = await buildAgent(agentRow);
-  agentState = {
-    agent,
-    agentName: agentRow.name,
-    retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
-  };
-  console.log(`[rebuild] Default agent "${agentRow.name}" rebuilt`);
+  console.log(`[rebuild] Default agent "${defaultAgentName}" rebuilt`);
 }
 
 const StreamRequestSchema = z.object({
   messages: z.array(z.object({ content: z.string().min(1) })).min(1),
-  thread_id: z.string().uuid(),
+  thread_id: z
+    .string()
+    .max(200)
+    .regex(/^[a-zA-Z0-9_:-]+$/)
+    .optional(),
+  agent_name: z.string().min(1),
 });
 
 function setCors(res: ServerResponse) {
@@ -127,12 +195,6 @@ async function handleHealth(res: ServerResponse) {
 }
 
 async function handleStream(req: IncomingMessage, res: ServerResponse) {
-  if (!agentState) {
-    res.writeHead(503, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Agent not ready" }));
-    return;
-  }
-
   try {
     const raw = await readBody(req);
     const parsed = StreamRequestSchema.safeParse(JSON.parse(raw));
@@ -143,11 +205,25 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       return;
     }
 
-    const { messages, thread_id } = parsed.data;
+    const { messages, agent_name } = parsed.data;
     const userContent = messages[messages.length - 1].content;
 
+    const state = await getOrBuildAgent(agent_name);
+    if (!state) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Agent "${agent_name}" not found` }));
+      return;
+    }
+
+    // Resolve thread ID: use provided or resolve from agent config
+    const thread_id = parsed.data.thread_id
+      ? parsed.data.thread_id
+      : state.agentRow
+        ? resolveThreadId(state.agentRow, { platform: "web", external_id: "default" })
+        : randomUUID();
+
     // Ensure thread exists and set title from first message
-    upsertThread(thread_id)
+    upsertThread(thread_id, agent_name)
       .then(() => {
         const title = userContent.length > 80 ? userContent.slice(0, 77) + "..." : userContent;
         return setThreadTitle(thread_id, title);
@@ -160,13 +236,16 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       Connection: "keep-alive",
     });
 
-    const stream = agentState.agent.streamEvents(
+    // Emit resolved thread_id as initial SSE event
+    res.write(`data: ${JSON.stringify({ thread_id })}\n\n`);
+
+    const stream = state.agent.streamEvents(
       { messages: [new HumanMessage(userContent)] },
       {
         configurable: {
           thread_id,
-          agent_name: agentState.agentName,
-          retrieval_context: agentState.retrievalContext,
+          agent_name: state.agentName,
+          retrieval_context: state.retrievalContext,
         },
         version: "v2",
       },
@@ -235,9 +314,11 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-async function handleThreadList(res: ServerResponse) {
+async function handleThreadList(req: IncomingMessage, res: ServerResponse) {
   try {
-    const rows = await listThreads(50);
+    const url = new URL(req.url ?? "", "http://localhost");
+    const agentName = url.searchParams.get("agent_name") ?? undefined;
+    const rows = await listThreads(50, agentName);
     const threads = rows.map((r) => ({
       id: r.thread_id,
       title: r.title || "Untitled",
@@ -248,6 +329,27 @@ async function handleThreadList(res: ServerResponse) {
     res.end(JSON.stringify(threads));
   } catch (err) {
     console.error("[threads] List error:", err);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Internal server error" }));
+  }
+}
+
+async function handleAgentThread(agentName: string, res: ServerResponse) {
+  try {
+    const agentRow = await getAgentByName(agentName);
+    if (!agentRow) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Agent "${agentName}" not found` }));
+      return;
+    }
+
+    const thread_id = resolveThreadId(agentRow, { platform: "web", external_id: "default" });
+    await upsertThread(thread_id, agentName);
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ thread_id }));
+  } catch (err) {
+    console.error("[agent-thread] Error:", err);
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Internal server error" }));
   }
@@ -459,6 +561,117 @@ async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) 
   res.end(JSON.stringify({ ok: true }));
 }
 
+const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Execute an agent run: build agent, invoke with prompt, track task_run lifecycle.
+ * Shared execution logic used by handleAgentRun (and potentially cron).
+ */
+export async function executeAgentRun(opts: {
+  agentDef: Agent;
+  runId: string;
+  threadId: string;
+  prompt: string;
+  trigger: string;
+}): Promise<void> {
+  const { agentDef, runId, threadId, prompt, trigger } = opts;
+  const startTime = Date.now();
+  try {
+    await startTaskRun(runId);
+    console.log(`  [run] Executing: ${agentDef.name} (${trigger} trigger)`);
+
+    const agent = await buildAgent(agentDef);
+    const result: AgentResult = await withTimeout(
+      agent.invoke(
+        { messages: [{ role: "user", content: prompt }] },
+        {
+          configurable: {
+            thread_id: threadId,
+            agent_name: agentDef.name,
+            retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+          },
+        },
+      ),
+      AGENT_TIMEOUT_MS,
+      agentDef.name,
+    );
+
+    const duration = Date.now() - startTime;
+    const messages = result?.messages ?? [];
+    let lastMessage: string | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (
+        (m.role === "assistant" || m._getType?.() === "ai") &&
+        typeof m.content === "string"
+      ) {
+        lastMessage = m.content;
+        break;
+      }
+    }
+    await completeTaskRun(runId, {
+      output_summary: lastMessage?.slice(0, 500),
+      duration_ms: duration,
+    });
+    console.log(`  [run] ${agentDef.name} completed in ${duration}ms`);
+  } catch (err) {
+    console.error(`  [run] ${agentDef.name} error:`, err);
+    await failTaskRun(runId, sanitizeError(err)).catch((dbErr) =>
+      console.error(`  [run] Failed to record task_run failure for ${runId}:`, dbErr),
+    );
+  }
+}
+
+async function handleAgentRun(agentName: string, res: ServerResponse) {
+  const agentDef = await getAgentByName(agentName);
+  if (!agentDef) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Agent "${agentName}" not found` }));
+    return;
+  }
+  if (!agentDef.enabled) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Agent "${agentName}" is disabled` }));
+    return;
+  }
+
+  const settings = await refreshSettings();
+  const modelName =
+    agentDef.model_settings_key && MODEL_SETTINGS_KEYS.has(agentDef.model_settings_key)
+      ? ((settings as unknown as Record<string, unknown>)[agentDef.model_settings_key] as string)
+      : undefined;
+
+  const threadId = resolveThreadId(agentDef);
+
+  const run = await createTaskRun({
+    agent_id: agentDef.id,
+    agent_name: agentDef.name,
+    trigger: "user",
+    thread_id: threadId,
+    model: modelName,
+  });
+
+  // Return immediately — execute async
+  res.writeHead(202, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ run_id: run.id }));
+
+  const prompt =
+    agentDef.description ?? `You have been manually triggered. Perform your primary task.`;
+
+  // Execute in background with concurrency limit
+  runWithConcurrencyLimit(settings.task_max_concurrency, () =>
+    executeAgentRun({
+      agentDef,
+      runId: run.id,
+      threadId,
+      prompt,
+      trigger: "manual",
+    }),
+  ).catch((err) => {
+    console.error(`  [run] ${agentDef.name} concurrency error:`, err);
+  });
+}
+
 export async function startHealthServer(port: number): Promise<void> {
   const server = createServer(async (req, res) => {
     setCors(res);
@@ -470,14 +683,17 @@ export async function startHealthServer(port: number): Promise<void> {
     }
 
     const url = req.url ?? "";
-    const threadDetailMatch = url.match(/^\/api\/threads\/([^/]+)$/);
+    const urlPath = url.split("?")[0];
+    const threadDetailMatch = urlPath.match(/^\/api\/threads\/([^/]+)$/);
+    const agentThreadMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/thread$/);
+    const agentRunMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/run$/);
 
     // Unauthenticated endpoints (own auth or public)
-    if (url === "/api/health" && req.method === "GET") {
+    if (urlPath === "/api/health" && req.method === "GET") {
       await handleHealth(res);
       return;
     }
-    if (url === "/api/telegram/webhook" && req.method === "POST") {
+    if (urlPath === "/api/telegram/webhook" && req.method === "POST") {
       await handleTelegramWebhook(req, res);
       return;
     }
@@ -485,15 +701,19 @@ export async function startHealthServer(port: number): Promise<void> {
     // All other endpoints require auth when INTERNAL_API_SECRET is set
     if (!checkAuth(req, res)) return;
 
-    if (url === "/api/stream" && req.method === "POST") {
+    if (urlPath === "/api/stream" && req.method === "POST") {
       await handleStream(req, res);
-    } else if (url === "/api/threads" && req.method === "GET") {
-      await handleThreadList(res);
+    } else if (urlPath === "/api/threads" && req.method === "GET") {
+      await handleThreadList(req, res);
     } else if (threadDetailMatch && req.method === "GET") {
       await handleThreadDetail(threadDetailMatch[1], res);
-    } else if (url === "/api/search/items" && req.method === "POST") {
+    } else if (agentThreadMatch && req.method === "GET") {
+      await handleAgentThread(decodeURIComponent(agentThreadMatch[1]), res);
+    } else if (agentRunMatch && req.method === "POST") {
+      await handleAgentRun(decodeURIComponent(agentRunMatch[1]), res);
+    } else if (urlPath === "/api/search/items" && req.method === "POST") {
       await handleSearchItems(req, res);
-    } else if (url === "/internal/mcp-oauth/complete" && req.method === "POST") {
+    } else if (urlPath === "/internal/mcp-oauth/complete" && req.method === "POST") {
       await handleMcpOAuthComplete(req, res);
     } else {
       res.writeHead(404);

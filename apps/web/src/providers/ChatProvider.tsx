@@ -15,19 +15,25 @@ import type { Message } from "@/app/types/types";
 interface ChatContextType {
   messages: Message[];
   isLoading: boolean;
-  threadId: string;
+  threadId: string | null;
+  isResolvingThread: boolean;
   submit: (content: string) => Promise<void>;
   stop: () => void;
-  newThread: () => void;
   loadThread: (threadId: string) => Promise<void>;
   mutateThreads: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
 
-export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const edda = useEdda();
-  const { mutate: mutateThreads } = useEddaThreads();
+export function ChatProvider({
+  agentName,
+  children,
+}: {
+  agentName: string;
+  children: React.ReactNode;
+}) {
+  const edda = useEdda(agentName);
+  const { mutate: mutateThreads } = useEddaThreads(agentName);
 
   // Wrap submit to also refresh the thread list after the stream completes
   const submitWithRefresh = async (content: string) => {
@@ -41,9 +47,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         messages: edda.messages,
         isLoading: edda.isLoading,
         threadId: edda.threadId,
+        isResolvingThread: edda.isResolvingThread,
         submit: submitWithRefresh,
         stop: edda.stop,
-        newThread: edda.newThread,
         loadThread: edda.loadThread,
         mutateThreads,
       }}
@@ -59,9 +65,4 @@ export function useChatContext(): ChatContextType {
     throw new Error("useChatContext must be used within a ChatProvider");
   }
   return ctx;
-}
-
-/** @deprecated Use useChatContext() instead */
-export function useChat() {
-  return useChatContext();
 }

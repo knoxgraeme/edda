@@ -14,11 +14,12 @@ export const listThreadsSchema = z.object({
     .max(100)
     .default(50)
     .describe("Maximum number of threads to return"),
+  agent_name: z.string().optional().describe("Filter threads by agent name"),
 });
 
 export const listThreadsTool = tool(
-  async ({ limit }) => {
-    const threads = await listThreads(limit);
+  async ({ limit, agent_name }) => {
+    const threads = await listThreads(limit, agent_name);
     return JSON.stringify(threads);
   },
   {

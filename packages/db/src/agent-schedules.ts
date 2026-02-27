@@ -10,6 +10,20 @@ import type { AgentSchedule, ThreadLifetime } from "./types.js";
 
 const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after::text, enabled, created_at::text`;
 
+/**
+ * Normalize pg interval::text (e.g. "72:00:00") to human form (e.g. "72 hours").
+ * Handles already-human values like "72 hours" as a passthrough.
+ */
+function normalizeInterval(row: Record<string, unknown>): void {
+  const v = row.notify_expires_after;
+  if (typeof v !== "string") return;
+  const match = v.match(/^(\d+):00:00$/);
+  if (match) {
+    const h = parseInt(match[1], 10);
+    row.notify_expires_after = `${h} hour${h !== 1 ? "s" : ""}`;
+  }
+}
+
 /** Schedule row joined with its parent agent's name. */
 export interface EnabledSchedule extends AgentSchedule {
   agent_name: string;
@@ -28,6 +42,7 @@ export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
      WHERE s.enabled = true AND a.enabled = true
      ORDER BY a.name, s.name`,
   );
+  for (const row of rows) normalizeInterval(row as Record<string, unknown>);
   return rows as EnabledSchedule[];
 }
 
@@ -37,6 +52,7 @@ export async function getSchedulesForAgent(agentId: string): Promise<AgentSchedu
     `SELECT ${SCHEDULE_COLS} FROM agent_schedules WHERE agent_id = $1 ORDER BY name`,
     [agentId],
   );
+  for (const row of rows) normalizeInterval(row as Record<string, unknown>);
   return rows as AgentSchedule[];
 }
 
@@ -46,6 +62,7 @@ export async function getScheduleById(id: string): Promise<AgentSchedule | null>
     `SELECT ${SCHEDULE_COLS} FROM agent_schedules WHERE id = $1`,
     [id],
   );
+  if (rows[0]) normalizeInterval(rows[0] as Record<string, unknown>);
   return (rows[0] as AgentSchedule) ?? null;
 }
 

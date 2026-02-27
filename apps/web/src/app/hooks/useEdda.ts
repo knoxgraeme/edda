@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { Message } from "@/app/types/types";
-
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:8000";
 
 function mergeMessageChunk(messages: Message[], chunk: Message): Message[] {
   const existingIndex = messages.findIndex((m) => m.id === chunk.id);
@@ -33,11 +31,47 @@ function mergeMessageChunk(messages: Message[], chunk: Message): Message[] {
   return updated;
 }
 
-export function useEdda() {
+export function useEdda(agentName: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [threadId, setThreadId] = useState<string>(() => crypto.randomUUID());
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [isResolvingThread, setIsResolvingThread] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Resolve thread ID from server on mount / agent change
+  useEffect(() => {
+    let cancelled = false;
+    setIsResolvingThread(true);
+    setMessages([]);
+    setThreadId(null);
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentName)}/thread`);
+        if (!res.ok) throw new Error(`Failed to resolve thread: ${res.status}`);
+        const data = (await res.json()) as { thread_id: string };
+        if (cancelled) return;
+        setThreadId(data.thread_id);
+
+        // Load existing messages for this thread
+        const msgRes = await fetch(`/api/v1/threads/${encodeURIComponent(data.thread_id)}/messages`);
+        if (msgRes.ok) {
+          const loaded = (await msgRes.json()) as Message[];
+          if (!cancelled) setMessages(loaded);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[useEdda] Thread resolution failed:", err);
+        }
+      } finally {
+        if (!cancelled) setIsResolvingThread(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentName]);
 
   const submit = useCallback(
     async (content: string) => {
@@ -54,12 +88,13 @@ export function useEdda() {
       abortRef.current = new AbortController();
 
       try {
-        const response = await fetch(`${SERVER_URL}/api/stream`, {
+        const response = await fetch(`/api/v1/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: [userMessage],
-            thread_id: threadId,
+            agent_name: agentName,
+            ...(threadId ? { thread_id: threadId } : {}),
           }),
           signal: abortRef.current.signal,
         });
@@ -93,6 +128,18 @@ export function useEdda() {
               if (!raw || raw === "[DONE]") continue;
               try {
                 const data = JSON.parse(raw) as unknown;
+
+                // Handle thread_id resolution event
+                if (
+                  data !== null &&
+                  typeof data === "object" &&
+                  "thread_id" in (data as Record<string, unknown>)
+                ) {
+                  const resolved = (data as { thread_id: string }).thread_id;
+                  setThreadId(resolved);
+                  continue;
+                }
+
                 // LangGraph streamMode: ["messages", "updates"] produces [streamMode, chunkData] tuples
                 if (Array.isArray(data) && data.length === 2) {
                   const [streamMode, chunkData] = data as [string, unknown];
@@ -160,21 +207,16 @@ export function useEdda() {
         setIsLoading(false);
       }
     },
-    [threadId]
+    [agentName, threadId],
   );
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
-  const newThread = useCallback(() => {
-    setThreadId(crypto.randomUUID());
-    setMessages([]);
-  }, []);
-
   const loadThread = useCallback(async (id: string) => {
     try {
-      const response = await fetch(`${SERVER_URL}/api/threads/${id}`);
+      const response = await fetch(`/api/v1/threads/${encodeURIComponent(id)}/messages`);
       if (!response.ok) {
         throw new Error(`Failed to load thread: ${response.status}`);
       }
@@ -191,5 +233,5 @@ export function useEdda() {
     }
   }, []);
 
-  return { messages, isLoading, threadId, submit, stop, newThread, loadThread };
+  return { messages, isLoading, threadId, isResolvingThread, submit, stop, loadThread };
 }

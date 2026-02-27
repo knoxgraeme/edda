@@ -10,12 +10,22 @@
 
 import { getPool } from "./connection.js";
 
-export async function upsertThread(threadId: string): Promise<void> {
+export async function upsertThread(threadId: string, agentName?: string): Promise<void> {
   const pool = getPool();
-  await pool.query(
-    `INSERT INTO thread_metadata (thread_id) VALUES ($1) ON CONFLICT DO NOTHING`,
-    [threadId],
-  );
+  if (agentName) {
+    await pool.query(
+      `INSERT INTO thread_metadata (thread_id, agent_name) VALUES ($1, $2)
+       ON CONFLICT (thread_id) DO UPDATE SET
+         agent_name = COALESCE(thread_metadata.agent_name, $2),
+         updated_at = now()`,
+      [threadId, agentName],
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO thread_metadata (thread_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+      [threadId],
+    );
+  }
 }
 
 export async function setThreadMetadata(
@@ -33,10 +43,25 @@ export async function setThreadMetadata(
   );
 }
 
-export async function listThreads(limit: number = 50): Promise<
+export async function listThreads(limit: number = 50, agentName?: string): Promise<
   { thread_id: string; title: string | null; metadata: Record<string, unknown>; updated_at: Date }[]
 > {
   const pool = getPool();
+  if (agentName) {
+    const { rows } = await pool.query(
+      `SELECT thread_id, title, metadata, updated_at FROM thread_metadata
+       WHERE agent_name = $1
+       ORDER BY updated_at DESC
+       LIMIT $2`,
+      [agentName, limit],
+    );
+    return rows as {
+      thread_id: string;
+      title: string | null;
+      metadata: Record<string, unknown>;
+      updated_at: Date;
+    }[];
+  }
   const { rows } = await pool.query(
     `SELECT thread_id, title, metadata, updated_at FROM thread_metadata
      ORDER BY updated_at DESC
