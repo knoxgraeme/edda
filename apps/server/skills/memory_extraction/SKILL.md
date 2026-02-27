@@ -189,7 +189,7 @@ the watermark for the next pass.
 ## Dedup Strategy
 
 ### Memories
-`create_item` automatically handles near-exact duplicates (similarity >= 0.95) by
+`create_item` automatically handles near-exact duplicates (hardcoded similarity >= 0.95) by
 reinforcing the existing item instead of creating a new one. You do NOT need to
 manually search-and-dedup for those cases.
 

@@ -73,7 +73,7 @@ export const createItemTool = tool(
     // Dedup check — only for knowledge types (preference, learned_fact, pattern)
     if (DEDUP_TYPES.has(type)) {
       const similar = await searchItems(embedding, {
-        threshold: settings.memory_reinforce_threshold,
+        threshold: 0.95, // near-exact duplicate threshold for reinforcement
         limit: 1,
         type,
         confirmedOnly: false,

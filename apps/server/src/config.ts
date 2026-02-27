@@ -22,7 +22,7 @@ const envSchema = z.object({
   VOYAGE_API_KEY: z.string().optional(),
 
   // Web search (optional)
-  SEARCH_PROVIDER: z.enum(['tavily', 'brave', 'serper', 'serpapi']).optional(),
+  SEARCH_PROVIDER: z.enum(['tavily', 'brave', 'serper', 'serpapi', 'duckduckgo']).optional(),
   TAVILY_API_KEY: z.string().optional(),
   BRAVE_API_KEY: z.string().optional(),
   SERPER_API_KEY: z.string().optional(),
@@ -32,7 +32,7 @@ const envSchema = z.object({
   WOLFRAM_APP_ID: z.string().min(1).optional(),
 
   // Cron runner
-  CRON_RUNNER: z.enum(['standalone', 'platform']).default('standalone'),
+  CRON_RUNNER: z.enum(['local', 'platform']).default('local'),
 
   // Checkpointer
   CHECKPOINTER_BACKEND: z.enum(['postgres', 'sqlite', 'memory']).default('postgres'),

@@ -12,7 +12,6 @@ const { ZERO_VECTOR, DEFAULT_SETTINGS } = vi.hoisted(() => ({
   DEFAULT_SETTINGS: {
     embedding_model: "voyage-3",
     embedding_dimensions: 1536,
-    memory_reinforce_threshold: 0.95,
   },
 }));
 

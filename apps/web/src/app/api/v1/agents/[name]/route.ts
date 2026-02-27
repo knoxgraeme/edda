@@ -12,7 +12,7 @@ const UpdateAgentSchema = z
     trigger: z.enum(["schedule", "on_demand"]).nullable().optional(),
     tools: z.array(z.string().max(100)).optional(),
     subagents: z.array(z.string().max(100)).optional(),
-    model_settings_key: z.string().max(100).nullable().optional(),
+    model: z.string().max(100).optional(),
     enabled: z.boolean().optional(),
     metadata: z.record(z.unknown()).optional(),
   })

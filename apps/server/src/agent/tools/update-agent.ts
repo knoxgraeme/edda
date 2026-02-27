@@ -17,10 +17,11 @@ export const updateAgentSchema = z.object({
     .enum(["ephemeral", "daily", "persistent"])
     .optional()
     .describe("ephemeral | daily | persistent"),
-  model_settings_key: z
+  model: z
     .string()
+    .max(100)
     .optional()
-    .describe("Settings key for the model to use (e.g., 'daily_digest_model')"),
+    .describe("Model identifier to use for this agent (e.g., 'claude-haiku-4-5-20251001')"),
   metadata: z
     .record(z.unknown())
     .optional()

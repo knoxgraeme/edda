@@ -49,7 +49,7 @@ import {
   updateChannelAction,
   deleteChannelAction,
 } from "../../actions";
-import { AVAILABLE_SKILLS, MODEL_KEYS, isValidCron } from "../../agents/constants";
+import { AVAILABLE_SKILLS, isValidCron } from "../../agents/constants";
 import { formatDuration, statusVariant } from "@/lib/format";
 import { ChatProvider, useChatContext } from "@/providers/ChatProvider";
 import { ChatInterface } from "@/app/components/ChatInterface";
@@ -462,7 +462,7 @@ function OverviewTab({
   const [description, setDescription] = useState(agent.description);
   const [threadLifetime, setThreadLifetime] = useState(agent.thread_lifetime);
   const [trigger, setTrigger] = useState<"on_demand" | "schedule">(agent.trigger ?? "on_demand");
-  const [modelKey, setModelKey] = useState(agent.model_settings_key ?? "");
+  const [model, setModel] = useState(agent.model ?? "");
   const [skills, setSkills] = useState<Set<string>>(new Set(agent.skills));
   const [tools, setTools] = useState(agent.tools.join(", "));
   const [subagents, setSubagents] = useState<Set<string>>(new Set(agent.subagents));
@@ -493,7 +493,7 @@ function OverviewTab({
           description,
           thread_lifetime: threadLifetime,
           trigger: trigger as "on_demand" | "schedule",
-          model_settings_key: modelKey || null,
+          model: model || undefined,
           skills: Array.from(skills),
           tools: tools
             .split(",")
@@ -577,17 +577,12 @@ function OverviewTab({
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label>Model Override</Label>
-                <Select
-                  value={modelKey}
-                  onChange={(e) => setModelKey(e.target.value)}
-                >
-                  {MODEL_KEYS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </Select>
+                <Label>Model</Label>
+                <Input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="Model identifier (e.g. claude-haiku-4-5-20251001)"
+                />
               </div>
               <div className="grid gap-2">
                 <Label>Skills</Label>
@@ -651,12 +646,10 @@ function OverviewTab({
                   <span className="text-muted-foreground">Trigger:</span>{" "}
                   <Badge variant="outline">{agent.trigger ?? "on_demand"}</Badge>
                 </div>
-                {agent.model_settings_key && (
-                  <div>
-                    <span className="text-muted-foreground">Model:</span>{" "}
-                    <code className="text-xs">{agent.model_settings_key}</code>
-                  </div>
-                )}
+                <div>
+                  <span className="text-muted-foreground">Model:</span>{" "}
+                  <code className="text-xs">{agent.model}</code>
+                </div>
               </div>
               <div>
                 <span className="text-sm text-muted-foreground">Skills:</span>

@@ -34,7 +34,7 @@ allowed-tools:
 # weekly_reflect
 
 ## Trigger
-Cron: settings.weekly_review_cron (default "0 18 * * 0")
+Cron: configured via agent_schedules (default "0 18 * * 0")
 
 ---
 
@@ -43,7 +43,7 @@ Cron: settings.weekly_review_cron (default "0 18 * * 0")
 1. Pull all items from the past 7 days.
 2. Items by type, completion rate, busiest day.
 3. Most mentioned entities.
-4. Stale items (open > stale_item_days).
+4. Stale items (open > 30 days).
 5. Dropped threads: entities active 2+ weeks ago, no recent mentions.
 6. If new cross-conversation behavioral patterns detected, create items
    with type='pattern', source='cron'. This catches patterns that span

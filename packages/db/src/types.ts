@@ -20,7 +20,7 @@ export type LlmProvider =
 export type EmbeddingProvider = "voyage" | "openai" | "google";
 export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckduckgo";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
-export type CronRunner = "standalone" | "platform";
+export type CronRunner = "local" | "platform";
 export type ApprovalMode = "auto" | "confirm";
 
 export interface Settings {
@@ -43,34 +43,11 @@ export interface Settings {
   // Checkpointer
   checkpointer_backend: CheckpointerBackend;
 
-  // Memory catchup
-  memory_catchup_cron: string;
-  memory_catchup_model: string;
-
-  // Memory dedup thresholds
-  memory_reinforce_threshold: number;
-  memory_update_threshold: number;
-  entity_exact_threshold: number;
-  entity_fuzzy_threshold: number;
-
   // AGENTS.md budget
   agents_md_token_budget: number;
   agents_md_max_per_category: number;
   agents_md_max_versions: number;
   agents_md_max_entities: number;
-
-  // Tool call limits
-  tool_call_limit_global: number;
-  tool_call_limit_delete: number;
-  tool_call_limit_archive: number;
-
-  // System cron schedules
-  daily_digest_cron: string;
-  daily_digest_model: string;
-  weekly_review_cron: string;
-  weekly_review_model: string;
-  type_evolution_cron: string;
-  type_evolution_model: string;
 
   // Crons
   cron_runner: CronRunner;
@@ -88,10 +65,6 @@ export interface Settings {
   setup_completed: boolean;
   user_display_name: string | null;
   user_timezone: string;
-
-  // Context refresh
-  context_refresh_cron: string;
-  context_refresh_model: string;
 
   // Agent channels
   task_max_concurrency: number;
@@ -397,7 +370,7 @@ export interface Agent {
   trigger: AgentTrigger | null;
   tools: string[];
   subagents: string[];
-  model_settings_key: string | null;
+  model: string;
   enabled: boolean;
   metadata: Record<string, unknown>;
   created_at: string;

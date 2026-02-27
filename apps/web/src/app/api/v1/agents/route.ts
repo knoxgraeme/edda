@@ -1,4 +1,4 @@
-import { getAgents, createAgent } from "@edda/db";
+import { getAgents, createAgent, getSettings } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jsonList, parseBody, badRequest } from "../_lib/helpers";
@@ -9,6 +9,7 @@ const CreateAgentSchema = z.object({
   system_prompt: z.string().max(50_000).optional(),
   skills: z.array(z.string()).optional(),
   thread_lifetime: z.enum(["ephemeral", "daily", "persistent"]).optional(),
+  model: z.string().max(100).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -24,6 +25,10 @@ export async function POST(request: Request) {
   const parsed = CreateAgentSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error.issues[0].message);
 
-  const agent = await createAgent(parsed.data as Parameters<typeof createAgent>[0]);
+  const settings = await getSettings();
+  const agent = await createAgent({
+    ...parsed.data,
+    model: parsed.data.model || settings.default_model,
+  });
   return NextResponse.json(agent, { status: 201 });
 }

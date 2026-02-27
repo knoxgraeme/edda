@@ -41,7 +41,7 @@ describe("loadConfig", () => {
     expect(config.LLM_PROVIDER).toBe("anthropic");
     expect(config.LLM_MODEL).toBe("claude-sonnet-4-20250514");
     expect(config.EMBEDDING_PROVIDER).toBe("voyage");
-    expect(config.CRON_RUNNER).toBe("standalone");
+    expect(config.CRON_RUNNER).toBe("local");
     expect(config.CHECKPOINTER_BACKEND).toBe("postgres");
     expect(config.PORT).toBe(8000);
     // Vitest sets NODE_ENV=test, so default won't be "development" in test runner

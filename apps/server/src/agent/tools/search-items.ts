@@ -68,7 +68,7 @@ export const searchItemsTool = tool(
     }
 
     // Retrieval context is resolved once at agent construction time and injected
-    // via config.configurable by the cron runner (see standalone.ts).
+    // via config.configurable by the cron runner (see local.ts).
     const retrievalContext = config?.configurable?.retrieval_context as
       | RetrievalContext
       | undefined;

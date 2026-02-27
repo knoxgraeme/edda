@@ -132,7 +132,7 @@ export async function getSearchTool(maxResults?: number): Promise<StructuredTool
   const settings = getSettingsSync();
 
   const provider =
-    process.env.SEARCH_PROVIDER || settings.search_provider || "brave";
+    process.env.SEARCH_PROVIDER || settings.search_provider || "duckduckgo";
   const results = maxResults ?? settings.web_search_max_results;
 
   switch (provider) {
