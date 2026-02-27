@@ -18,6 +18,9 @@ allowed-tools:
   - remove_mcp_connection
   - update_settings
   - get_settings
+  - get_notifications
+  - list_channels
+  - manage_channel
 ---
 
 # admin
@@ -115,6 +118,25 @@ Bad: "Be careful with emails." (not actionable)
 ### Remove Connection
 "remove the old MCP server"
 - remove_mcp_connection: Delete an MCP connection.
+
+## Notifications
+
+### View Notifications
+"show my notifications", "any unread notifications?"
+- get_notifications: List notifications with optional status filter (unread, read, dismissed).
+- Returns most recent notifications, ordered by creation date.
+
+## Channels
+
+### List Channels
+"what channels are connected?", "show linked channels for digest"
+- list_channels: List external channels (e.g. Telegram) linked to an agent.
+- Can filter by agent name.
+
+### Manage Channel
+"link Telegram to the digest agent", "disable announcements for that channel"
+- manage_channel: Link, unlink, or update an agent's external channel configuration.
+- Controls receive_messages and receive_announcements flags.
 
 ## Settings
 

@@ -5,8 +5,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { batchCreateItems, getSettingsSync, getListByName, type List } from "@edda/db";
-import { embedBatch, buildEmbeddingText } from "../../embed/index.js";
-import type { EmbeddingContext } from "../../embed/index.js";
+import { embedBatch, buildEmbeddingText } from "../../embed.js";
+import type { EmbeddingContext } from "../../embed.js";
 import { getAgentName } from "../tool-helpers.js";
 
 const batchItemSchema = z.object({

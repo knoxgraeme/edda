@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getListByName, getListById, updateList, getSettingsSync, type List } from "@edda/db";
-import { embed, buildEmbeddingText } from "../../embed/index.js";
+import { embed, buildEmbeddingText } from "../../embed.js";
 
 export const updateListSchema = z.object({
   list_name: z

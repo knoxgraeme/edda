@@ -3,15 +3,13 @@
  *
  * One builder for all agents. The server entrypoint, cron runner, and
  * on-demand execution all call buildAgent(). Differences come from
- * DB configuration (tools, skills, subagents, store access, filesystem),
- * not from code.
+ * DB configuration (tools, skills, subagents, store access), not from code.
  *
  * Each agent gets:
  * - Scoped tools from the full pool (built-in + MCP + search)
  * - /skills/ StoreBackend mount (deepagents progressive disclosure)
  * - /store/ StoreBackend mount (own namespace, persistent cross-thread)
  * - Optional /store/{name}/ cross-agent mounts (from metadata.stores)
- * - Optional /workspace/ FilesystemBackend (env-gated, from metadata.filesystem)
  * - Three-layer prompt: agent prompt + AGENTS.md memory + system context
  * - list_my_runs tool (always included)
  */
@@ -32,11 +30,11 @@ import {
 } from "@edda/db";
 import type { ListWithCount } from "@edda/db";
 import type { ItemType, Skill } from "@edda/db";
-import { getChatModel } from "../llm/index.js";
-import { getCheckpointer } from "../checkpointer/index.js";
-import { getStore } from "../store/index.js";
-import { getSearchTool } from "../search/index.js";
-import { loadMCPTools } from "./mcp.js";
+import { getChatModel } from "../llm.js";
+import { getCheckpointer } from "../checkpointer.js";
+import { getStore } from "../store.js";
+import { getSearchTool } from "../search.js";
+import { loadMCPTools } from "../mcp/client.js";
 import { allTools, loadCommunityTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
 import { getLogger } from "../logger.js";

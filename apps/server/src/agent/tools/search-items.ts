@@ -9,7 +9,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { searchItems, getAgentKnowledge } from "@edda/db";
 import type { RetrievalContext } from "@edda/db";
-import { embed, buildEmbeddingText } from "../../embed/index.js";
+import { embed, buildEmbeddingText } from "../../embed.js";
 
 export const searchItemsSchema = z.object({
   query: z.string().optional().describe("Natural language search query"),

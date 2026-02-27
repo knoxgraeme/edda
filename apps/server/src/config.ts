@@ -32,7 +32,7 @@ const envSchema = z.object({
   WOLFRAM_APP_ID: z.string().min(1).optional(),
 
   // Cron runner
-  CRON_RUNNER: z.enum(['local', 'platform']).default('local'),
+  CRON_RUNNER: z.enum(['local', 'langgraph']).default('local'),
 
   // Checkpointer
   CHECKPOINTER_BACKEND: z.enum(['postgres', 'sqlite', 'memory']).default('postgres'),

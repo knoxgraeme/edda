@@ -19,12 +19,12 @@ vi.mock("@edda/db", () => ({
   ENTITY_COLS: "e.id, e.name, e.type",
 }));
 
-vi.mock("../../embed/index.js", () => ({
+vi.mock("../../embed.js", () => ({
   embed: vi.fn().mockResolvedValue(ZERO_VECTOR),
 }));
 
 import { upsertEntity, linkItemEntity, resolveEntity, getEntityItems } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { embed } from "../../embed.js";
 
 import { upsertEntityTool } from "../../agent/tools/upsert-entity.js";
 import { linkItemEntityTool } from "../../agent/tools/link-item-entity.js";

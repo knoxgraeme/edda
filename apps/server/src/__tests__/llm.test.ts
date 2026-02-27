@@ -19,7 +19,7 @@ vi.mock("@edda/db", () => ({
   getSettingsSync: mockGetSettingsSync,
 }));
 
-import { getChatModel } from "../llm/index.js";
+import { getChatModel } from "../llm.js";
 
 describe("getChatModel", () => {
   const originalEnv = process.env;

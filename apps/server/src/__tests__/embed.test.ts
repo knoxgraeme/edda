@@ -2,7 +2,7 @@
  * Embed factory tests — singleton caching, cache invalidation, dimensions.
  *
  * Each test uses vi.resetModules() to clear the module-level singleton cache
- * in embed/index.ts, then re-imports the module fresh.
+ * in embed.ts, then re-imports the module fresh.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -43,7 +43,7 @@ describe("embed factory", () => {
     process.env = { ...originalEnv };
     delete process.env.EMBEDDING_PROVIDER;
     settingsValue = { ...DEFAULT_TEST_SETTINGS };
-    // Reset module registry so embed/index.ts singleton cache is cleared
+    // Reset module registry so embed.ts singleton cache is cleared
     vi.resetModules();
   });
 
@@ -52,7 +52,7 @@ describe("embed factory", () => {
   });
 
   async function importEmbed() {
-    return import("../embed/index.js");
+    return import("../embed.js");
   }
 
   it("singleton caching — second call returns same instance", async () => {

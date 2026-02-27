@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { upsertEntity } from "@edda/db";
-import { embed } from "../../embed/index.js";
+import { embed } from "../../embed.js";
 
 export const upsertEntitySchema = z.object({
   name: z.string().describe("Entity name"),

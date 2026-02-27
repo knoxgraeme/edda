@@ -9,8 +9,8 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { createMcpConnection, updateMcpConnection } from "@edda/db";
-import { invalidateMCPClient, ssrfSafeFetch } from "../mcp.js";
-import { MCPOAuthProvider } from "../mcp-oauth-provider.js";
+import { invalidateMCPClient, ssrfSafeFetch } from "../../mcp/client.js";
+import { MCPOAuthProvider } from "../../mcp/oauth-provider.js";
 import { getLogger } from "../../logger.js";
 
 export const addMcpConnectionSchema = z.object({

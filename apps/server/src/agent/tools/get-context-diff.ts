@@ -12,7 +12,7 @@ import { getLatestAgentsMd, getSettingsSync } from "@edda/db";
 import {
   buildDeterministicTemplate,
   buildTemplateDiff,
-} from "../generate-agents-md.js";
+} from "../agents-md-template.js";
 import { getAgentName } from "../tool-helpers.js";
 
 export const getContextDiffSchema = z.object({});

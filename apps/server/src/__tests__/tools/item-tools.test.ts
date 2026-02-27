@@ -34,7 +34,7 @@ vi.mock("@edda/db", () => ({
   ITEM_COLS: "i.id, i.type, i.content",
 }));
 
-vi.mock("../../embed/index.js", () => ({
+vi.mock("../../embed.js", () => ({
   embed: vi.fn().mockResolvedValue(ZERO_VECTOR),
   embedBatch: vi.fn().mockImplementation((texts: string[]) =>
     Promise.resolve(texts.map(() => ZERO_VECTOR)),
@@ -61,7 +61,7 @@ import {
   getPendingItems,
 } from "@edda/db";
 
-import { embed, embedBatch, buildEmbeddingText } from "../../embed/index.js";
+import { embed, embedBatch, buildEmbeddingText } from "../../embed.js";
 
 import { createItemTool } from "../../agent/tools/create-item.js";
 import { batchCreateItemsTool } from "../../agent/tools/batch-create-items.js";
