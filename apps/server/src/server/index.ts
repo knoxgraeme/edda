@@ -16,6 +16,7 @@ import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
 import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
+import type { Update } from "grammy/types";
 
 interface AgentState {
   agent: Runnable;
@@ -427,34 +428,35 @@ async function handleSearchItems(req: IncomingMessage, res: ServerResponse) {
 }
 
 async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) {
-  try {
-    // Validate secret token if configured
-    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    if (secret) {
-      const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
-      if (!validateWebhookSecret(headerSecret, secret)) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Invalid secret token" }));
-        return;
-      }
+  // Validate secret token if configured
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (secret) {
+    const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
+    if (!validateWebhookSecret(headerSecret, secret)) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid secret token" }));
+      return;
     }
-
-    const raw = await readBody(req);
-    const update = JSON.parse(raw);
-
-    // Process asynchronously — always return 200 to Telegram immediately
-    handleWebhookUpdate(update).catch((err) => {
-      console.error("[telegram] Webhook update processing failed:", err);
-    });
-
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true }));
-  } catch (err) {
-    console.error("[telegram] Webhook handler error:", err);
-    // Always respond 200 to prevent Telegram retries
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true }));
   }
+
+  let update: Update;
+  try {
+    const raw = await readBody(req);
+    update = JSON.parse(raw);
+  } catch (err) {
+    console.error("[telegram] Failed to parse webhook body:", err);
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid request body" }));
+    return;
+  }
+
+  // Process asynchronously — always return 200 for valid Telegram updates
+  handleWebhookUpdate(update).catch((err) => {
+    console.error("[telegram] Webhook update processing failed:", err);
+  });
+
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ ok: true }));
 }
 
 export async function startHealthServer(port: number): Promise<void> {

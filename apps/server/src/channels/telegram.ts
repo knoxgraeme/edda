@@ -7,13 +7,20 @@
  */
 
 import { timingSafeEqual } from "node:crypto";
-import { Bot, type Context } from "grammy";
+import { Bot, type Context, type CommandContext } from "grammy";
 import type { Update } from "grammy/types";
 import {
   getChannelByExternalId,
+  getChannelsByAgent,
   getAgentById,
   getAgentByName,
-  refreshSettings,
+  getAgentNames,
+  getRecentTaskRuns,
+  createChannel,
+  deleteChannel,
+  getSettings,
+  getPairedUser,
+  createPairingRequest,
 } from "@edda/db";
 import type { Agent } from "@edda/db";
 import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
@@ -30,30 +37,51 @@ let bot: Bot | null = null;
 // Initialization
 // ---------------------------------------------------------------------------
 
-export function initTelegram(token: string): Bot {
+export async function initTelegram(token: string): Promise<Bot> {
   bot = new Bot(token);
+  await bot.init();
 
-  bot.on("message:text", (ctx) => handleTextMessage(ctx));
+  // Access control — DB-backed pairing flow
+  bot.use(async (ctx, next) => {
+    const userId = ctx.from?.id;
+    if (!userId) return;
 
-  bot.command("start", async (ctx) => {
+    const paired = await getPairedUser(userId);
+
+    if (paired?.status === "approved") {
+      await next();
+      return;
+    }
+
+    if (paired?.status === "pending") {
+      await ctx.reply("Your access request is still waiting for approval.");
+      return;
+    }
+
+    if (paired?.status === "rejected") {
+      console.log(`[telegram] Dropping message from rejected user ${userId}`);
+      return;
+    }
+
+    // No pairing row — create a new request
+    const displayName =
+      [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") ||
+      ctx.from.username ||
+      undefined;
+    await createPairingRequest(userId, displayName);
+    console.log(`[telegram] New pairing request from ${displayName ?? userId}`);
     await ctx.reply(
-      "Edda Telegram bridge active. Messages in linked topics are routed to agents.\n\n" +
-        "Use /status to see which agent is linked to this topic.",
+      "Access requested — waiting for approval. You'll be able to use the bot once an admin approves your request.",
     );
   });
 
-  bot.command("status", async (ctx) => {
-    const chatId = ctx.chat.id;
-    const threadId = ctx.message?.message_thread_id;
-    const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
+  // Register commands before the catch-all message handler
+  bot.command("start", handleStartCommand);
+  bot.command("link", handleLinkCommand);
+  bot.command("unlink", handleUnlinkCommand);
+  bot.command("status", handleStatusCommand);
 
-    const channel = await getChannelByExternalId("telegram", externalId);
-    if (channel) {
-      await ctx.reply(`Linked to agent. Channel ID: ${channel.id}`);
-    } else {
-      await ctx.reply("This topic is not linked to any agent.");
-    }
-  });
+  bot.on("message:text", (ctx) => handleTextMessage(ctx));
 
   // Register the sender for proactive delivery
   registerSender({
@@ -95,12 +123,196 @@ export async function handleWebhookUpdate(update: Update): Promise<void> {
  * Validate the X-Telegram-Bot-Api-Secret-Token header.
  */
 export function validateWebhookSecret(headerValue: string | undefined, expected: string): boolean {
-  if (!expected) return true;
   if (!headerValue) return false;
   const expectedBuf = Buffer.from(expected);
   const actualBuf = Buffer.from(headerValue);
   if (expectedBuf.length !== actualBuf.length) return false;
   return timingSafeEqual(expectedBuf, actualBuf);
+}
+
+// ---------------------------------------------------------------------------
+// Bot commands
+// ---------------------------------------------------------------------------
+
+async function handleStartCommand(ctx: CommandContext<Context>): Promise<void> {
+  await ctx.reply(
+    "Edda Telegram bridge active.\n\n" +
+      "Commands:\n" +
+      "/link <agent_name> — Link this topic to an agent\n" +
+      "/unlink — Remove the channel link\n" +
+      "/status — Show linked agent and recent activity\n\n" +
+      "In a forum topic, use /link to connect it to an agent. " +
+      "DMs are automatically routed to the default agent.\n\n" +
+      "New users must be approved before they can interact with the bot. " +
+      "Send any message to request access.",
+  );
+}
+
+async function handleLinkCommand(ctx: CommandContext<Context>): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const threadId = ctx.message?.message_thread_id;
+  const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
+
+  // ctx.match is the text after "/link" (with @botname already stripped by grammY)
+  const agentName = ctx.match.trim();
+
+  if (!agentName) {
+    const names = await getAgentNames();
+    await ctx.reply(
+      "Usage: /link <agent_name>\n\n" +
+        `Available agents: ${names.join(", ")}`,
+      { message_thread_id: threadId },
+    );
+    return;
+  }
+
+  // Check if already linked (include disabled channels — UNIQUE constraint prevents duplicates)
+  const existing = await getChannelByExternalId("telegram", externalId, { includeDisabled: true });
+  if (existing) {
+    const existingAgent = await getAgentById(existing.agent_id);
+    await ctx.reply(
+      `This topic is already linked to "${existingAgent?.name ?? "unknown"}". ` +
+        `Use /unlink first to change it.`,
+      { message_thread_id: threadId },
+    );
+    return;
+  }
+
+  // Validate agent exists and is enabled
+  const agent = await getAgentByName(agentName);
+  if (!agent) {
+    const names = await getAgentNames();
+    await ctx.reply(
+      `Agent "${agentName}" not found.\n\nAvailable agents: ${names.join(", ")}`,
+      { message_thread_id: threadId },
+    );
+    return;
+  }
+  if (!agent.enabled) {
+    await ctx.reply(`Agent "${agentName}" is currently disabled.`, {
+      message_thread_id: threadId,
+    });
+    return;
+  }
+
+  // Create the channel link
+  try {
+    await createChannel({
+      agent_id: agent.id,
+      platform: "telegram",
+      external_id: externalId,
+      config: {
+        // reply_to_message in forum topics points to the topic creation service message,
+        // but forum_topic_created is not always included in the serialized message.
+        // Fall back to the is_topic_message flag to at least note this is a topic link.
+        topic_name:
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (ctx.message?.reply_to_message as any)?.forum_topic_created?.name ?? undefined,
+        chat_title: ctx.chat?.title ?? undefined,
+      },
+      enabled: true,
+      receive_announcements: false,
+    });
+
+    await ctx.reply(
+      `Linked to agent "${agent.name}" (${agent.thread_lifetime} thread, ${agent.thread_scope} scope).\n\n` +
+        "Messages here will now be routed to this agent.\n\n" +
+        "Note: The bot must have Group Privacy disabled (via @BotFather → /mybots → Bot Settings → Group Privacy → Turn off) " +
+        "to receive regular messages in group topics. Otherwise only /commands will work.",
+      { message_thread_id: threadId },
+    );
+  } catch (err) {
+    console.error("[telegram] /link failed:", err);
+    await ctx.reply("Failed to create channel link. Check server logs for details.", {
+      message_thread_id: threadId,
+    });
+  }
+}
+
+async function handleUnlinkCommand(ctx: CommandContext<Context>): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const threadId = ctx.message?.message_thread_id;
+  const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
+
+  const channel = await getChannelByExternalId("telegram", externalId, { includeDisabled: true });
+  if (!channel) {
+    await ctx.reply("This topic is not linked to any agent.", {
+      message_thread_id: threadId,
+    });
+    return;
+  }
+
+  try {
+    const agent = await getAgentById(channel.agent_id);
+    await deleteChannel(channel.id);
+    await ctx.reply(`Unlinked from agent "${agent?.name ?? "unknown"}".`, {
+      message_thread_id: threadId,
+    });
+  } catch (err) {
+    console.error("[telegram] /unlink failed:", err);
+    await ctx.reply("Failed to remove channel link. Check server logs for details.", {
+      message_thread_id: threadId,
+    });
+  }
+}
+
+async function handleStatusCommand(ctx: CommandContext<Context>): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const threadId = ctx.message?.message_thread_id;
+  const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
+
+  const channel = await getChannelByExternalId("telegram", externalId);
+  if (!channel) {
+    await ctx.reply(
+      "This topic is not linked to any agent.\nUse /link <agent_name> to set one up.",
+      { message_thread_id: threadId },
+    );
+    return;
+  }
+
+  const agent = await getAgentById(channel.agent_id);
+  if (!agent) {
+    await ctx.reply("Linked agent no longer exists. Use /unlink then /link to fix.", {
+      message_thread_id: threadId,
+    });
+    return;
+  }
+
+  // Build status lines
+  const lines: string[] = [
+    `Agent: ${agent.name}`,
+    `Description: ${agent.description}`,
+    `Thread: ${agent.thread_lifetime} / ${agent.thread_scope}`,
+    `Announcements: ${channel.receive_announcements ? "enabled" : "disabled"}`,
+  ];
+
+  // Recent runs
+  const runs = await getRecentTaskRuns({ agent_name: agent.name, limit: 3 });
+  if (runs.length > 0) {
+    lines.push("", "Recent runs:");
+    for (const run of runs) {
+      const when = run.completed_at
+        ? new Date(run.completed_at).toLocaleString()
+        : run.started_at
+          ? `started ${new Date(run.started_at).toLocaleString()}`
+          : "pending";
+      lines.push(`  ${run.status} (${run.trigger}) — ${when}`);
+    }
+  }
+
+  // Other channels for this agent
+  const allChannels = await getChannelsByAgent(agent.id);
+  if (allChannels.length > 1) {
+    lines.push("", `Total channels for ${agent.name}: ${allChannels.length}`);
+  }
+
+  await ctx.reply(lines.join("\n"), { message_thread_id: threadId });
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +326,10 @@ async function handleTextMessage(ctx: Context): Promise<void> {
   const text = ctx.message?.text;
 
   if (!text) return;
+
+  console.log(
+    `[telegram] message in chat=${chatId} thread=${threadId ?? "none"}: ${text.slice(0, 80)}`,
+  );
 
   // Build external_id: "{chat_id}:{thread_id}" for topics, "{chat_id}:dm" for DMs
   const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
@@ -140,7 +356,7 @@ async function handleTextMessage(ctx: Context): Promise<void> {
 
     // No channel row — try default agent for DMs
     if (!threadId) {
-      const settings = await refreshSettings();
+      const settings = await getSettings();
       agentDef = await getAgentByName(settings.default_agent);
     }
 
@@ -151,12 +367,18 @@ async function handleTextMessage(ctx: Context): Promise<void> {
   }
 
   // Send typing indicator and refresh it every 4s
+  let typingFailLogged = false;
   const typingInterval = setInterval(() => {
     ctx.api
       .sendChatAction(chatId, "typing", {
         message_thread_id: threadId,
       })
-      .catch(() => {}); // best-effort
+      .catch((err: Error) => {
+        if (!typingFailLogged) {
+          typingFailLogged = true;
+          console.warn(`[telegram] Typing indicator failed for chat=${chatId}:`, err.message);
+        }
+      });
   }, 4000);
 
   try {
@@ -170,8 +392,7 @@ async function handleTextMessage(ctx: Context): Promise<void> {
       external_id: externalId,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await withTimeout(
+    const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } = await withTimeout(
       agent.invoke(
         { messages: [{ role: "user", content: text }] },
         {
@@ -211,9 +432,10 @@ async function handleTextMessage(ctx: Context): Promise<void> {
 async function sendToTelegram(externalId: string, text: string): Promise<void> {
   if (!bot) throw new Error("Telegram bot not initialized");
 
-  const [chatIdStr, threadIdStr] = externalId.split(":");
-  const chatId = Number(chatIdStr);
-  const threadId = threadIdStr === "dm" ? undefined : Number(threadIdStr);
+  const match = externalId.match(/^(-?\d+):(dm|\d+)$/);
+  if (!match) throw new Error(`Invalid Telegram external_id format: "${externalId}"`);
+  const chatId = Number(match[1]);
+  const threadId = match[2] === "dm" ? undefined : Number(match[2]);
 
   const chunks = splitMessage(text);
   for (const chunk of chunks) {
@@ -277,6 +499,3 @@ async function sendSplitMessage(
   }
 }
 
-export function getTelegramBot(): Bot | null {
-  return bot;
-}
