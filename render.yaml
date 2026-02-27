@@ -13,7 +13,7 @@ services:
   - type: web
     name: edda-server
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.render
     dockerContext: .
     dockerTarget: server
     plan: starter
@@ -43,7 +43,7 @@ services:
   - type: web
     name: edda-web
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.render
     dockerContext: .
     dockerTarget: web
     plan: starter
