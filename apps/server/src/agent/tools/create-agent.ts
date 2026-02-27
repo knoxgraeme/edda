@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createAgent, getAgents, getSettings, saveAgentsMdVersion } from "@edda/db";
+import { createAgent, getAgents, saveAgentsMdVersion } from "@edda/db";
 import { getLogger } from "../../logger.js";
 
 export const createAgentSchema = z.object({
@@ -30,6 +30,17 @@ export const createAgentSchema = z.object({
     .enum(["ephemeral", "daily", "persistent"])
     .default("ephemeral")
     .describe("ephemeral | daily | persistent"),
+  model_provider: z
+    .enum(["anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock"])
+    .nullable()
+    .optional()
+    .describe("LLM provider override (null to use default from settings)"),
+  model: z
+    .string()
+    .max(100)
+    .nullable()
+    .optional()
+    .describe("Model name override (null to use default from settings)"),
   metadata: z
     .record(z.unknown())
     .optional()
@@ -48,9 +59,11 @@ export const createAgentTool = tool(
     skills,
     trigger,
     thread_lifetime,
+    model_provider,
+    model,
     metadata,
   }) => {
-    const [existing, settings] = await Promise.all([getAgents(), getSettings()]);
+    const existing = await getAgents();
     if (existing.length >= 30) {
       throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
     }
@@ -68,7 +81,8 @@ export const createAgentTool = tool(
       skills: resolvedSkills,
       thread_lifetime,
       trigger,
-      model: settings.default_model,
+      model_provider,
+      model,
       metadata,
     });
 

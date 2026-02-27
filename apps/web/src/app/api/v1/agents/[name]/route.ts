@@ -1,4 +1,4 @@
-import { getAgentByName, getSettings, updateAgent, deleteAgent } from "@edda/db";
+import { getAgentByName, getSettings, updateAgent, deleteAgent, LLM_PROVIDERS } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { notFound, badRequest } from "../../_lib/helpers";
@@ -12,7 +12,8 @@ const UpdateAgentSchema = z
     trigger: z.enum(["schedule", "on_demand"]).nullable().optional(),
     tools: z.array(z.string().max(100)).optional(),
     subagents: z.array(z.string().max(100)).optional(),
-    model: z.string().max(100).optional(),
+    model_provider: z.enum(LLM_PROVIDERS).nullable().optional(),
+    model: z.string().max(100).nullable().optional(),
     enabled: z.boolean().optional(),
     metadata: z.record(z.unknown()).optional(),
   })

@@ -6,7 +6,7 @@
 
 import { vi } from "vitest";
 import type { Settings } from "@edda/db";
-import { ITEM_COLS, ENTITY_COLS } from "@edda/db";
+import { ITEM_COLS, ENTITY_COLS, LLM_PROVIDERS } from "@edda/db";
 
 /** Default settings fixture matching the Settings interface */
 export const DEFAULT_TEST_SETTINGS: Settings = {
@@ -124,6 +124,9 @@ export function mockDbModule() {
     // connection
     getPool: vi.fn(),
     closePool: vi.fn(),
+
+    // constants
+    LLM_PROVIDERS,
   };
 }
 

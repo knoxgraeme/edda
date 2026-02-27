@@ -26,6 +26,7 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
   // Configuration
   const [threadLifetime, setThreadLifetime] = useState<ThreadLifetime>("ephemeral");
   const [trigger, setTrigger] = useState("on_demand");
+  const [modelProvider, setModelProvider] = useState("");
   const [model, setModel] = useState("");
 
   // Skills (toggle)
@@ -72,7 +73,8 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
             .map((t) => t.trim())
             .filter(Boolean),
           subagents: Array.from(subagents),
-          model: model || undefined,
+          model_provider: modelProvider || null,
+          model: model || null,
         });
       } catch (err) {
         if (err && typeof err === "object" && "digest" in err) throw err;
@@ -170,16 +172,29 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="model">Model Override</Label>
-              <Input
-                id="model"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="Leave empty for default (from settings)"
-              />
-              <p className="text-xs text-muted-foreground">
-                Model identifier (e.g. claude-haiku-4-5-20251001). Empty uses default_model from settings.
-              </p>
+              <Label>Model</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={modelProvider}
+                  onChange={(e) => setModelProvider(e.target.value)}
+                  className="w-[180px]"
+                >
+                  <option value="">Default (from Settings)</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="google">Google</option>
+                  <option value="groq">Groq</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="mistral">Mistral</option>
+                  <option value="bedrock">AWS Bedrock</option>
+                </Select>
+                <Input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={modelProvider ? "Model name" : "Default (from Settings)"}
+                  className="flex-1"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

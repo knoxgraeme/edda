@@ -23,14 +23,18 @@ const {
   mockGetTopEntities: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("@edda/db", () => ({
-  getSettingsSync: mockGetSettingsSync,
-  saveAgentsMdVersion: mockSaveAgentsMdVersion,
-  pruneAgentsMdVersions: mockPruneAgentsMdVersions,
-  getLatestAgentsMd: mockGetLatestAgentsMd,
-  getItemsByType: mockGetItemsByType,
-  getTopEntities: mockGetTopEntities,
-}));
+vi.mock("@edda/db", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    getSettingsSync: mockGetSettingsSync,
+    saveAgentsMdVersion: mockSaveAgentsMdVersion,
+    pruneAgentsMdVersions: mockPruneAgentsMdVersions,
+    getLatestAgentsMd: mockGetLatestAgentsMd,
+    getItemsByType: mockGetItemsByType,
+    getTopEntities: mockGetTopEntities,
+  };
+});
 
 import { saveAgentsMdTool } from "../../agent/tools/save-agents-md.js";
 import { getContextDiffTool } from "../../agent/tools/get-context-diff.js";

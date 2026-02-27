@@ -9,14 +9,16 @@
 // Settings
 // ──────────────────────────────────────────────
 
-export type LlmProvider =
-  | "anthropic"
-  | "openai"
-  | "google"
-  | "groq"
-  | "ollama"
-  | "mistral"
-  | "bedrock";
+export const LLM_PROVIDERS = [
+  "anthropic",
+  "openai",
+  "google",
+  "groq",
+  "ollama",
+  "mistral",
+  "bedrock",
+] as const;
+export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 export type EmbeddingProvider = "voyage" | "openai" | "google";
 export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckduckgo";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
@@ -374,7 +376,8 @@ export interface Agent {
   trigger: AgentTrigger | null;
   tools: string[];
   subagents: string[];
-  model: string;
+  model_provider: LlmProvider | null;
+  model: string | null;
   enabled: boolean;
   metadata: Record<string, unknown>;
   created_at: string;

@@ -1,12 +1,8 @@
 /**
- * LLM factory tests — provider selection, model resolution, error handling.
- *
- * Tests cover the three main providers with proper package exports
- * (anthropic, openai, google). Community providers (groq, ollama, mistral,
- * bedrock) use @vite-ignore to skip static resolution.
+ * LLM model-string resolver tests — provider mapping, format handling, defaults.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DEFAULT_TEST_SETTINGS } from "./helpers.js";
 
 const { mockGetSettingsSync } = vi.hoisted(() => {
@@ -15,58 +11,97 @@ const { mockGetSettingsSync } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@edda/db", () => ({
-  getSettingsSync: mockGetSettingsSync,
-}));
+vi.mock("@edda/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@edda/db")>();
+  return {
+    ...actual,
+    getSettingsSync: mockGetSettingsSync,
+  };
+});
 
-import { getChatModel } from "../llm.js";
+import { getModelString } from "../llm.js";
 
-describe("getChatModel", () => {
-  const originalEnv = process.env;
-
+describe("getModelString", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSettingsSync.mockReturnValue(DEFAULT_TEST_SETTINGS);
-    process.env = { ...originalEnv };
-    process.env.ANTHROPIC_API_KEY = "test-key-anthropic";
-    process.env.OPENAI_API_KEY = "test-key-openai";
   });
 
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it("selects provider from settings.llm_provider", async () => {
+  it("builds provider:model from DB settings when no overrides given", () => {
     mockGetSettingsSync.mockReturnValue({
       ...DEFAULT_TEST_SETTINGS,
       llm_provider: "anthropic",
+      default_model: "claude-sonnet-4-20250514",
     });
-    const anthropicModel = await getChatModel();
-    expect(anthropicModel.constructor.name).toMatch(/Anthropic/);
-
-    mockGetSettingsSync.mockReturnValue({
-      ...DEFAULT_TEST_SETTINGS,
-      llm_provider: "openai",
-    });
-    const openaiModel = await getChatModel();
-    expect(openaiModel.constructor.name).toMatch(/OpenAI/);
+    expect(getModelString()).toBe("anthropic:claude-sonnet-4-20250514");
   });
 
-  it("unknown provider throws", async () => {
+  it("maps Edda 'google' provider to LangChain 'google-genai'", () => {
     mockGetSettingsSync.mockReturnValue({
       ...DEFAULT_TEST_SETTINGS,
-      llm_provider: "nonexistent",
+      llm_provider: "google",
+      default_model: "gemini-2.0-flash",
     });
-    await expect(getChatModel()).rejects.toThrow("Unknown LLM provider: nonexistent");
+    expect(getModelString()).toBe("google-genai:gemini-2.0-flash");
   });
 
-  it("model name resolved from settings when not passed as argument", async () => {
+  it("maps Edda 'mistral' provider to LangChain 'mistralai'", () => {
     mockGetSettingsSync.mockReturnValue({
       ...DEFAULT_TEST_SETTINGS,
-      default_model: "claude-opus-4-20250514",
+      llm_provider: "mistral",
+      default_model: "mistral-large-latest",
     });
-    const model = await getChatModel();
-    expect(model).toBeDefined();
-    expect((model as Record<string, unknown>).model).toBe("claude-opus-4-20250514");
+    expect(getModelString()).toBe("mistralai:mistral-large-latest");
+  });
+
+  it("uses agent provider + model overrides", () => {
+    mockGetSettingsSync.mockReturnValue({
+      ...DEFAULT_TEST_SETTINGS,
+      llm_provider: "anthropic",
+      default_model: "claude-sonnet-4-20250514",
+    });
+    expect(getModelString("google", "gemini-2.0-flash")).toBe(
+      "google-genai:gemini-2.0-flash",
+    );
+  });
+
+  it("agent provider override with default model", () => {
+    mockGetSettingsSync.mockReturnValue({
+      ...DEFAULT_TEST_SETTINGS,
+      llm_provider: "anthropic",
+      default_model: "claude-sonnet-4-20250514",
+    });
+    // Override provider but keep default model
+    expect(getModelString("openai", null)).toBe("openai:claude-sonnet-4-20250514");
+  });
+
+  it("agent model override with default provider", () => {
+    mockGetSettingsSync.mockReturnValue({
+      ...DEFAULT_TEST_SETTINGS,
+      llm_provider: "anthropic",
+      default_model: "claude-sonnet-4-20250514",
+    });
+    // Override model but keep default provider
+    expect(getModelString(null, "claude-haiku-4-5-20251001")).toBe(
+      "anthropic:claude-haiku-4-5-20251001",
+    );
+  });
+
+  it("defaults to anthropic when no llm_provider in settings", () => {
+    mockGetSettingsSync.mockReturnValue({
+      ...DEFAULT_TEST_SETTINGS,
+      llm_provider: undefined,
+      default_model: "claude-sonnet-4-20250514",
+    });
+    expect(getModelString()).toBe("anthropic:claude-sonnet-4-20250514");
+  });
+
+  it("throws for unknown provider", () => {
+    mockGetSettingsSync.mockReturnValue({
+      ...DEFAULT_TEST_SETTINGS,
+      llm_provider: "unknown-provider",
+      default_model: "some-model",
+    });
+    expect(() => getModelString()).toThrow(/Unknown LLM provider/);
   });
 });

@@ -24,4 +24,5 @@ export type {
   Notification,
   AgentChannel,
   ChannelPlatform,
+  LlmProvider,
 } from "@edda/db";

@@ -1,64 +1,46 @@
 /**
- * LLM factory — returns a BaseChatModel based on DB settings.
+ * LLM model-string resolver — returns a `provider:model` string for deepagents/LangChain.
  *
- * Provider and model are read from the `settings` table (managed via the web UI).
+ * deepagents and LangChain's `initChatModel` accept model strings in the format
+ * `provider:model` (e.g. "anthropic:claude-sonnet-4-20250514").
+ *
+ * Per-agent overrides come as separate provider + model fields.
+ * The global default is built from `settings.llm_provider` + `settings.default_model`.
+ * NULL in either agent field means "inherit from settings".
  */
 
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { getSettingsSync } from "@edda/db";
+import { getSettingsSync, LLM_PROVIDERS } from "@edda/db";
+import type { LlmProvider } from "@edda/db";
 
 /**
- * Dynamically import a module by path. The indirection prevents Vite/Vitest
- * from statically analyzing and resolving the import specifier at build time,
- * which is needed for optional community provider packages that may not have
- * valid package.json exports entries.
+ * Map Edda's DB provider names to LangChain `initChatModel` provider keys.
+ * See: langchain/chat_models/universal — MODEL_PROVIDER_CONFIG
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function lazyImport(specifier: string): Promise<any> {
-  return import(/* @vite-ignore */ specifier);
-}
+const PROVIDER_MAP: Record<LlmProvider, string> = {
+  anthropic: "anthropic",
+  openai: "openai",
+  google: "google-genai",
+  groq: "groq",
+  ollama: "ollama",
+  mistral: "mistralai",
+  bedrock: "bedrock",
+};
 
-export async function getChatModel(modelName?: string): Promise<BaseChatModel> {
+/**
+ * Return a `provider:model` string suitable for deepagents / initChatModel.
+ *
+ * Both params are nullable — NULL means inherit from global settings.
+ */
+export function getModelString(
+  agentProvider?: LlmProvider | null,
+  agentModel?: string | null,
+): string {
   const settings = getSettingsSync();
-  const provider = settings.llm_provider || "anthropic";
-  const model = modelName || settings.default_model;
-
-  switch (provider) {
-    case "anthropic": {
-      const { ChatAnthropic } = await import("@langchain/anthropic");
-      return new ChatAnthropic({ model });
-    }
-    case "openai": {
-      const { ChatOpenAI } = await import("@langchain/openai");
-      return new ChatOpenAI({ model });
-    }
-    case "google": {
-      const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
-      return new ChatGoogleGenerativeAI({ model });
-    }
-    case "groq": {
-      const mod = await lazyImport("@langchain/community/chat_models/groq");
-      return new mod.ChatGroq({ model });
-    }
-    case "ollama": {
-      const mod = await lazyImport("@langchain/community/chat_models/ollama");
-      return new mod.ChatOllama({
-        model,
-        baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-      });
-    }
-    case "mistral": {
-      const mod = await lazyImport("@langchain/community/chat_models/mistral");
-      return new mod.ChatMistralAI({ model });
-    }
-    case "bedrock": {
-      const mod = await lazyImport("@langchain/community/chat_models/bedrock");
-      return new mod.ChatBedrockConverse({
-        model,
-        region: process.env.AWS_REGION || "us-east-1",
-      });
-    }
-    default:
-      throw new Error(`Unknown LLM provider: ${provider}`);
+  const provider = agentProvider || settings.llm_provider || "anthropic";
+  const model = agentModel || settings.default_model;
+  if (!LLM_PROVIDERS.includes(provider as LlmProvider)) {
+    throw new Error(`Unknown LLM provider: '${provider}'. Valid providers: ${LLM_PROVIDERS.join(", ")}`);
   }
+  const langchainProvider = PROVIDER_MAP[provider];
+  return `${langchainProvider}:${model}`;
 }

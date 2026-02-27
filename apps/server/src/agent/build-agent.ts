@@ -31,7 +31,7 @@ import {
 } from "@edda/db";
 import type { ListWithCount } from "@edda/db";
 import type { ItemType, Skill } from "@edda/db";
-import { getChatModel } from "../llm.js";
+import { getModelString } from "../llm.js";
 import { getCheckpointer } from "../checkpointer.js";
 import { getStore } from "../store.js";
 import { getSearchTool } from "../search.js";
@@ -160,7 +160,7 @@ interface SubagentSpec {
   systemPrompt: string;
   tools: StructuredTool[];
   skills: string[];
-  model?: LanguageModelLike;
+  model?: LanguageModelLike | string;
 }
 
 /**
@@ -191,10 +191,8 @@ async function resolveSubagents(
   const [, ...specs] = await Promise.all([
     Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
     ...enabled.map(async (row) => {
-      const [systemPrompt, model] = await Promise.all([
-        buildPrompt(row, settings, prefetched),
-        getChatModel(row.model || settings.default_model),
-      ]);
+      const model = getModelString(row.model_provider, row.model);
+      const systemPrompt = await buildPrompt(row, settings, prefetched);
 
       return {
         name: row.name,
@@ -440,12 +438,11 @@ export function resolveThreadId(
 export async function buildAgent(agent: Agent): Promise<any> {
   const settings = await getSettings();
 
-  // 1. Model — direct from agent row (with fallback to default_model)
-  const modelName = agent.model || settings.default_model;
+  // 1. Model — provider:model string for deepagents/initChatModel
+  const model = getModelString(agent.model_provider, agent.model);
 
   // 2. Gather ALL available tools + prompt data + skills in one parallel batch
   const [
-    model,
     searchTool,
     checkpointer,
     store,
@@ -455,7 +452,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     lists,
     skills,
   ] = await Promise.all([
-    getChatModel(modelName),
     getSearchTool(),
     getCheckpointer(),
     getStore(),
@@ -479,6 +475,28 @@ export async function buildAgent(agent: Agent): Promise<any> {
   declaredToolNames.add("list_my_runs");
 
   const tools = scopeTools(allAvailable, declaredToolNames);
+
+  // 3b. Normalize tool schemas — ensure every schema has type: "object".
+  // Some conversion paths (zodToJsonSchema edge cases, MCP servers) can
+  // produce schemas missing the top-level "type" field, which Anthropic
+  // rejects with "input_schema.type: Field required".
+  for (const t of tools) {
+    const schema = t.schema as Record<string, unknown> | undefined;
+    if (schema && typeof schema === "object" && !("_def" in schema) && !("_zod" in schema)) {
+      // Already a plain JSON schema (not Zod) — ensure type is set
+      if (!schema.type) {
+        schema.type = "object";
+        getLogger().debug({ tool: t.name }, "Patched missing schema type on tool");
+      }
+    }
+  }
+
+  if (getLogger().isLevelEnabled("debug")) {
+    getLogger().debug(
+      { agent: agent.name, toolCount: tools.length, toolNames: tools.map((t) => t.name) },
+      "Scoped tools for agent",
+    );
+  }
 
   // 4. Duplicate check
   assertNoDuplicateTools(tools);

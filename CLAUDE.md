@@ -63,7 +63,8 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/agent/agents-md-template.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data. `buildTemplateDiff()` computes line-level diffs between template versions.
 - **`src/mcp/client.ts`** — MCP client manager (multi-server, SSRF-safe fetch, OAuth support)
 - **`src/mcp/oauth-provider.ts`** — MCP OAuth provider (PKCE, token storage)
-- **`src/llm.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
+- **`src/logger.ts`** — Structured logging via Pino with AsyncLocalStorage trace context. `getLogger()` returns the contextual logger; `withTraceId(bindings, fn)` scopes a traceId to an async call tree. Uses `pino-pretty` in development. Sensitive data (DB URLs, API keys) is auto-redacted in error serializers.
+- **`src/llm.ts`** — LLM model-string resolver: `getModelString(agentProvider?, agentModel?)` returns `provider:model` strings for deepagents/LangChain's `initChatModel`. Maps Edda DB provider names to LangChain keys via `PROVIDER_MAP`. Per-agent overrides are nullable (NULL = inherit from `settings` table).
 - **`src/embed.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
 - **`src/search.ts`** — Search tool factory
 - **`src/store.ts`** — LangGraph store backend factory

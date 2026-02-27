@@ -336,7 +336,9 @@ CREATE TABLE agents (
   trigger TEXT CHECK (trigger IS NULL OR trigger IN ('schedule', 'on_demand')),
   tools TEXT[] NOT NULL DEFAULT '{}',
   subagents TEXT[] NOT NULL DEFAULT '{}',
-  model TEXT NOT NULL,
+  model_provider TEXT
+    CHECK (model_provider IS NULL OR model_provider IN ('anthropic', 'openai', 'google', 'groq', 'ollama', 'mistral', 'bedrock')),
+  model TEXT,
   enabled BOOLEAN NOT NULL DEFAULT true,
   metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -525,19 +527,19 @@ ON CONFLICT (name) DO NOTHING;
 -- Seed Data: System Agents
 -- ════════════════════════════════════════════════════════════════
 
-INSERT INTO agents (name, description, skills, trigger, thread_lifetime, tools, model, enabled, metadata)
+INSERT INTO agents (name, description, skills, trigger, thread_lifetime, tools, enabled, metadata)
 VALUES
   ('edda', 'Primary conversational agent', ARRAY['capture', 'recall', 'manage', 'admin', 'self_improvement'],
-   'on_demand', 'persistent', ARRAY['web_search'], 'claude-sonnet-4-6', true, '{"stores": {"*": "read"}}'::jsonb),
+   'on_demand', 'persistent', ARRAY['web_search'], true, '{"stores": {"*": "read"}}'::jsonb),
 
   ('digest', 'Daily summaries and weekly reflections', ARRAY['daily_digest', 'weekly_reflect'],
-   'schedule', 'daily', '{}', 'claude-sonnet-4-6', true, '{}'::jsonb),
+   'schedule', 'daily', '{}', true, '{}'::jsonb),
 
   ('maintenance', 'System maintenance: context refresh and type evolution', ARRAY['context_refresh', 'type_evolution'],
-   'schedule', 'ephemeral', '{}', 'claude-sonnet-4-6', true, '{}'::jsonb),
+   'schedule', 'ephemeral', '{}', true, '{}'::jsonb),
 
   ('memory', 'Extract and persist memories from conversations', ARRAY['memory_extraction'],
-   'schedule', 'ephemeral', '{}', 'claude-sonnet-4-6', true,
+   'schedule', 'ephemeral', '{}', true,
    '{"retrieval_context": {"authorship_mode": "boost", "authorship_boost": 1.3}}'::jsonb)
 ON CONFLICT (name) DO NOTHING;
 

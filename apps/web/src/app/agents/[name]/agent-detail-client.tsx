@@ -20,7 +20,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
-import type { Agent, TaskRun, AgentSchedule, AgentChannel, ChannelPlatform, ThreadLifetime } from "../../types/db";
+import type { Agent, TaskRun, AgentSchedule, AgentChannel, ChannelPlatform, ThreadLifetime, LlmProvider } from "../../types/db";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,6 +54,16 @@ import { formatDuration, statusVariant } from "@/lib/format";
 import { ChatProvider, useChatContext } from "@/providers/ChatProvider";
 import { ChatInterface } from "@/app/components/ChatInterface";
 import { ThreadList } from "@/app/components/ThreadList";
+
+const VALID_LLM_PROVIDERS = new Set<LlmProvider>([
+  "anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock",
+]);
+
+function toProvider(value: string): LlmProvider | null {
+  if (!value) return null;
+  if (VALID_LLM_PROVIDERS.has(value as LlmProvider)) return value as LlmProvider;
+  return null;
+}
 
 // ─── Schedule Dialog ────────────────────────────────────────────────
 
@@ -462,6 +472,7 @@ function OverviewTab({
   const [description, setDescription] = useState(agent.description);
   const [threadLifetime, setThreadLifetime] = useState(agent.thread_lifetime);
   const [trigger, setTrigger] = useState<"on_demand" | "schedule">(agent.trigger ?? "on_demand");
+  const [modelProvider, setModelProvider] = useState(agent.model_provider ?? "");
   const [model, setModel] = useState(agent.model ?? "");
   const [skills, setSkills] = useState<Set<string>>(new Set(agent.skills));
   const [tools, setTools] = useState(agent.tools.join(", "));
@@ -493,7 +504,8 @@ function OverviewTab({
           description,
           thread_lifetime: threadLifetime,
           trigger: trigger as "on_demand" | "schedule",
-          model: model || undefined,
+          model_provider: toProvider(modelProvider),
+          model: model || null,
           skills: Array.from(skills),
           tools: tools
             .split(",")
@@ -578,11 +590,28 @@ function OverviewTab({
               </div>
               <div className="grid gap-2">
                 <Label>Model</Label>
-                <Input
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="Model identifier (e.g. claude-haiku-4-5-20251001)"
-                />
+                <div className="flex gap-2">
+                  <Select
+                    value={modelProvider}
+                    onChange={(e) => setModelProvider(e.target.value)}
+                    className="w-[180px]"
+                  >
+                    <option value="">Default (from Settings)</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="google">Google</option>
+                    <option value="groq">Groq</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="mistral">Mistral</option>
+                    <option value="bedrock">AWS Bedrock</option>
+                  </Select>
+                  <Input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={modelProvider ? "Model name" : "Default (from Settings)"}
+                    className="flex-1"
+                  />
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label>Skills</Label>
@@ -648,7 +677,11 @@ function OverviewTab({
                 </div>
                 <div>
                   <span className="text-muted-foreground">Model:</span>{" "}
-                  <code className="text-xs">{agent.model}</code>
+                  <code className="text-xs">
+                    {agent.model_provider && agent.model
+                      ? `${agent.model_provider}:${agent.model}`
+                      : agent.model || "default"}
+                  </code>
                 </div>
               </div>
               <div>

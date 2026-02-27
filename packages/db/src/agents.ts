@@ -8,8 +8,8 @@ import { getPool } from "./connection.js";
 import type { Agent, ThreadLifetime, ThreadScope, AgentTrigger } from "./types.js";
 
 const AGENT_COLS = `id, name, description, system_prompt, skills,
-  thread_lifetime, thread_scope, trigger, tools, subagents, model,
-  enabled, metadata, created_at, updated_at`;
+  thread_lifetime, thread_scope, trigger, tools, subagents, model_provider,
+  model, enabled, metadata, created_at, updated_at`;
 
 export async function getAgents(opts?: { enabled?: boolean }): Promise<Agent[]> {
   const pool = getPool();
@@ -62,15 +62,16 @@ export async function createAgent(input: {
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
-  model: string;
+  model_provider?: string | null;
+  model?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<Agent> {
   const pool = getPool();
   const { rows } = await pool.query(
     `INSERT INTO agents
        (name, description, system_prompt, skills, thread_lifetime, thread_scope,
-        trigger, tools, subagents, model, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        trigger, tools, subagents, model_provider, model, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${AGENT_COLS}`,
     [
       input.name,
@@ -82,7 +83,8 @@ export async function createAgent(input: {
       input.trigger ?? null,
       input.tools ?? [],
       input.subagents ?? [],
-      input.model,
+      input.model_provider ?? null,
+      input.model ?? null,
       JSON.stringify(input.metadata ?? {}),
     ],
   );
@@ -98,6 +100,7 @@ const AGENT_UPDATE_COLUMNS = [
   "trigger",
   "tools",
   "subagents",
+  "model_provider",
   "model",
   "enabled",
   "metadata",
@@ -116,6 +119,7 @@ export async function updateAgent(
       | "trigger"
       | "tools"
       | "subagents"
+      | "model_provider"
       | "model"
       | "enabled"
       | "metadata"

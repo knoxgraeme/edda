@@ -25,6 +25,7 @@ import {
   type Item,
   type ThreadLifetime,
   type AgentTrigger,
+  type LlmProvider,
   type ChannelPlatform,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
@@ -178,6 +179,17 @@ const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
 const AGENT_NAME_MAX_LEN = 100;
 
 const VALID_THREAD_LIFETIMES = new Set<ThreadLifetime>(["ephemeral", "daily", "persistent"]);
+
+// Valid LLM providers — keep in sync with LlmProvider type in @edda/db
+const LLM_PROVIDERS = new Set<LlmProvider>([
+  "anthropic",
+  "openai",
+  "google",
+  "groq",
+  "ollama",
+  "mistral",
+  "bedrock",
+]);
 const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "on_demand"]);
 
 // Default agent cannot be deleted — checked dynamically via settings
@@ -226,6 +238,18 @@ function validateAgentUpdates(updates: Record<string, unknown>): void {
       throw new Error("Tools must be an array of strings");
     }
   }
+  // model_provider and model are independently nullable by design — setting one
+  // without the other is allowed (the server falls back to global defaults).
+  if (updates.model_provider !== undefined && updates.model_provider !== null) {
+    if (typeof updates.model_provider !== "string" || !LLM_PROVIDERS.has(updates.model_provider as LlmProvider)) {
+      throw new Error("Invalid model_provider");
+    }
+  }
+  if (updates.model !== undefined && updates.model !== null) {
+    if (typeof updates.model !== "string" || updates.model.length > 100) {
+      throw new Error("Model must be a string (max 100 chars)");
+    }
+  }
   if (updates.enabled != null && typeof updates.enabled !== "boolean") {
     throw new Error("enabled must be a boolean");
   }
@@ -240,7 +264,8 @@ export async function createAgentAction(data: {
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
-  model?: string;
+  model_provider?: string | null;
+  model?: string | null;
   metadata?: Record<string, unknown>;
 }) {
   validateAgentName(data.name);
@@ -259,9 +284,14 @@ export async function createAgentAction(data: {
   if (data.trigger && !VALID_TRIGGERS.has(data.trigger)) {
     throw new Error("Invalid trigger");
   }
+  if (data.model_provider != null && !LLM_PROVIDERS.has(data.model_provider as LlmProvider)) {
+    throw new Error("Invalid model_provider");
+  }
+  if (data.model != null && (typeof data.model !== "string" || data.model.length > 100)) {
+    throw new Error("Model must be a string (max 100 chars)");
+  }
 
   try {
-    const settings = await getSettings();
     const agent = await createAgent({
       name: data.name,
       description: data.description,
@@ -271,7 +301,8 @@ export async function createAgentAction(data: {
       trigger: data.trigger,
       tools: data.tools ?? [],
       subagents: data.subagents ?? [],
-      model: data.model || settings.default_model,
+      model_provider: data.model_provider || null,
+      model: data.model || null,
       metadata: data.metadata,
     });
     revalidatePath("/agents");
@@ -297,7 +328,8 @@ export async function updateAgentAction(
     trigger: AgentTrigger | null;
     tools: string[];
     subagents: string[];
-    model: string;
+    model_provider: LlmProvider | null;
+    model: string | null;
     enabled: boolean;
     metadata: Record<string, unknown>;
   }>,

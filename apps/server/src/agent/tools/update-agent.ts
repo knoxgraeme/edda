@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getAgentByName, updateAgent, modifyAgentTools } from "@edda/db";
+import { getAgentByName, updateAgent, modifyAgentTools, LLM_PROVIDERS } from "@edda/db";
 import { rebuildDefaultAgent } from "../../server/index.js";
 import { getLogger } from "../../logger.js";
 
@@ -18,11 +18,17 @@ export const updateAgentSchema = z.object({
     .enum(["ephemeral", "daily", "persistent"])
     .optional()
     .describe("ephemeral | daily | persistent"),
+  model_provider: z
+    .enum(LLM_PROVIDERS)
+    .nullable()
+    .optional()
+    .describe("LLM provider override (null to use default from settings)"),
   model: z
     .string()
     .max(100)
+    .nullable()
     .optional()
-    .describe("Model identifier to use for this agent (e.g., 'claude-haiku-4-5-20251001')"),
+    .describe("Model name override (null to use default from settings)"),
   metadata: z
     .record(z.unknown())
     .optional()
