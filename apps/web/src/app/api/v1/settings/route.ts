@@ -20,7 +20,7 @@ const UpdateSettingsSchema = z
     context_refresh_cron: z.string().max(50).optional(),
     default_agent: z.string().min(1).max(200).optional(),
   })
-  .strict();
+  .strip();
 
 export async function GET() {
   const settings = await getSettings();
