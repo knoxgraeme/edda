@@ -6,7 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
-import { invalidateMCPClient } from "../mcp.js";
+import { invalidateMCPClient } from "../../mcp/client.js";
 
 export const updateMcpConnectionSchema = z.object({
   id: z.string().describe("MCP connection ID"),

@@ -58,20 +58,24 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 
 - **`src/index.ts`** — Entry point; orchestrates startup
 - **`src/agent/build-agent.ts`** — Unified agent factory: `buildAgent(agent)` builds any agent from an `Agent` DB row with skill-based tool scoping, prompt building, and backend assembly
-- **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure), `/store/` (own namespace), cross-agent store mounts (`metadata.stores`), optional `/workspace/` (env-gated `metadata.filesystem`)
-- **`src/agent/skill-loader.ts`** — Loads `SKILL.md` content and `allowed-tools` metadata from disk by skill name (with caching)
+- **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure), `/store/` (own namespace), cross-agent store mounts (`metadata.stores`)
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
-- **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
-- **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
+- **`src/agent/agents-md-template.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data. `buildTemplateDiff()` computes line-level diffs between template versions.
+- **`src/mcp/client.ts`** — MCP client manager (multi-server, SSRF-safe fetch, OAuth support)
+- **`src/mcp/oauth-provider.ts`** — MCP OAuth provider (PKCE, token storage)
+- **`src/llm.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
+- **`src/embed.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
+- **`src/search.ts`** — Search tool factory
+- **`src/store.ts`** — LangGraph store backend factory
+- **`src/checkpointer.ts`** — State checkpointing backend (postgres, sqlite, or memory)
 - **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `reminders`, `self_improvement`, `type_evolution`, `weekly_reflect`
-- **`src/cron/local.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
+- **`src/cron.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
 - **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `deliver.ts` (routes messages to platform adapters), `types.ts` (shared channel types)
 - **`src/utils/notify.ts`** — Multi-target notification delivery; routes to inbox (DB row), announce (channel delivery via `deliverToChannel`), or agent (triggers agent run)
 - **`src/utils/reminder-recurrence.ts`** — Cron expression and interval string parsing, validation, and next-date computation (uses `cron-parser`)
 - **`src/utils/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
 - **`src/utils/with-timeout.ts`** — Promise timeout wrapper for agent executions
 - **`src/utils/sanitize-error.ts`** — Strips internal details from errors before returning to agents
-- **`src/checkpointer/index.ts`** — State checkpointing backend (postgres, sqlite, or memory)
 - **`src/evals/`** — Vitest-based evaluation suite
 
 ### Frontend (`apps/web`)
@@ -105,22 +109,19 @@ Single source of truth for data model and queries.
 - **`src/confirmations.ts`** — Pending confirmation queries (item_types, entities)
 - **`src/dashboard.ts`** — Dashboard aggregation queries
 - **`src/skills.ts`** — Skill metadata storage and retrieval
-- **`migrations/`** — Ordered SQL migration files (001–023); applied via `pnpm migrate`
+- **`migrations/`** — Ordered SQL migration files (001–024); applied via `pnpm migrate`
 - Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `lists`, `mcp_connections`, `mcp_oauth_states`, `agents_md_versions`, `agents`, `agent_schedules`, `agent_channels`, `task_runs`, `notifications`, `threads`, `telegram_paired_users`, `skills`
 
 ### Configuration Strategy
 
-LLM provider, model, embedding provider, and feature flags are stored in the **`settings` database table** (not hardcoded). The factory functions in `src/llm/` and `src/embed/` read from this table at runtime. Use `pnpm db:seed-settings` to populate defaults.
+LLM provider, model, embedding provider, and feature flags are stored in the **`settings` database table** (not hardcoded). The factory functions in `src/llm.ts` and `src/embed.ts` read from this table at runtime. Use `pnpm db:seed-settings` to populate defaults.
 
 Critical env vars (see `.env.example`):
 - `DATABASE_URL` — PostgreSQL connection string
 - `LLM_PROVIDER` / `LLM_MODEL` — defaults to `anthropic` / `claude-sonnet-4-20250514`
 - `EMBEDDING_PROVIDER` — defaults to `voyage`
-- `CRON_RUNNER` — `standalone` or `platform`
 - `CHECKPOINTER` — `postgres`, `sqlite`, or `memory`
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
-- `ALLOW_FILESYSTEM_ACCESS` — set to `true` to enable per-agent filesystem access (requires `FILESYSTEM_ROOT`)
-- `FILESYSTEM_ROOT` — absolute path root for agent filesystem mounts (e.g. `/data`)
 - `TELEGRAM_BOT_TOKEN` — optional; enables Telegram channel integration for agent message delivery
 - `MCP_ENCRYPTION_KEY` — optional; 32-byte hex key for AES-256-GCM encryption of MCP OAuth tokens
 
@@ -138,7 +139,6 @@ Edda uses a unified multi-agent architecture. All agents are built by `buildAgen
 - **Thread lifetimes**: `ephemeral` (new thread every run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
 - **`metadata.stores`** — Cross-agent store access. Keys are agent names (or `"*"` for wildcard), values are `"read"` or `"readwrite"`. Example: `{ "daily_digest": "read", "*": "read" }`.
-- **`metadata.filesystem`** — Env-gated filesystem access. Requires `ALLOW_FILESYSTEM_ACCESS=true` and `FILESYSTEM_ROOT`. Example: `{ "path": "exports", "mode": "read" }`. Path is relative to `FILESYSTEM_ROOT`.
 
 **Built-in system agents**:
 | Agent | Skills | Thread Lifetime | Schedules |
@@ -163,7 +163,7 @@ Built by `buildPrompt()` in `src/agent/build-agent.ts`.
 
 AGENTS.md is the agent's operating notes about how to serve a specific user — communication preferences, behavioral patterns, quality standards, and corrections. Stored in `agents_md_versions` DB table (not on disk), scoped per agent.
 
-- **`src/agent/generate-agents-md.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data (preferences, facts, patterns, entities). `buildTemplateDiff()` computes line-level diffs between template versions. The template is an input signal for what's new in the DB, not a document structure that AGENTS.md mirrors.
+- **`src/agent/agents-md-template.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data (preferences, facts, patterns, entities). `buildTemplateDiff()` computes line-level diffs between template versions. The template is an input signal for what's new in the DB, not a document structure that AGENTS.md mirrors.
 - **`src/agent/tools/get-context-diff.ts`** — Builds template fresh, diffs against stored version, returns diff or "no_changes". Used by `context_refresh` skill.
 - **`src/agent/tools/save-agents-md.ts`** — Writes curated AGENTS.md content to DB with current template hash. Used by `context_refresh` (scheduled) and `self_improvement` (real-time).
 - **Change detection**: SHA-256 hash of the deterministic template; `get_context_diff` compares current hash against stored hash

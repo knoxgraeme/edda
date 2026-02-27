@@ -28,16 +28,24 @@ import {
 } from "@edda/db";
 import type { Notification } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
-import { sanitizeError } from "../utils/sanitize-error.js";
-import { withTimeout } from "../utils/with-timeout.js";
-import { detectRecurrenceFormat, getNextCronDate } from "../utils/reminder-recurrence.js";
+import { sanitizeError } from "./utils/sanitize-error.js";
+import { withTimeout } from "./utils/with-timeout.js";
+import { detectRecurrenceFormat, getNextCronDate } from "./utils/reminder-recurrence.js";
 
-import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
-import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
-import { runWithConcurrencyLimit } from "../utils/semaphore.js";
-import { notify, deliverRunResults } from "../utils/notify.js";
-import { getLogger, withTraceId } from "../logger.js";
-import type { CronRunner } from "./index.js";
+import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
+import { resolveRetrievalContext, extractLastAssistantMessage } from "./agent/tool-helpers.js";
+import { runWithConcurrencyLimit } from "./utils/semaphore.js";
+import { notify, deliverRunResults } from "./utils/notify.js";
+import { getLogger, withTraceId } from "./logger.js";
+
+export interface CronRunner {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+export async function createCronRunner(): Promise<CronRunner> {
+  return new LocalCronRunner();
+}
 
 // ---------------------------------------------------------------------------
 // Constants

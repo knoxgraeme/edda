@@ -34,8 +34,8 @@ export const createAgentSchema = z.object({
     .record(z.unknown())
     .optional()
     .refine(
-      (m) => !m || !Object.keys(m).some((k) => ["stores", "filesystem", "hooks"].includes(k)),
-      "Cannot set privileged metadata keys (stores, filesystem, hooks) via tool",
+      (m) => !m || !Object.keys(m).some((k) => ["stores", "hooks"].includes(k)),
+      "Cannot set privileged metadata keys (stores, hooks) via tool",
     )
     .describe("Arbitrary metadata for the agent (e.g. retrieval_context)"),
 });

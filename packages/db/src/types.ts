@@ -20,7 +20,7 @@ export type LlmProvider =
 export type EmbeddingProvider = "voyage" | "openai" | "google";
 export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckduckgo";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
-export type CronRunner = "local" | "platform";
+export type CronRunner = "local" | "langgraph";
 export type ApprovalMode = "auto" | "confirm";
 
 export interface Settings {

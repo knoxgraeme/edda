@@ -1,5 +1,5 @@
 /**
- * Tests for generate-agents-md.ts — buildTemplateDiff and buildDeterministicTemplate.
+ * Tests for agents-md-template.ts — buildTemplateDiff and buildDeterministicTemplate.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -35,7 +35,7 @@ vi.mock("@edda/db", () => ({
 import {
   buildTemplateDiff,
   buildDeterministicTemplate,
-} from "../agent/generate-agents-md.js";
+} from "../agent/agents-md-template.js";
 
 // ── Tests ──────────────────────────────────────────────────────
 

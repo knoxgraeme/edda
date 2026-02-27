@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { deleteMcpConnection } from "@edda/db";
-import { invalidateMCPClient } from "../mcp.js";
+import { invalidateMCPClient } from "../../mcp/client.js";
 
 export const removeMcpConnectionSchema = z.object({
   id: z.string().describe("MCP connection ID to remove"),

@@ -5,8 +5,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById, type List } from "@edda/db";
-import { embed, buildEmbeddingText } from "../../embed/index.js";
-import type { EmbeddingContext } from "../../embed/index.js";
+import { embed, buildEmbeddingText } from "../../embed.js";
+import type { EmbeddingContext } from "../../embed.js";
 import { getAgentName } from "../tool-helpers.js";
 
 export const createItemSchema = z.object({

@@ -71,6 +71,11 @@ import { listMyRunsTool } from "./list-my-runs.js";
 
 // Notification tools
 import { sendNotificationTool } from "./send-notification.js";
+import { getNotificationsTool } from "./get-notifications.js";
+
+// Channel tools
+import { listChannelsTool } from "./list-channels.js";
+import { manageChannelTool } from "./manage-channel.js";
 
 // Reminder tools
 import { createReminderTool } from "./create-reminder.js";
@@ -161,6 +166,11 @@ export const allTools = [
 
   // Notification tools
   sendNotificationTool,
+  getNotificationsTool,
+
+  // Channel tools
+  listChannelsTool,
+  manageChannelTool,
 
   // Reminder tools
   createReminderTool,

@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createList, getListByName, getSettingsSync } from "@edda/db";
-import { embed, buildEmbeddingText } from "../../embed/index.js";
+import { embed, buildEmbeddingText } from "../../embed.js";
 
 export const createListSchema = z.object({
   name: z.string().min(1).max(200).describe("The list name (e.g. 'Grocery List', 'Movies to Watch')"),

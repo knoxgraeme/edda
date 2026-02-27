@@ -110,7 +110,7 @@ describe("get_context_diff tool", () => {
 
   it("returns no_changes when hash matches", async () => {
     // Build a template to get its hash
-    const { buildDeterministicTemplate } = await import("../../agent/generate-agents-md.js");
+    const { buildDeterministicTemplate } = await import("../../agent/agents-md-template.js");
     const { hash, template } = await buildDeterministicTemplate();
 
     mockGetLatestAgentsMd.mockResolvedValue({

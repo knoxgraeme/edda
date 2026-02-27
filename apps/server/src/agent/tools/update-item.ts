@@ -5,8 +5,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { updateItem, getItemById, getSettingsSync, getListById } from "@edda/db";
-import { embed, buildEmbeddingText } from "../../embed/index.js";
-import type { EmbeddingContext } from "../../embed/index.js";
+import { embed, buildEmbeddingText } from "../../embed.js";
+import type { EmbeddingContext } from "../../embed.js";
 
 export const updateItemSchema = z.object({
   item_id: z.string().uuid().describe("The ID of the item to update"),

@@ -13,7 +13,7 @@ import {
   saveAgentsMdVersion,
   pruneAgentsMdVersions,
 } from "@edda/db";
-import { buildDeterministicTemplate } from "../generate-agents-md.js";
+import { buildDeterministicTemplate } from "../agents-md-template.js";
 import { getAgentName } from "../tool-helpers.js";
 import { rebuildDefaultAgent } from "../../server/index.js";
 import { getLogger } from "../../logger.js";

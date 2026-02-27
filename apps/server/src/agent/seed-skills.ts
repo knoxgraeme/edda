@@ -10,7 +10,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { upsertSkill } from "@edda/db";
-import { getStore } from "../store/index.js";
+import { getStore } from "../store.js";
 import { getLogger } from "../logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

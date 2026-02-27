@@ -11,7 +11,7 @@ import type { DynamicStructuredTool } from "@langchain/core/tools";
 import { getMcpConnections, updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
 import { withTimeout } from "../utils/with-timeout.js";
-import { MCPOAuthProvider } from "./mcp-oauth-provider.js";
+import { MCPOAuthProvider } from "./oauth-provider.js";
 import { getLogger } from "../logger.js";
 
 let _client: MultiServerMCPClient | null = null;

@@ -47,6 +47,25 @@ export async function getListByName(name: string): Promise<List | null> {
   return (rows[0] as List) ?? null;
 }
 
+/**
+ * Resolve a list by name with fuzzy fallback.
+ * Step 1: exact normalized_name match. Step 2: ILIKE substring match.
+ */
+export async function resolveList(name: string): Promise<List | null> {
+  const exact = await getListByName(name);
+  if (exact) return exact;
+
+  const escaped = name.replace(/[%_]/g, "\\$&");
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT ${LIST_COLS} FROM lists
+     WHERE (name ILIKE $1 OR normalized_name ILIKE $1) AND status = 'active'
+     ORDER BY updated_at DESC LIMIT 1`,
+    [`%${escaped}%`],
+  );
+  return (rows[0] as List) ?? null;
+}
+
 export async function getAllLists(
   options: { status?: string } = {},
 ): Promise<ListWithCount[]> {

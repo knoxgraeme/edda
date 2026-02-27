@@ -9,7 +9,7 @@ import { refreshSettings, getLatestAgentsMd, getAgentByName } from "@edda/db";
 import { seedSkills } from "./agent/seed-skills.js";
 import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
 import { resolveRetrievalContext } from "./agent/tool-helpers.js";
-import { createCronRunner } from "./cron/index.js";
+import { createCronRunner } from "./cron.js";
 import { setAgent, startHealthServer } from "./server/index.js";
 import { initTelegram, registerWebhook } from "./channels/telegram.js";
 import { logger } from "./logger.js";

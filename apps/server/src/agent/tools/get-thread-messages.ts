@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 // Checkpointer is a server-side concern (LangGraph state), not a DB query — direct import is intentional.
-import { getSharedCheckpointer } from "../../checkpointer/index.js";
+import { getSharedCheckpointer } from "../../checkpointer.js";
 
 interface RawCheckpointMessage {
   _getType?: () => string;
