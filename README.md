@@ -134,7 +134,7 @@ edda/
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-org/edda.git
+git clone https://github.com/knoxgraeme/edda.git
 cd edda
 pnpm install
 ```
