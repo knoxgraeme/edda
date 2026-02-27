@@ -32,7 +32,7 @@ import { sanitizeError } from "../utils/sanitize-error.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import { detectRecurrenceFormat, getNextCronDate } from "../utils/reminder-recurrence.js";
 
-import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
+import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
 import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import { notify, deliverRunResults } from "../utils/notify.js";
@@ -256,12 +256,7 @@ export class LocalCronRunner implements CronRunner {
     }
 
     const settings = await refreshSettings();
-    const modelName =
-      freshDef.model_settings_key && MODEL_SETTINGS_KEYS.has(freshDef.model_settings_key)
-        ? ((settings as unknown as Record<string, unknown>)[
-            freshDef.model_settings_key
-          ] as string)
-        : undefined;
+    const modelName = freshDef.model || settings.default_model;
 
     const contextAgent = freshSchedule.thread_lifetime
       ? { ...freshDef, thread_lifetime: freshSchedule.thread_lifetime }

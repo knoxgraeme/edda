@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { createAgentAction } from "../../actions";
-import { AGENT_NAME_RE, AVAILABLE_SKILLS, MODEL_KEYS } from "../constants";
+import { AGENT_NAME_RE, AVAILABLE_SKILLS } from "../constants";
 
 export function NewAgentClient({ availableAgents }: { availableAgents: string[] }) {
   const [isPending, startTransition] = useTransition();
@@ -26,7 +26,7 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
   // Configuration
   const [threadLifetime, setThreadLifetime] = useState<ThreadLifetime>("ephemeral");
   const [trigger, setTrigger] = useState("on_demand");
-  const [modelKey, setModelKey] = useState("");
+  const [model, setModel] = useState("");
 
   // Skills (toggle)
   const [skills, setSkills] = useState<Set<string>>(new Set());
@@ -72,7 +72,7 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
             .map((t) => t.trim())
             .filter(Boolean),
           subagents: Array.from(subagents),
-          model_settings_key: modelKey || null,
+          model: model || undefined,
         });
       } catch (err) {
         if (err && typeof err === "object" && "digest" in err) throw err;
@@ -170,20 +170,15 @@ export function NewAgentClient({ availableAgents }: { availableAgents: string[] 
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="model_key">Model Override</Label>
-              <Select
-                id="model_key"
-                value={modelKey}
-                onChange={(e) => setModelKey(e.target.value)}
-              >
-                {MODEL_KEYS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </Select>
+              <Label htmlFor="model">Model Override</Label>
+              <Input
+                id="model"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Leave empty for default (from settings)"
+              />
               <p className="text-xs text-muted-foreground">
-                Use a different model from settings for this agent
+                Model identifier (e.g. claude-haiku-4-5-20251001). Empty uses default_model from settings.
               </p>
             </div>
           </CardContent>

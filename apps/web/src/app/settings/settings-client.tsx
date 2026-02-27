@@ -8,10 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
 import { saveSettingsAction, logoutAction } from "../actions";
 
 type SettingsForm = Omit<Settings, "id" | "created_at" | "updated_at">;
@@ -320,31 +318,12 @@ export function SettingsClient({
         >
           <div className="overflow-hidden">
             <div className="grid gap-6">
-              {/* Crons */}
+              {/* Cron Runner */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Scheduled Tasks</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4">
-                  <FieldGroup
-                    label="Memory catchup schedule"
-                    htmlFor="memory_catchup_cron"
-                    description="Cron expression (e.g. '0 2 * * *' for 2am daily)"
-                  >
-                    <Input
-                      id="memory_catchup_cron"
-                      value={form.memory_catchup_cron}
-                      onChange={(e) => update("memory_catchup_cron", e.target.value)}
-                    />
-                  </FieldGroup>
-                  <FieldGroup label="Memory catchup model" htmlFor="memory_catchup_model">
-                    <Input
-                      id="memory_catchup_model"
-                      value={form.memory_catchup_model}
-                      onChange={(e) => update("memory_catchup_model", e.target.value)}
-                    />
-                  </FieldGroup>
-                  <Separator />
                   <FieldGroup label="Cron runner" htmlFor="cron_runner">
                     <Select
                       id="cron_runner"
@@ -353,7 +332,7 @@ export function SettingsClient({
                         update("cron_runner", e.target.value as Settings["cron_runner"])
                       }
                     >
-                      <option value="standalone">Standalone (node-cron)</option>
+                      <option value="local">Local (node-cron)</option>
                       <option value="platform">LangGraph Platform</option>
                     </Select>
                   </FieldGroup>
@@ -423,83 +402,6 @@ export function SettingsClient({
                 </CardContent>
               </Card>
 
-              {/* Thresholds */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Deduplication Thresholds</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <FieldGroup
-                    label="Memory reinforce"
-                    htmlFor="memory_reinforce_threshold"
-                    description="Cosine similarity above this reinforces (default 0.95)"
-                  >
-                    <Input
-                      id="memory_reinforce_threshold"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      value={form.memory_reinforce_threshold}
-                      onChange={(e) =>
-                        update("memory_reinforce_threshold", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                  <FieldGroup
-                    label="Memory update"
-                    htmlFor="memory_update_threshold"
-                    description="Similarity above this updates existing (default 0.85)"
-                  >
-                    <Input
-                      id="memory_update_threshold"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      value={form.memory_update_threshold}
-                      onChange={(e) =>
-                        update("memory_update_threshold", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                  <FieldGroup
-                    label="Entity exact match"
-                    htmlFor="entity_exact_threshold"
-                    description="Similarity for exact entity merge (default 0.95)"
-                  >
-                    <Input
-                      id="entity_exact_threshold"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      value={form.entity_exact_threshold}
-                      onChange={(e) =>
-                        update("entity_exact_threshold", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                  <FieldGroup
-                    label="Entity fuzzy match"
-                    htmlFor="entity_fuzzy_threshold"
-                    description="Similarity for fuzzy entity merge (default 0.80)"
-                  >
-                    <Input
-                      id="entity_fuzzy_threshold"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="1"
-                      value={form.entity_fuzzy_threshold}
-                      onChange={(e) =>
-                        update("entity_fuzzy_threshold", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                </CardContent>
-              </Card>
-
               {/* Budgets & Limits */}
               <Card>
                 <CardHeader>
@@ -541,37 +443,6 @@ export function SettingsClient({
                       value={form.agents_md_max_entities}
                       onChange={(e) =>
                         update("agents_md_max_entities", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                  <Separator className="sm:col-span-2" />
-                  <FieldGroup label="Global tool call limit" htmlFor="tool_call_limit_global">
-                    <Input
-                      id="tool_call_limit_global"
-                      type="number"
-                      value={form.tool_call_limit_global}
-                      onChange={(e) =>
-                        update("tool_call_limit_global", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                  <FieldGroup label="Delete tool limit" htmlFor="tool_call_limit_delete">
-                    <Input
-                      id="tool_call_limit_delete"
-                      type="number"
-                      value={form.tool_call_limit_delete}
-                      onChange={(e) =>
-                        update("tool_call_limit_delete", Number(e.target.value))
-                      }
-                    />
-                  </FieldGroup>
-                  <FieldGroup label="Archive tool limit" htmlFor="tool_call_limit_archive">
-                    <Input
-                      id="tool_call_limit_archive"
-                      type="number"
-                      value={form.tool_call_limit_archive}
-                      onChange={(e) =>
-                        update("tool_call_limit_archive", Number(e.target.value))
                       }
                     />
                   </FieldGroup>

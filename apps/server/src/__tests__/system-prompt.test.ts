@@ -44,7 +44,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     trigger: "on_demand",
     tools: [],
     subagents: [],
-    model_settings_key: null,
+    model: "claude-sonnet-4-20250514",
     enabled: true,
     metadata: {},
     created_at: "2026-01-01T00:00:00Z",

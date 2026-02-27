@@ -54,7 +54,6 @@ vi.mock("../agent/build-agent.js", () => ({
     }),
   }),
   resolveThreadId: vi.fn().mockReturnValue("thread-1"),
-  MODEL_SETTINGS_KEYS: new Set(),
 }));
 
 vi.mock("../agent/tool-helpers.js", () => ({

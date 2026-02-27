@@ -14,7 +14,7 @@ primary_region = "iad"
   PORT = "8000"
   LLM_PROVIDER = "anthropic"
   EMBEDDING_PROVIDER = "voyage"
-  CRON_RUNNER = "standalone"
+  CRON_RUNNER = "local"
   CHECKPOINTER_BACKEND = "postgres"
 
 [http_service]

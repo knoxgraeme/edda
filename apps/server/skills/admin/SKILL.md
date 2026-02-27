@@ -126,5 +126,5 @@ Bad: "Be careful with emails." (not actionable)
 "change my timezone", "set approval mode to auto"
 - update_settings: Modify agent-safe settings.
 - Only user-facing keys can be modified: user_display_name, user_timezone,
-  daily_digest_time, web_search settings, approval modes, AGENTS.md budgets.
+  web_search settings, approval modes, AGENTS.md budgets.
 - Infrastructure keys (LLM provider, model, etc.) cannot be modified by agents.

@@ -17,7 +17,6 @@ const UpdateSettingsSchema = z
     default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),
     embedding_model: z.string().max(100).optional(),
-    context_refresh_cron: z.string().max(50).optional(),
     default_agent: z.string().min(1).max(200).optional(),
   })
   .strip();

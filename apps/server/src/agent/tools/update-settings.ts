@@ -20,13 +20,8 @@ export const updateSettingsSchema = z.object({
         .describe("Default conversational agent name"),
       user_display_name: z.string().optional(),
       user_timezone: z.string().optional(),
-      daily_digest_time: z
-        .string()
-        .regex(/^\d{2}:\d{2}$/, "HH:MM format")
-        .optional(),
       web_search_enabled: z.boolean().optional(),
       web_search_max_results: z.number().int().min(1).max(20).optional(),
-      type_evolution_enabled: z.boolean().optional(),
       approval_new_type: z.enum(["auto", "confirm"]).optional(),
       approval_archive_stale: z.enum(["auto", "confirm"]).optional(),
       approval_merge_entity: z.enum(["auto", "confirm"]).optional(),

@@ -19,12 +19,3 @@ export function isValidCron(expr: string): boolean {
   return fields.length === 5 && fields.every((f) => CRON_FIELD.test(f));
 }
 
-export const MODEL_KEYS = [
-  { value: "", label: "Default" },
-  { value: "default_model", label: "default_model" },
-  { value: "daily_digest_model", label: "daily_digest_model" },
-  { value: "memory_catchup_model", label: "memory_catchup_model" },
-  { value: "weekly_review_model", label: "weekly_review_model" },
-  { value: "type_evolution_model", label: "type_evolution_model" },
-  { value: "context_refresh_model", label: "context_refresh_model" },
-];

@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createAgent, getAgents, saveAgentsMdVersion } from "@edda/db";
+import { createAgent, getAgents, getSettings, saveAgentsMdVersion } from "@edda/db";
 
 export const createAgentSchema = z.object({
   name: z
@@ -49,7 +49,7 @@ export const createAgentTool = tool(
     thread_lifetime,
     metadata,
   }) => {
-    const existing = await getAgents();
+    const [existing, settings] = await Promise.all([getAgents(), getSettings()]);
     if (existing.length >= 30) {
       throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
     }
@@ -67,6 +67,7 @@ export const createAgentTool = tool(
       skills: resolvedSkills,
       thread_lifetime,
       trigger,
+      model: settings.default_model,
       metadata,
     });
 

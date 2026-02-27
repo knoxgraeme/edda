@@ -195,17 +195,9 @@ async function resolveSubagents(
   const [, ...specs] = await Promise.all([
     Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
     ...enabled.map(async (row) => {
-      // Resolve per-subagent model (if configured)
-      const modelName =
-        row.model_settings_key && MODEL_SETTINGS_KEYS.has(row.model_settings_key)
-          ? ((settings as unknown as Record<string, unknown>)[row.model_settings_key] as
-              | string
-              | undefined)
-          : undefined;
-
       const [systemPrompt, model] = await Promise.all([
         buildPrompt(row, settings, prefetched),
-        modelName ? getChatModel(modelName) : Promise.resolve(undefined),
+        getChatModel(row.model || settings.default_model),
       ]);
 
       return {
@@ -214,7 +206,7 @@ async function resolveSubagents(
         systemPrompt,
         tools: scopeTools(row, available, getRowSkills(row)),
         skills: row.skills.length > 0 ? ["/skills/"] : [],
-        ...(model ? { model } : {}),
+        model,
       } satisfies SubagentSpec;
     }),
   ]);
@@ -440,19 +432,6 @@ export function resolveThreadId(
 }
 
 // ---------------------------------------------------------------------------
-// Model settings key allowlist
-// ---------------------------------------------------------------------------
-
-export const MODEL_SETTINGS_KEYS = new Set([
-  "default_model",
-  "daily_digest_model",
-  "memory_catchup_model",
-  "weekly_review_model",
-  "type_evolution_model",
-  "context_refresh_model",
-]);
-
-// ---------------------------------------------------------------------------
 // buildAgent — unified entry point
 // ---------------------------------------------------------------------------
 
@@ -460,13 +439,8 @@ export const MODEL_SETTINGS_KEYS = new Set([
 export async function buildAgent(agent: Agent): Promise<any> {
   const settings = await getSettings();
 
-  // 1. Model — per-agent override via model_settings_key
-  const modelName =
-    agent.model_settings_key && MODEL_SETTINGS_KEYS.has(agent.model_settings_key)
-      ? ((settings as unknown as Record<string, unknown>)[agent.model_settings_key] as
-          | string
-          | undefined)
-      : undefined;
+  // 1. Model — direct from agent row (with fallback to default_model)
+  const modelName = agent.model || settings.default_model;
 
   // 2. Gather ALL available tools + prompt data + skills in one parallel batch
   const [

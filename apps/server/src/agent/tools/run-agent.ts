@@ -12,7 +12,7 @@ import {
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
-import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../build-agent.js";
+import { buildAgent, resolveThreadId } from "../build-agent.js";
 import { resolveRetrievalContext, extractLastAssistantMessage } from "../tool-helpers.js";
 import { runWithConcurrencyLimit } from "../../utils/semaphore.js";
 import { sanitizeError } from "../../utils/sanitize-error.js";
@@ -40,10 +40,7 @@ export const runAgentTool = tool(
     // Force ephemeral thread
     const threadId = resolveThreadId({ ...definition, thread_lifetime: "ephemeral" });
     const settings = await refreshSettings();
-    const modelName =
-      definition.model_settings_key && MODEL_SETTINGS_KEYS.has(definition.model_settings_key)
-        ? ((settings as unknown as Record<string, unknown>)[definition.model_settings_key] as string)
-        : undefined;
+    const modelName = definition.model || settings.default_model;
 
     const run = await createTaskRun({
       agent_id: definition.id,

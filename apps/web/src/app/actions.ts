@@ -44,7 +44,6 @@ const UpdateSettingsSchema = z
     default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(["voyage", "openai", "google"]).optional(),
     embedding_model: z.string().max(100).optional(),
-    context_refresh_cron: z.string().max(50).optional(),
     default_agent: z.string().min(1).max(200).optional(),
   })
   .strip();
@@ -241,7 +240,7 @@ export async function createAgentAction(data: {
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
-  model_settings_key?: string | null;
+  model?: string;
   metadata?: Record<string, unknown>;
 }) {
   validateAgentName(data.name);
@@ -262,6 +261,7 @@ export async function createAgentAction(data: {
   }
 
   try {
+    const settings = await getSettings();
     const agent = await createAgent({
       name: data.name,
       description: data.description,
@@ -271,7 +271,7 @@ export async function createAgentAction(data: {
       trigger: data.trigger,
       tools: data.tools ?? [],
       subagents: data.subagents ?? [],
-      model_settings_key: data.model_settings_key ?? undefined,
+      model: data.model || settings.default_model,
       metadata: data.metadata,
     });
     revalidatePath("/agents");
@@ -297,7 +297,7 @@ export async function updateAgentAction(
     trigger: AgentTrigger | null;
     tools: string[];
     subagents: string[];
-    model_settings_key: string | null;
+    model: string;
     enabled: boolean;
     metadata: Record<string, unknown>;
   }>,

@@ -8,7 +8,7 @@ import { getPool } from "./connection.js";
 import type { Agent, ThreadLifetime, ThreadScope, AgentTrigger } from "./types.js";
 
 const AGENT_COLS = `id, name, description, system_prompt, skills,
-  thread_lifetime, thread_scope, trigger, tools, subagents, model_settings_key,
+  thread_lifetime, thread_scope, trigger, tools, subagents, model,
   enabled, metadata, created_at, updated_at`;
 
 export async function getAgents(opts?: { enabled?: boolean }): Promise<Agent[]> {
@@ -62,14 +62,14 @@ export async function createAgent(input: {
   trigger?: AgentTrigger;
   tools?: string[];
   subagents?: string[];
-  model_settings_key?: string;
+  model: string;
   metadata?: Record<string, unknown>;
 }): Promise<Agent> {
   const pool = getPool();
   const { rows } = await pool.query(
     `INSERT INTO agents
        (name, description, system_prompt, skills, thread_lifetime, thread_scope,
-        trigger, tools, subagents, model_settings_key, metadata)
+        trigger, tools, subagents, model, metadata)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING ${AGENT_COLS}`,
     [
@@ -82,7 +82,7 @@ export async function createAgent(input: {
       input.trigger ?? null,
       input.tools ?? [],
       input.subagents ?? [],
-      input.model_settings_key ?? null,
+      input.model,
       JSON.stringify(input.metadata ?? {}),
     ],
   );
@@ -98,7 +98,7 @@ const AGENT_UPDATE_COLUMNS = [
   "trigger",
   "tools",
   "subagents",
-  "model_settings_key",
+  "model",
   "enabled",
   "metadata",
 ] as const;
@@ -116,7 +116,7 @@ export async function updateAgent(
       | "trigger"
       | "tools"
       | "subagents"
-      | "model_settings_key"
+      | "model"
       | "enabled"
       | "metadata"
     >

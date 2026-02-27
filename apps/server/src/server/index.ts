@@ -28,7 +28,7 @@ import { invalidateMCPClient, ssrfSafeFetch } from "../agent/mcp.js";
 import { MCPOAuthProvider } from "../agent/mcp-oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
-import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
+import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
 import { deliverRunResults } from "../utils/notify.js";
 import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
 import { sanitizeError } from "../utils/sanitize-error.js";
@@ -653,10 +653,7 @@ async function handleAgentRun(agentName: string, req: IncomingMessage, res: Serv
   }
 
   const settings = await refreshSettings();
-  const modelName =
-    agentDef.model_settings_key && MODEL_SETTINGS_KEYS.has(agentDef.model_settings_key)
-      ? ((settings as unknown as Record<string, unknown>)[agentDef.model_settings_key] as string)
-      : undefined;
+  const modelName = agentDef.model || settings.default_model;
 
   // Force ephemeral thread — manual runs always get a fresh thread
   const threadId = resolveThreadId({ ...agentDef, thread_lifetime: "ephemeral" });
