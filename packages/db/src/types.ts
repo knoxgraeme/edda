@@ -447,7 +447,7 @@ export interface AgentSchedule {
 export type NotificationSourceType = "schedule" | "agent" | "system";
 export type NotificationTargetType = "inbox" | "agent";
 export type NotificationPriority = "low" | "normal" | "high";
-export type NotificationStatus = "unread" | "read" | "dismissed";
+export type NotificationStatus = "unread" | "read" | "dismissed" | "scheduled" | "sending" | "sent";
 
 // ──────────────────────────────────────────────
 // Agent Channels
@@ -479,5 +479,8 @@ export interface Notification {
   priority: NotificationPriority;
   status: NotificationStatus;
   expires_at: string;
+  scheduled_at: string | null;
+  recurrence: string | null;
+  targets: string[];
   created_at: string;
 }
