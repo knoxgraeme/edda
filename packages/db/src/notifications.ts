@@ -19,12 +19,17 @@ export async function createNotification(input: {
   summary: string;
   detail?: Record<string, unknown>;
   priority?: NotificationPriority;
-  expires_after?: string;
+  expires_after?: string | null;
 }): Promise<Notification> {
   const pool = getPool();
+  // expires_after: undefined = default 72h, null = no expiry, string = specific interval
+  const expiresExpr =
+    input.expires_after === null
+      ? "NULL"
+      : "now() + COALESCE($8::interval, interval '72 hours')";
   const { rows } = await pool.query(
     `INSERT INTO notifications (source_type, source_id, target_type, target_id, summary, detail, priority, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, now() + COALESCE($8::interval, interval '72 hours'))
+     VALUES ($1, $2, $3, $4, $5, $6, $7, ${expiresExpr})
      RETURNING ${NOTIFICATION_COLS}`,
     [
       input.source_type,
@@ -34,7 +39,7 @@ export async function createNotification(input: {
       input.summary,
       JSON.stringify(input.detail ?? {}),
       input.priority ?? "normal",
-      input.expires_after ?? null,
+      ...(input.expires_after === null ? [] : [input.expires_after ?? null]),
     ],
   );
   return rows[0] as Notification;
