@@ -1,5 +1,5 @@
 [build]
-buildCommand = "pnpm build"
+buildCommand = "pnpm --filter @edda/db build && pnpm --filter @edda/web build"
 
 [deploy]
 startCommand = "pnpm --filter @edda/web start"
