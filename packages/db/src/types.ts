@@ -22,6 +22,7 @@ export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckdu
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
 export type CronRunner = "local" | "langgraph";
 export type ApprovalMode = "auto" | "confirm";
+export type SandboxProvider = "none" | "node-vfs";
 
 export interface Settings {
   id: true;
@@ -71,6 +72,9 @@ export interface Settings {
 
   // Default agent
   default_agent: string;
+
+  // Sandbox
+  sandbox_provider: SandboxProvider;
 
   // Meta
   created_at: string;

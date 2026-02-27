@@ -41,6 +41,9 @@ importers:
       '@langchain/mcp-adapters':
         specifier: ^1.1.3
         version: 1.1.3(@cfworker/json-schema@4.1.1)(@langchain/core@1.1.27(openai@6.22.0(ws@8.19.0)(zod@3.25.76)))(@langchain/langgraph@1.1.5(@langchain/core@1.1.27(openai@6.22.0(ws@8.19.0)(zod@3.25.76)))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod-to-json-schema@3.25.1(zod@3.25.76))(zod@3.25.76))
+      '@langchain/node-vfs':
+        specifier: ^0.1.2
+        version: 0.1.2(deepagents@1.8.0(openai@6.22.0(ws@8.19.0)(zod@3.25.76))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod-to-json-schema@3.25.1(zod@3.25.76)))
       '@langchain/openai':
         specifier: ^1.2.9
         version: 1.2.9(@langchain/core@1.1.27(openai@6.22.0(ws@8.19.0)(zod@3.25.76)))(ws@8.19.0)
@@ -1568,6 +1571,11 @@ packages:
     peerDependencies:
       '@langchain/core': ^1.0.0
       '@langchain/langgraph': ^1.0.0
+
+  '@langchain/node-vfs@0.1.2':
+    resolution: {integrity: sha512-BZ0bFRjT7op+Z4ipQxU99H6uB2116DncFa9B65EpSS6lR+e6lfOqg29GKdgoYykiHQaCvIrFeQH4j+enlUDmgQ==}
+    peerDependencies:
+      deepagents: '>=1.6.0'
 
   '@langchain/openai@1.2.9':
     resolution: {integrity: sha512-hExRiUoKOg1vfkwBAI5J2C4tqNx5LLZ0CUelG8Ej6K8bS2LfFN9bL4ZNQYqNIwAJNSqpDaV9tknxP2fssZjp+Q==}
@@ -4332,6 +4340,11 @@ packages:
   node-releases@2.0.27:
     resolution: {integrity: sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==}
 
+  node-vfs-polyfill@https://codeload.github.com/vercel-labs/node-vfs-polyfill/tar.gz/1227fb028a26eb0d65e565c11b0a28e7b49b990f:
+    resolution: {tarball: https://codeload.github.com/vercel-labs/node-vfs-polyfill/tar.gz/1227fb028a26eb0d65e565c11b0a28e7b49b990f}
+    version: 1.0.0
+    engines: {node: '>=22.0.0'}
+
   npm-run-path@6.0.0:
     resolution: {integrity: sha512-9qny7Z9DsQU8Ou39ERsPU4OZQlSTP47ShQzuKZ6PRXpYLtIFgl/DEBYEXKlvcEa+9tHVcK8CF81Y2V72qaZhWA==}
     engines: {node: '>=18'}
@@ -6452,6 +6465,11 @@ snapshots:
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - supports-color
+
+  '@langchain/node-vfs@0.1.2(deepagents@1.8.0(openai@6.22.0(ws@8.19.0)(zod@3.25.76))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod-to-json-schema@3.25.1(zod@3.25.76)))':
+    dependencies:
+      deepagents: 1.8.0(openai@6.22.0(ws@8.19.0)(zod@3.25.76))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod-to-json-schema@3.25.1(zod@3.25.76))
+      node-vfs-polyfill: https://codeload.github.com/vercel-labs/node-vfs-polyfill/tar.gz/1227fb028a26eb0d65e565c11b0a28e7b49b990f
 
   '@langchain/openai@1.2.9(@langchain/core@1.1.27(openai@6.22.0(ws@8.19.0)(zod@3.25.76)))(ws@8.19.0)':
     dependencies:
@@ -9569,6 +9587,8 @@ snapshots:
       whatwg-url: 5.0.0
 
   node-releases@2.0.27: {}
+
+  node-vfs-polyfill@https://codeload.github.com/vercel-labs/node-vfs-polyfill/tar.gz/1227fb028a26eb0d65e565c11b0a28e7b49b990f: {}
 
   npm-run-path@6.0.0:
     dependencies:

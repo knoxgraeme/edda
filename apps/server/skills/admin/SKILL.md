@@ -145,8 +145,19 @@ Bad: "Be careful with emails." (not actionable)
 - get_settings: View current agent-safe configuration (user-facing keys only).
 
 ### Update Settings
-"change my timezone", "set approval mode to auto"
+"change my timezone", "set approval mode to auto", "enable sandbox execution"
 - update_settings: Modify agent-safe settings.
 - Only user-facing keys can be modified: user_display_name, user_timezone,
-  web_search settings, approval modes, AGENTS.md budgets.
+  web_search settings, approval modes, AGENTS.md budgets, sandbox_provider.
 - Infrastructure keys (LLM provider, model, etc.) cannot be modified by agents.
+
+## Sandbox Execution
+
+Agents with the `coding` skill gain shell execution via the `execute` tool.
+Requires `sandbox_provider` to be set to `node-vfs` in settings.
+
+- The sandbox is a guardrail (env stripping, command denylist), not a hard security boundary.
+- `node-vfs` runs commands in an in-memory VFS — suitable for dev/tinkering.
+- The coding skill declares an allowlist of permitted commands (node, npm, git, etc.).
+- Shell injection patterns ($, backticks, ;, &&, ||, |) are blocked.
+- To enable: `update_settings({ sandbox_provider: "node-vfs" })`

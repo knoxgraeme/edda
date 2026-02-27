@@ -11,7 +11,7 @@
  */
 
 import { StateBackend, StoreBackend, CompositeBackend } from "deepagents";
-import type { BackendProtocol, WriteResult, EditResult } from "deepagents";
+import type { BackendProtocol, WriteResult, EditResult, SandboxBackendProtocol } from "deepagents";
 import type { BaseStore } from "@langchain/langgraph";
 import { z } from "zod";
 import type { Agent } from "@edda/db";
@@ -87,6 +87,7 @@ const StoreConfigSchema = z
 export async function buildBackend(
   agent: Agent,
   store: BaseStore,
+  options?: { sandbox?: SandboxBackendProtocol },
 ): Promise<(rt: { state: unknown; store?: BaseStore }) => CompositeBackend> {
   // Pre-resolve cross-agent store names (needed for wildcard)
   const storeParseResult = StoreConfigSchema.safeParse(agent.metadata?.stores);
@@ -163,6 +164,7 @@ export async function buildBackend(
       }
     }
 
-    return new CompositeBackend(new StateBackend(rt), routes);
+    const defaultBackend = options?.sandbox ?? new StateBackend(rt);
+    return new CompositeBackend(defaultBackend, routes);
   };
 }

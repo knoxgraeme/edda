@@ -27,6 +27,10 @@ export const updateSettingsSchema = z.object({
       approval_merge_entity: z.enum(["auto", "confirm"]).optional(),
       agents_md_token_budget: z.number().int().min(100).max(10000).optional(),
       agents_md_max_versions: z.number().int().min(1).max(50).optional(),
+      sandbox_provider: z
+        .enum(["none", "node-vfs"])
+        .optional()
+        .describe("Sandbox execution provider: 'none' (disabled) or 'node-vfs' (in-memory VFS)"),
     })
     .describe("Settings to update"),
 });

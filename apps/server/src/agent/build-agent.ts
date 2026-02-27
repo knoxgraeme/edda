@@ -16,6 +16,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createDeepAgent } from "deepagents";
+import type { SandboxBackendProtocol } from "deepagents";
 import type { LanguageModelLike } from "@langchain/core/language_models/base";
 import type { StructuredTool } from "@langchain/core/tools";
 import type { BaseStore } from "@langchain/langgraph";
@@ -37,46 +38,47 @@ import { getSearchTool } from "../search.js";
 import { loadMCPTools } from "../mcp/client.js";
 import { allTools, loadCommunityTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
+import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Skill frontmatter parsing (DB-backed, no disk reads)
 // ---------------------------------------------------------------------------
 
-/** Parse allowed-tools list from YAML frontmatter in SKILL.md content. */
-function parseAllowedTools(raw: string): string[] {
+/** Parse a YAML list from SKILL.md frontmatter by key name. */
+function parseFrontmatterList(raw: string, key: string): string[] {
   const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
   if (!fmMatch) return [];
 
   const lines = fmMatch[1].split("\n");
-  const idx = lines.findIndex((l) => l.startsWith("allowed-tools:"));
+  const idx = lines.findIndex((l) => l.startsWith(`${key}:`));
   if (idx === -1) return [];
 
-  const tools: string[] = [];
+  const items: string[] = [];
   for (let i = idx + 1; i < lines.length; i++) {
     const m = lines[i].match(/^\s+-\s+(.+)$/);
-    if (m) tools.push(m[1].trim());
+    if (m) items.push(m[1].trim());
     else if (lines[i].trim()) break;
   }
-  return tools;
+  return items;
 }
 
 /**
- * Collect the union of allowed-tools from pre-fetched Skill rows.
- * Returns an empty set if no skills declare allowed-tools.
+ * Collect the union of a frontmatter list key across all skills.
+ * Returns an empty set if no skills declare the key.
  */
-function collectSkillTools(skills: Skill[]): Set<string> {
-  const tools = new Set<string>();
+function collectFromSkills(skills: Skill[], key: string): Set<string> {
+  const result = new Set<string>();
   let anyDeclared = false;
   for (const skill of skills) {
     if (!skill.content) continue;
-    const allowed = parseAllowedTools(skill.content);
-    if (allowed.length > 0) {
+    const items = parseFrontmatterList(skill.content, key);
+    if (items.length > 0) {
       anyDeclared = true;
-      for (const t of allowed) tools.add(t);
+      for (const item of items) result.add(item);
     }
   }
-  return anyDeclared ? tools : new Set();
+  return anyDeclared ? result : new Set();
 }
 
 // ---------------------------------------------------------------------------
@@ -95,12 +97,7 @@ function collectSkillTools(skills: Skill[]): Set<string> {
  * Every agent must explicitly declare its tools via skills or agent.tools[].
  * An agent with no skills and no tools receives only list_my_runs.
  */
-function scopeTools(agent: Agent, available: StructuredTool[], skills: Skill[]): StructuredTool[] {
-  const declared = collectSkillTools(skills);
-  for (const t of agent.tools) declared.add(t);
-
-  declared.add("list_my_runs"); // always included
-
+function scopeTools(available: StructuredTool[], declared: Set<string>): StructuredTool[] {
   const byName = new Map(available.map((t) => [t.name, t]));
   const tools: StructuredTool[] = [];
   for (const name of declared) {
@@ -133,7 +130,7 @@ function assertNoDuplicateTools(tools: StructuredTool[]): void {
 /**
  * Write pre-fetched skills into the PostgresStore for deepagents
  * progressive disclosure. Skills are fetched once in buildAgent() and
- * shared with both collectSkillTools() (tool scoping) and this function.
+ * shared with both collectFromSkills() (tool scoping) and this function.
  */
 async function writeSkillsToStore(skills: Skill[], store: BaseStore): Promise<void> {
   if (skills.length === 0) return;
@@ -203,7 +200,12 @@ async function resolveSubagents(
         name: row.name,
         description: row.description,
         systemPrompt,
-        tools: scopeTools(row, available, getRowSkills(row)),
+        tools: (() => {
+          const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
+          for (const t of row.tools) declared.add(t);
+          declared.add("list_my_runs");
+          return scopeTools(available, declared);
+        })(),
         skills: row.skills.length > 0 ? ["/skills/"] : [],
         model,
       } satisfies SubagentSpec;
@@ -471,11 +473,27 @@ export async function buildAgent(agent: Agent): Promise<any> {
     ...(searchTool ? [searchTool] : []),
   ];
 
-  // 3. Scope tools via skills' allowed-tools + agent.tools[]; empty = list_my_runs only
-  const tools = scopeTools(agent, allAvailable, skills);
+  // 3. Compute declared tool names once (skills + agent.tools + list_my_runs)
+  const declaredToolNames = collectFromSkills(skills, "allowed-tools");
+  for (const t of agent.tools) declaredToolNames.add(t);
+  declaredToolNames.add("list_my_runs");
+
+  const tools = scopeTools(allAvailable, declaredToolNames);
 
   // 4. Duplicate check
   assertNoDuplicateTools(tools);
+
+  // 4b. Sandbox — if agent's scoped tools include execute, create sandbox
+  const wantsExecute = declaredToolNames.has("execute");
+
+  let sandbox: SandboxBackendProtocol | undefined;
+  if (wantsExecute) {
+    const rawSandbox = await createSandbox(settings);
+    if (rawSandbox) {
+      const skillCommands = collectFromSkills(skills, "allowed-commands");
+      sandbox = new SecureSandbox(rawSandbox, skillCommands.size > 0 ? skillCommands : undefined);
+    }
+  }
 
   // 5. Subagents (any agent can have them)
   const subagents =
@@ -493,7 +511,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
   const systemPrompt = await buildPrompt(agent, settings, { itemTypes, lists });
 
   // 8. Backend — closes over store for SkillsMiddleware compatibility
-  const backend = await buildBackend(agent, store);
+  const backend = await buildBackend(agent, store, { sandbox });
 
   return createDeepAgent({
     name: agent.name,

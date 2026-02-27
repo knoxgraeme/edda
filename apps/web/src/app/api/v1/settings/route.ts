@@ -1,5 +1,5 @@
 import { getSettings, updateSettings, getAgentByName } from "@edda/db";
-import type { LlmProvider, EmbeddingProvider, Settings } from "@edda/db";
+import type { LlmProvider, EmbeddingProvider, SandboxProvider, Settings } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { parseBody, badRequest } from "../_lib/helpers";
@@ -8,6 +8,7 @@ const LLM_PROVIDERS: LlmProvider[] = [
   "anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock",
 ];
 const EMBEDDING_PROVIDERS: EmbeddingProvider[] = ["voyage", "openai", "google"];
+const SANDBOX_PROVIDERS: SandboxProvider[] = ["none", "node-vfs"];
 
 const UpdateSettingsSchema = z
   .object({
@@ -18,6 +19,7 @@ const UpdateSettingsSchema = z
     embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),
     embedding_model: z.string().max(100).optional(),
     default_agent: z.string().min(1).max(200).optional(),
+    sandbox_provider: z.enum(SANDBOX_PROVIDERS as [string, ...string[]]).optional(),
   })
   .strip();
 
