@@ -5,12 +5,12 @@
 Edda agents currently have no shell execution capability. To enable agents to run CLI tools, install npm packages via `npx`, execute scripts, and perform data analysis, we need to add sandboxed `execute` support. The design follows from a detailed investigation comparing OpenClaw's exec model, deepagents' sandbox providers (VFS, Deno, Daytona), and Edda's deployment reality (Railway/Fly containers).
 
 **Key design decisions:**
-- **Sandbox = backend** (deepagents best practice) — when an agent has `execute`, the sandbox becomes the default backend in CompositeBackend. File ops and execute both happen inside the sandbox. Provider-swappable by env var.
-- **Trigger:** if agent's scoped tools include `execute` AND `SANDBOX_PROVIDER` is set → sandbox enabled
+- **Sandbox = backend** (deepagents best practice) — when an agent has `execute`, the sandbox becomes the default backend in CompositeBackend. File ops and execute both happen inside the sandbox. Provider-swappable via DB setting.
+- **Trigger:** if agent's scoped tools include `execute` AND `sandbox_provider` setting is not `none` → sandbox enabled
 - **Command scoping at skill level** — skills declare `allowed-commands` in SKILL.md frontmatter (same pattern as `allowed-tools`). Agent-level `execute` in `agent.tools[]` gets broad access (denylist only). Skills are specific, agents are broad.
 - **Global command denylist** — baseline safety for all sandbox execution
 - **Env stripping** — `env -i` on all executed commands to protect secrets
-- **Provider config** — `SANDBOX_PROVIDER=node-vfs` (free default), swappable to `daytona`/`deno` later
+- **Provider config** — `sandbox_provider` DB setting (like `search_provider`), swappable at runtime via settings UI. API keys stay in env vars.
 
 ## How deepagents handles `execute`
 
@@ -37,12 +37,16 @@ When sandbox is the default: `write_file("script.js", ...)` then `execute("node 
 
 ## Implementation
 
-### Step 1: Add sandbox config to `apps/server/src/config.ts`
+### Step 1: Add sandbox settings
 
-Add to `envSchema` (after TELEGRAM section, ~line 54):
+**a) DB setting** — add `sandbox_provider` to settings table (via seed):
+- Values: `none` (default), `node-vfs`, `daytona`, `deno`
+- Read at runtime via `getSettings()` like `search_provider`
+
+**b) Env vars for secrets** — add to `apps/server/src/config.ts` envSchema:
 ```typescript
-// Sandbox execution (optional — omit to disable execute for all agents)
-SANDBOX_PROVIDER: z.enum(["node-vfs", "daytona", "deno"]).optional(),
+// Sandbox API keys (only needed for cloud providers)
+SANDBOX_API_KEY: z.string().optional(),  // Daytona/Deno token
 SANDBOX_TIMEOUT_MS: z.coerce.number().optional().default(30000),
 ```
 
@@ -75,9 +79,10 @@ const SANDBOX_ENV_ALLOWLIST = new Set(["HOME", "PATH", "NODE_ENV", "TERM", "LANG
 - Note: VFS has no built-in env stripping — the `env -i` wrapping is essential to prevent secret leakage via `$DATABASE_URL` etc.
 
 **d) `createSandbox()` factory:**
-- Reads `SANDBOX_PROVIDER` from config
+- Reads `sandbox_provider` from settings (passed in from `buildAgent`)
 - `"node-vfs"` → `VfsSandbox.create({ timeout })` from `@langchain/node-vfs`
 - `"daytona"` / `"deno"` → throw descriptive "not yet implemented" error
+- `"none"` / undefined → returns null (no sandbox)
 - Returns the raw `SandboxBackendProtocol` (wrapping in `SecureSandbox` happens in `buildBackend`)
 
 ### Step 3: Modify `apps/server/src/agent/backends.ts`
@@ -92,7 +97,7 @@ export async function buildBackend(
 ```
 
 **In the async phase** (alongside existing fs config resolution):
-- If `options.sandboxEnabled` and `SANDBOX_PROVIDER` is set → call `createSandbox()` → wrap in `SecureSandbox(sandbox, options.allowedCommands)`
+- If `options.sandboxEnabled` and `sandbox_provider` setting is not `none` → call `createSandbox()` → wrap in `SecureSandbox(sandbox, options.allowedCommands)`
 
 **In the returned factory** (line 258):
 ```typescript
@@ -193,7 +198,7 @@ Update `packages/db/src/skills.ts` seed data to include `coding`.
 - `apps/server/src/skills/coding/SKILL.md` — coding skill with execute + allowed-commands
 
 ## Files to modify
-- `apps/server/src/config.ts` — add SANDBOX_PROVIDER, SANDBOX_TIMEOUT_MS to envSchema
+- `apps/server/src/config.ts` — add SANDBOX_API_KEY, SANDBOX_TIMEOUT_MS to envSchema
 - `apps/server/src/agent/backends.ts` — accept sandbox options, use SecureSandbox as default backend when enabled
 - `apps/server/src/agent/build-agent.ts` — add parseAllowedCommands/collectSkillCommands, detect execute, pass to buildBackend
 - `apps/server/package.json` — add @langchain/node-vfs dependency
@@ -201,7 +206,7 @@ Update `packages/db/src/skills.ts` seed data to include `coding`.
 
 ## Security layers (defense in depth)
 1. **Opt-in per agent** — only agents with `execute` in their skill/tools get sandbox
-2. **Provider gate** — `SANDBOX_PROVIDER` must be set or no sandbox regardless of tools
+2. **Provider gate** — `sandbox_provider` setting must be non-`none` or no sandbox regardless of tools
 3. **Env stripping** — `env -i` clears all env vars, only HOME/PATH/NODE_ENV/TERM/LANG passed through
 4. **Global command denylist** — blocks env, sudo, ssh, apt, kill, etc.
 5. **Skill-level command allowlist** — skills declare `allowed-commands`, union across skills = strict allowlist. Agent-level `execute` (no skills) = denylist only
@@ -210,16 +215,15 @@ Update `packages/db/src/skills.ts` seed data to include `coding`.
 
 ## Verification
 1. **Type check:** `pnpm type-check` passes
-2. **Existing agents unaffected:** Without `SANDBOX_PROVIDER` set, all agents behave exactly as before
-3. **Sandbox agent works:** Set `SANDBOX_PROVIDER=node-vfs`, create agent with `coding` skill, verify `execute` tool appears
+2. **Existing agents unaffected:** With `sandbox_provider=none` (default), all agents behave exactly as before
+3. **Sandbox agent works:** Set `sandbox_provider=node-vfs` in settings, create agent with `coding` skill, verify `execute` tool appears
 4. **Command denylist:** `execute("env")`, `execute("sudo ls")` return blocked error
 5. **Skill allowlist:** Agent with `coding` skill can run `node` but not `docker`
 6. **Env stripping:** `execute("echo $DATABASE_URL")` returns empty
-7. **Provider swap:** Change `SANDBOX_PROVIDER` value, verify different provider is used (Daytona/Deno throw "not yet implemented")
+7. **Provider swap:** Change `sandbox_provider` setting, verify different provider is used (Daytona/Deno throw "not yet implemented")
 8. **File ops work:** `write_file("test.js", "console.log('hi')")` then `execute("node test.js")` outputs "hi"
 
 ## Future work (not in this PR)
 - Cloud sandbox providers (Daytona, Deno, Sprites) — implement `createSandbox()` cases, same SecureSandbox wrapping
 - Sandbox lifecycle — persist sandbox across turns (VFS factory pattern), cleanup on thread expiry
 - Skill `requires` block — declarative prerequisites (bins, config) checked at load time
-- Skill registry — discovery and install UX for MCP servers and skills

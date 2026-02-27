@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { notFound } from "../../../_lib/helpers";
 
 const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 export async function GET(
   _request: Request,
@@ -11,6 +12,11 @@ export async function GET(
 
   const res = await fetch(
     `${SERVER_URL}/api/agents/${encodeURIComponent(name)}/thread`,
+    {
+      headers: {
+        ...(INTERNAL_API_SECRET ? { Authorization: `Bearer ${INTERNAL_API_SECRET}` } : {}),
+      },
+    },
   );
 
   if (res.status === 404) return notFound("Agent");
