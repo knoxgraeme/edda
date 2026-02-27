@@ -1,8 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { Check, X, CheckCheck, Inbox, Bell, Bot, AlertTriangle } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
+import { Check, X, CheckCheck, Inbox, Bell, Bot, AlertTriangle, Clock, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -131,15 +131,75 @@ function NotificationRow({ notification }: { notification: Notification }) {
   );
 }
 
+function ReminderRow({ reminder }: { reminder: Notification }) {
+  const [isPending, startTransition] = useTransition();
+
+  const scheduledDate = reminder.scheduled_at
+    ? new Date(reminder.scheduled_at)
+    : null;
+
+  return (
+    <Card>
+      <CardContent className="flex items-start justify-between gap-4 pt-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <Badge variant="outline" className="text-xs gap-1">
+              <Clock className="h-3 w-3" />
+              {scheduledDate
+                ? format(scheduledDate, "MMM d, yyyy h:mm a")
+                : "Pending"}
+            </Badge>
+            {reminder.recurrence && (
+              <Badge variant="secondary" className="text-xs gap-1">
+                <Repeat className="h-3 w-3" />
+                {reminder.recurrence}
+              </Badge>
+            )}
+            {reminder.priority === "high" && (
+              <Badge variant="destructive" className="text-xs gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                high
+              </Badge>
+            )}
+          </div>
+          <p className="text-sm">{reminder.summary}</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-destructive hover:text-destructive"
+          disabled={isPending}
+          onClick={() =>
+            startTransition(async () => {
+              try {
+                await dismissNotificationAction(reminder.id);
+              } catch (err) {
+                toast.error(
+                  err instanceof Error ? err.message : "Failed to cancel",
+                );
+              }
+            })
+          }
+        >
+          <X className="h-3.5 w-3.5" />
+          Cancel
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function InboxClient({
   items,
   notifications,
+  reminders,
 }: {
   items: PendingItem[];
   notifications: Notification[];
+  reminders: Notification[];
 }) {
   const [isPending, startTransition] = useTransition();
-  const totalCount = items.length + notifications.length;
+  const totalCount = items.length + notifications.length + reminders.length;
 
   return (
     <main className="max-w-3xl mx-auto p-6">
@@ -150,7 +210,7 @@ export function InboxClient({
         </div>
       </div>
 
-      <Tabs defaultValue={items.length > 0 ? "confirmations" : "notifications"}>
+      <Tabs defaultValue={items.length > 0 ? "confirmations" : notifications.length > 0 ? "notifications" : "reminders"}>
         <TabsList>
           <TabsTrigger value="confirmations">
             Confirmations
@@ -165,6 +225,14 @@ export function InboxClient({
             {notifications.length > 0 && (
               <Badge variant="secondary" className="ml-1.5 text-xs px-1.5">
                 {notifications.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="reminders">
+            Reminders
+            {reminders.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs px-1.5">
+                {reminders.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -222,6 +290,24 @@ export function InboxClient({
             ) : (
               notifications.map((n) => (
                 <NotificationRow key={n.id} notification={n} />
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="reminders">
+          <div className="grid gap-3">
+            {reminders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Clock className="h-10 w-10 mb-3" />
+                <p className="text-sm font-medium">No upcoming reminders.</p>
+                <p className="text-sm mt-1 max-w-sm text-center">
+                  Ask your agent to set a reminder and it&apos;ll appear here.
+                </p>
+              </div>
+            ) : (
+              reminders.map((r) => (
+                <ReminderRow key={r.id} reminder={r} />
               ))
             )}
           </div>

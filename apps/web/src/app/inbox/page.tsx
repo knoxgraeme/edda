@@ -1,13 +1,15 @@
-import { getPendingItems, getInboxNotifications } from "@edda/db";
+import { getPendingItems, getInboxNotifications, getScheduledReminders } from "@edda/db";
 import { InboxClient } from "./inbox-client";
 
 export default async function InboxPage() {
   let pending;
   let notifications;
+  let reminders;
   try {
-    [pending, notifications] = await Promise.all([
+    [pending, notifications, reminders] = await Promise.all([
       getPendingItems(),
       getInboxNotifications({ status: "unread", limit: 50 }),
+      getScheduledReminders({ limit: 50 }),
     ]);
   } catch (err) {
     console.error("Failed to load inbox:", err);
@@ -22,5 +24,5 @@ export default async function InboxPage() {
     );
   }
 
-  return <InboxClient items={pending} notifications={notifications ?? []} />;
+  return <InboxClient items={pending} notifications={notifications ?? []} reminders={reminders ?? []} />;
 }

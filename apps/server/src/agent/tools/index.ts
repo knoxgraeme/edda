@@ -72,6 +72,11 @@ import { listMyRunsTool } from "./list-my-runs.js";
 // Notification tools
 import { sendNotificationTool } from "./send-notification.js";
 
+// Reminder tools
+import { createReminderTool } from "./create-reminder.js";
+import { listRemindersTool } from "./list-reminders.js";
+import { cancelReminderTool } from "./cancel-reminder.js";
+
 // Community tools (lazy-loaded from @langchain/community)
 import { loadWikipediaTool } from "./wikipedia.js";
 import { loadDuckDuckGoTool } from "./duckduckgo.js";
@@ -156,4 +161,9 @@ export const allTools = [
 
   // Notification tools
   sendNotificationTool,
+
+  // Reminder tools
+  createReminderTool,
+  listRemindersTool,
+  cancelReminderTool,
 ];
