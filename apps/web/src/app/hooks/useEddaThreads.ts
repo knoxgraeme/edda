@@ -3,8 +3,6 @@
 import useSWR from "swr";
 import type { ThreadItem } from "@/app/types/types";
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:8000";
-
 async function fetcher(url: string): Promise<ThreadItem[]> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -14,7 +12,8 @@ async function fetcher(url: string): Promise<ThreadItem[]> {
     }
     throw new Error(`Failed to fetch threads: ${response.status}`);
   }
-  const data = (await response.json()) as unknown[];
+  const json = (await response.json()) as { data: unknown[] };
+  const data = json.data ?? [];
   // Normalize dates from server response
   return data.map((t: unknown) => {
     const thread = t as Record<string, unknown>;
@@ -30,8 +29,8 @@ async function fetcher(url: string): Promise<ThreadItem[]> {
 
 export function useEddaThreads(agentName?: string) {
   const url = agentName
-    ? `${SERVER_URL}/api/threads?agent_name=${encodeURIComponent(agentName)}`
-    : `${SERVER_URL}/api/threads`;
+    ? `/api/v1/threads?agent_name=${encodeURIComponent(agentName)}`
+    : `/api/v1/threads`;
 
   const { data, error, isLoading, mutate } = useSWR<ThreadItem[]>(
     url,
