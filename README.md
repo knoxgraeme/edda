@@ -1,4 +1,9 @@
-# Edda
+<p align="center">
+  <img src=".github/banner.jpg" alt="Edda" width="100%" />
+</p>
+
+> [!WARNING]
+> **WIP — Untested in production, use with caution.**
 
 **A self-hosted AI assistant that actually remembers you.**
 
