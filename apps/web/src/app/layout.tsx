@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { ClientProvider } from "@/providers/ClientProvider";
+import { ConnectionBanner } from "@/providers/ConnectionBanner";
 import { SideNav } from "@/app/components/SideNav";
 import "./globals.css";
 
@@ -33,13 +33,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ClientProvider>
+        <ConnectionBanner />
           <div className="flex h-screen">
             <SideNav />
             <div className="flex-1 overflow-auto">{children}</div>
           </div>
           <Toaster />
-        </ClientProvider>
       </body>
     </html>
   );

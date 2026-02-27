@@ -1,23 +1,12 @@
 "use client";
 
 /**
- * LangGraph SDK client provider
- *
- * Initializes the LangGraph client that connects to the Edda server.
- * Provides the client to all child components via React Context.
- * Also renders a connectivity banner when the backend is unreachable.
+ * Connectivity banner — polls the backend and shows a warning when unreachable.
  */
 
-import { createContext, useContext, useMemo, useState, useEffect } from "react";
-import { Client } from "@langchain/langgraph-sdk";
+import { useState, useEffect } from "react";
 
-interface ClientContextType {
-  client: Client | null;
-}
-
-const ClientContext = createContext<ClientContextType>({ client: null });
-
-function ConnectionBanner() {
+export function ConnectionBanner() {
   const [serverDown, setServerDown] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -62,22 +51,4 @@ function ConnectionBanner() {
       </button>
     </div>
   );
-}
-
-export function ClientProvider({ children }: { children: React.ReactNode }) {
-  const client = useMemo(() => {
-    const url = process.env.NEXT_PUBLIC_LANGGRAPH_URL || "http://localhost:3001";
-    return new Client({ apiUrl: url });
-  }, []);
-
-  return (
-    <ClientContext.Provider value={{ client }}>
-      <ConnectionBanner />
-      {children}
-    </ClientContext.Provider>
-  );
-}
-
-export function useClient() {
-  return useContext(ClientContext);
 }
