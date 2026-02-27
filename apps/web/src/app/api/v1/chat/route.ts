@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseBody, badRequest } from "../_lib/helpers";
 
 const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 const ChatSchema = z.object({
   message: z.string().min(1).max(50_000),
@@ -19,7 +20,10 @@ export async function POST(request: Request) {
 
   const res = await fetch(`${SERVER_URL}/api/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(INTERNAL_API_SECRET ? { Authorization: `Bearer ${INTERNAL_API_SECRET}` } : {}),
+    },
     body: JSON.stringify({
       messages: [{ content: parsed.data.message }],
       agent_name: parsed.data.agent_name,
