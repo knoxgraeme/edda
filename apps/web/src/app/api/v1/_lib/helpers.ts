@@ -45,7 +45,7 @@ export function isUUID(s: string): boolean {
  * Handles bare hostnames (e.g. "edda-server") by prepending http://.
  */
 export function getServerUrl(): string {
-  const raw = process.env.SERVER_URL ?? "http://localhost:8000";
+  const raw = (process.env.SERVER_URL ?? "http://localhost:8000").trim();
   if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
   return `http://${raw}`;
 }
