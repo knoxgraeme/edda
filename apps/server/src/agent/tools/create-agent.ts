@@ -5,6 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createAgent, getAgents, getSettings, saveAgentsMdVersion } from "@edda/db";
+import { getLogger } from "../../logger.js";
 
 export const createAgentSchema = z.object({
   name: z
@@ -94,7 +95,7 @@ export const createAgentTool = tool(
         agentName: name,
       });
     } catch (err) {
-      console.error(`[create_agent] Agent "${name}" created but AGENTS.md seed failed:`, err);
+      getLogger().error({ agent: name, err }, "Agent created but AGENTS.md seed failed");
     }
 
     return JSON.stringify({

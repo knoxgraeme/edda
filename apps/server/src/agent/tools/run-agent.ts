@@ -18,6 +18,7 @@ import { runWithConcurrencyLimit } from "../../utils/semaphore.js";
 import { sanitizeError } from "../../utils/sanitize-error.js";
 import { withTimeout } from "../../utils/with-timeout.js";
 import { deliverRunResults } from "../../utils/notify.js";
+import { getLogger } from "../../logger.js";
 
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -88,9 +89,9 @@ export const runAgentTool = tool(
             sourceId: run.id,
           });
         } catch (err) {
-          console.error(`[run_agent] ${definition.name}:`, err);
+          getLogger().error({ agent: definition.name, runId: run.id, err }, "run_agent failed");
           await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
-            console.error(`[run_agent] Failed to record failure for ${run.id}:`, dbErr);
+            getLogger().error({ runId: run.id, err: dbErr }, "Failed to record run_agent failure");
           });
 
           await deliverRunResults({
@@ -105,9 +106,9 @@ export const runAgentTool = tool(
           });
         }
       }).catch((err) => {
-        console.error(`[run_agent] Concurrency/setup failure for ${definition.name}:`, err);
+        getLogger().error({ agent: definition.name, err }, "run_agent concurrency/setup failure");
         failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
-          console.error(`[run_agent] Failed to record failure for ${run.id}:`, dbErr);
+          getLogger().error({ runId: run.id, err: dbErr }, "Failed to record run_agent failure");
         });
       });
     });

@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { upsertSkill } from "@edda/db";
 import { getStore } from "../store/index.js";
+import { getLogger } from "../logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = join(__dirname, "../../skills");
@@ -53,7 +54,7 @@ export async function seedSkills(): Promise<void> {
 
       const { name, description } = parseFrontmatter(raw);
       if (!name) {
-        console.warn(`  [seed-skills] Skipping ${dir.name} — no name in frontmatter`);
+        getLogger().warn({ skill: dir.name }, "Skipping skill — no name in frontmatter");
         return;
       }
 
@@ -71,7 +72,7 @@ export async function seedSkills(): Promise<void> {
 
   for (const r of results) {
     if (r.status === "rejected") {
-      console.error("[seed-skills] Failed to seed skill:", r.reason);
+      getLogger().error({ err: r.reason }, "Failed to seed skill");
     }
   }
 }

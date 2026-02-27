@@ -39,6 +39,7 @@ import { getSearchTool } from "../search/index.js";
 import { loadMCPTools } from "./mcp.js";
 import { allTools, loadCommunityTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
+import { getLogger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Skill frontmatter parsing (DB-backed, no disk reads)
@@ -332,7 +333,7 @@ export async function buildPrompt(
 
   // ── Layer 1: Agent prompt (agent-editable task description) ──
   const agentPrompt = agent.system_prompt?.trim() || (() => {
-    console.warn(`[buildPrompt] Agent "${agent.name}" has no system_prompt — using generic fallback`);
+    getLogger().warn({ agent: agent.name }, "Agent has no system_prompt — using generic fallback");
     return `You are ${agent.name}, an Edda agent.`;
   })();
 

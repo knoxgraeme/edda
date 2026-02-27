@@ -12,17 +12,19 @@ import { resolveRetrievalContext } from "./agent/tool-helpers.js";
 import { createCronRunner } from "./cron/index.js";
 import { setAgent, startHealthServer } from "./server/index.js";
 import { initTelegram, registerWebhook } from "./channels/telegram.js";
+import { logger } from "./logger.js";
 
 async function main() {
-  console.log("🧠 Edda starting...");
+  const log = logger.child({ module: "startup" });
+  log.info("Edda starting");
 
   // 1. Load settings (must happen before anything else)
   const settings = await refreshSettings();
-  console.log(`  Provider: ${settings.llm_provider} / ${settings.default_model}`);
+  log.info({ provider: settings.llm_provider, model: settings.default_model }, "Settings loaded");
 
   // 2. Seed system skills
   await seedSkills();
-  console.log("  Skills seeded");
+  log.info("Skills seeded");
 
   // 3. Create agent — default_agent from settings (any agent can be the default)
   const agentRow = await getAgentByName(settings.default_agent);
@@ -37,12 +39,12 @@ async function main() {
     agentName: agentRow.name,
     retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
   });
-  console.log(`  Agent ready (${agentRow.name})`);
+  log.info({ agent: agentRow.name }, "Agent ready");
 
   // 4. Bootstrap AGENTS.md if empty (first boot only)
   const latestMd = await getLatestAgentsMd();
   if (!latestMd?.content?.trim()) {
-    console.log("  AGENTS.md empty — running initial context refresh...");
+    log.info("AGENTS.md empty — running initial context refresh");
     try {
       const maintenanceDef = await getAgentByName("maintenance");
       if (maintenanceDef) {
@@ -62,19 +64,19 @@ async function main() {
         );
       }
     } catch (err: unknown) {
-      console.warn("  Initial context refresh failed (will retry on cron):", err);
+      log.warn({ err }, "Initial context refresh failed (will retry on cron)");
     }
   }
 
   // 5. Start cron runner
   const cronRunner = await createCronRunner();
   await cronRunner.start();
-  console.log(`  Cron runner: ${settings.cron_runner}`);
+  log.info("Cron runner started");
 
   // 6. Health endpoint
   const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
-  console.log(`  Health: http://localhost:${port}/api/health`);
+  log.info({ port, url: `http://localhost:${port}/api/health` }, "Health server started");
 
   // 7. Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -95,14 +97,14 @@ async function main() {
     try {
       await registerWebhook(webhookUrl, apiSecret);
     } catch (err) {
-      console.warn("  Telegram webhook registration failed (will work with manual setup):", err);
+      log.warn({ err }, "Telegram webhook registration failed (will work with manual setup)");
     }
   }
 
-  console.log("🧠 Edda ready.");
+  log.info("Edda ready");
 }
 
 main().catch((err) => {
-  console.error("Fatal:", err);
+  logger.fatal({ err }, "Fatal startup error");
   process.exit(1);
 });

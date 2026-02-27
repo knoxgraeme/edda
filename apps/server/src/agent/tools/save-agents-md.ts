@@ -16,6 +16,7 @@ import {
 import { buildDeterministicTemplate } from "../generate-agents-md.js";
 import { getAgentName } from "../tool-helpers.js";
 import { rebuildDefaultAgent } from "../../server/index.js";
+import { getLogger } from "../../logger.js";
 
 export const saveAgentsMdSchema = z.object({
   content: z.string().min(1).max(8000).describe("The full curated AGENTS.md content"),
@@ -33,12 +34,12 @@ export const saveAgentsMdTool = tool(
     try {
       await pruneAgentsMdVersions(settings.agents_md_max_versions);
     } catch (err) {
-      console.error("[save_agents_md] Pruning old versions failed (save succeeded):", err);
+      getLogger().error({ err }, "save_agents_md pruning old versions failed (save succeeded)");
     }
 
     // Rebuild the live agent so the next conversation picks up the new memory
     rebuildDefaultAgent().catch((err) =>
-      console.warn("[save_agents_md] Background rebuild failed:", err),
+      getLogger().warn({ err }, "save_agents_md background rebuild failed"),
     );
 
     return JSON.stringify({ saved: true, length: content.length });
