@@ -154,6 +154,86 @@ async function announceToChannels(agentName: string, text: string): Promise<void
   }
 }
 
+// ---------------------------------------------------------------------------
+// Post-run delivery: channels + notify targets
+// ---------------------------------------------------------------------------
+
+export interface DeliverRunResultsParams {
+  agentId: string;
+  agentName: string;
+  runId: string;
+  lastMessage: string | undefined;
+  targets: string[];
+  sourceType: "schedule" | "agent" | "system";
+  sourceId: string;
+  error?: unknown;
+  /** Extra fields merged into notification detail */
+  detail?: Record<string, unknown>;
+  expiresAfter?: string | null;
+}
+
+/**
+ * Shared post-run delivery: announce to channels, then notify targets.
+ * Handles both success (lastMessage set, no error) and failure (error set) cases.
+ * All errors are caught and logged — this never throws.
+ */
+export async function deliverRunResults(params: DeliverRunResultsParams): Promise<void> {
+  const {
+    agentId,
+    agentName,
+    runId,
+    lastMessage,
+    targets,
+    sourceType,
+    sourceId,
+    error,
+    detail,
+    expiresAfter,
+  } = params;
+
+  if (error) {
+    // Failure path — notify targets about the error
+    if (targets.length > 0) {
+      try {
+        await notify({
+          sourceType,
+          sourceId,
+          targets,
+          summary: `${agentName} failed: ${sanitizeError(error).slice(0, 150)}`,
+          detail: { run_id: runId, agent_name: agentName, ...detail },
+          priority: "high",
+          expiresAfter,
+        });
+      } catch (notifyErr) {
+        console.error(`[notify] ${agentName} failure notification failed:`, notifyErr);
+      }
+    }
+    return;
+  }
+
+  // Success path — deliver to channels, then notify targets
+  if (lastMessage) {
+    await deliverToAnnouncementChannels(agentId, agentName, lastMessage);
+  }
+
+  // Filter out announce: targets — channel delivery is already handled above
+  const filteredTargets = targets.filter((t) => !t.startsWith("announce:"));
+  if (filteredTargets.length > 0) {
+    try {
+      await notify({
+        sourceType,
+        sourceId,
+        targets: filteredTargets,
+        summary: lastMessage ?? `${agentName} completed`,
+        detail: { run_id: runId, agent_name: agentName, ...detail },
+        expiresAfter,
+      });
+    } catch (notifyErr) {
+      console.error(`[notify] ${agentName} notification failed:`, notifyErr);
+    }
+  }
+}
+
 /**
  * Deliver an agent's response to its announcement channels after a triggered run.
  */

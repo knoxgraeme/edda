@@ -79,10 +79,11 @@ async function main() {
   // 7. Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
-    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    if (!webhookSecret) {
+    const apiSecret = process.env.INTERNAL_API_SECRET;
+    if (!apiSecret) {
       throw new Error(
-        "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set. " +
+        "INTERNAL_API_SECRET is required when TELEGRAM_BOT_TOKEN is set. " +
+        "It is used to authenticate both internal API calls and Telegram webhook requests. " +
         "Generate one with: openssl rand -hex 32"
       );
     }
@@ -92,7 +93,7 @@ async function main() {
     const webhookUrl =
       process.env.TELEGRAM_WEBHOOK_URL ?? `http://localhost:${port}/api/telegram/webhook`;
     try {
-      await registerWebhook(webhookUrl, webhookSecret);
+      await registerWebhook(webhookUrl, apiSecret);
     } catch (err) {
       console.warn("  Telegram webhook registration failed (will work with manual setup):", err);
     }

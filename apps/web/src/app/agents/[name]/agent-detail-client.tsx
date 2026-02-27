@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition, useCallback } from "react";
+import { useState, useEffect, useTransition, useCallback } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import {
@@ -164,6 +164,87 @@ function NotifyTargetBuilder({
         Announce: push to channels.
       </p>
     </div>
+  );
+}
+
+// ─── Run Now Dialog ──────────────────────────────────────────────────
+
+function RunNowDialog({
+  open,
+  onOpenChange,
+  agentName,
+  availableAgents,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  agentName: string;
+  availableAgents: string[];
+}) {
+  const [prompt, setPrompt] = useState("");
+  const [notifyTargets, setNotifyTargets] = useState<string[]>(["inbox"]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!prompt.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentName)}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompt.trim(), notify: notifyTargets }),
+      });
+      if (res.ok) {
+        toast.success(`${agentName} triggered`);
+        onOpenChange(false);
+        setPrompt("");
+        setNotifyTargets(["inbox"]);
+      } else {
+        toast.error(`Failed to trigger ${agentName}`);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Run {agentName}</DialogTitle>
+          <DialogDescription>
+            Runs the agent with an ephemeral thread. Results are delivered to the selected targets.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid gap-2">
+            <Label>Prompt</Label>
+            <textarea
+              className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="What should the agent do?"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label>Notification Targets</Label>
+            <NotifyTargetBuilder
+              targets={notifyTargets}
+              onChange={setNotifyTargets}
+              availableAgents={availableAgents}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={submitting || !prompt.trim()} className="gap-1">
+            <Play className="h-3.5 w-3.5" />
+            {submitting ? "Running..." : "Run"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -365,20 +446,17 @@ function ScheduleDialog({
 function OverviewTab({
   agent,
   availableAgents,
-  isTriggering,
-  onTriggerRun,
   onDelete,
 }: {
   agent: Agent;
   availableAgents: string[];
-  isTriggering: boolean;
-  onTriggerRun: () => void;
   onDelete: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
+  const [showRunDialog, setShowRunDialog] = useState(false);
 
   // Editable fields
   const [description, setDescription] = useState(agent.description);
@@ -732,12 +810,17 @@ function OverviewTab({
           <Button
             variant="outline"
             className="gap-1"
-            onClick={onTriggerRun}
-            disabled={isTriggering}
+            onClick={() => setShowRunDialog(true)}
           >
             <Play className="h-3.5 w-3.5" />
-            {isTriggering ? "Triggering..." : "Run Now"}
+            Run Now
           </Button>
+          <RunNowDialog
+            open={showRunDialog}
+            onOpenChange={setShowRunDialog}
+            agentName={agent.name}
+            availableAgents={availableAgents}
+          />
           <Button
             variant="ghost"
             className="gap-1 text-destructive hover:text-destructive ml-auto"
@@ -1399,24 +1482,6 @@ export function AgentDetailClient({
 }) {
   const [isPending, startTransition] = useTransition();
   const [enabled, setEnabled] = useState(agent.enabled);
-  const [isTriggering, setIsTriggering] = useState(false);
-  const triggeringRef = useRef(false);
-
-  const triggerRun = useCallback(async () => {
-    if (triggeringRef.current) return;
-    triggeringRef.current = true;
-    setIsTriggering(true);
-    try {
-      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agent.name)}/run`, {
-        method: "POST",
-      });
-      if (res.ok) toast.success(`${agent.name} triggered`);
-      else toast.error(`Failed to trigger ${agent.name}`);
-    } finally {
-      triggeringRef.current = false;
-      setIsTriggering(false);
-    }
-  }, [agent.name]);
 
   const handleToggle = (newEnabled: boolean) => {
     setEnabled(newEnabled);
@@ -1498,8 +1563,6 @@ export function AgentDetailClient({
           <OverviewTab
             agent={agent}
             availableAgents={availableAgents}
-            isTriggering={isTriggering}
-            onTriggerRun={triggerRun}
             onDelete={handleDelete}
           />
         </TabsContent>

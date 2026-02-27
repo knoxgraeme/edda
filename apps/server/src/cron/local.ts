@@ -12,7 +12,6 @@ import {
   getEnabledSchedules,
   getScheduleById,
   getAgentByName,
-  getChannelsByAgent,
   createTaskRun,
   startTaskRun,
   completeTaskRun,
@@ -34,28 +33,10 @@ import { withTimeout } from "../utils/with-timeout.js";
 import { detectRecurrenceFormat, getNextCronDate } from "../utils/reminder-recurrence.js";
 
 import { buildAgent, resolveThreadId, MODEL_SETTINGS_KEYS } from "../agent/build-agent.js";
-import { resolveRetrievalContext } from "../agent/tool-helpers.js";
+import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
-import { notify } from "../utils/notify.js";
-import { deliverToChannel } from "../channels/deliver.js";
+import { notify, deliverRunResults } from "../utils/notify.js";
 import type { CronRunner } from "./index.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function extractLastAssistantMessage(result: {
-  messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }>;
-}): string | undefined {
-  const messages = result?.messages ?? [];
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if ((m.role === "assistant" || m._getType?.() === "ai") && typeof m.content === "string") {
-      return m.content;
-    }
-  }
-  return undefined;
-}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -341,37 +322,17 @@ export class LocalCronRunner implements CronRunner {
         const lastMessage = extractLastAssistantMessage(result);
         await completeTaskRun(run.id, { output_summary: lastMessage?.slice(0, 500), duration_ms: duration });
 
-        // Deliver to announcement channels
-        if (lastMessage) {
-          try {
-            const channels = await getChannelsByAgent(freshDef.id, { receiveAnnouncements: true });
-            for (const channel of channels) {
-              await deliverToChannel(channel, lastMessage).catch((err) =>
-                console.error(`  [cron] Channel delivery to ${channel.platform}/${channel.external_id} failed:`, err),
-              );
-            }
-          } catch (err) {
-            console.error(`  [cron] ${freshDef.name} channel delivery failed:`, err);
-          }
-        }
-
-        if (freshSchedule.notify.length > 0) {
-          try {
-            await notify({
-              sourceType: "schedule",
-              sourceId: freshSchedule.id,
-              targets: freshSchedule.notify,
-              summary: lastMessage ?? `${freshDef.name} completed`,
-              detail: { run_id: run.id, agent_name: freshDef.name, schedule_name: freshSchedule.name },
-              expiresAfter: freshSchedule.notify_expires_after,
-            });
-          } catch (notifyErr) {
-            console.error(
-              `  [cron] ${freshDef.name} notification failed (run was successful):`,
-              notifyErr,
-            );
-          }
-        }
+        await deliverRunResults({
+          agentId: freshDef.id,
+          agentName: freshDef.name,
+          runId: run.id,
+          lastMessage,
+          targets: freshSchedule.notify,
+          sourceType: "schedule",
+          sourceId: freshSchedule.id,
+          detail: { schedule_name: freshSchedule.name },
+          expiresAfter: freshSchedule.notify_expires_after,
+        });
 
         console.log(`  [cron] ${freshDef.name}/${freshSchedule.name} completed in ${duration}ms`);
       } catch (err) {
@@ -381,21 +342,17 @@ export class LocalCronRunner implements CronRunner {
         } catch (dbErr) {
           console.error(`  [cron] Failed to record task_run failure for ${run.id}:`, dbErr);
         }
-        if (freshSchedule.notify.length > 0) {
-          try {
-            await notify({
-              sourceType: "schedule",
-              sourceId: freshSchedule.id,
-              targets: freshSchedule.notify,
-              summary: `${freshDef.name} failed: ${sanitizeError(err).slice(0, 150)}`,
-              detail: { run_id: run.id, agent_name: freshDef.name },
-              priority: "high",
-              expiresAfter: freshSchedule.notify_expires_after,
-            });
-          } catch (notifyErr) {
-            console.error(`  [cron] ${freshDef.name} failure notification failed:`, notifyErr);
-          }
-        }
+        await deliverRunResults({
+          agentId: freshDef.id,
+          agentName: freshDef.name,
+          runId: run.id,
+          lastMessage: undefined,
+          targets: freshSchedule.notify,
+          sourceType: "schedule",
+          sourceId: freshSchedule.id,
+          error: err,
+          expiresAfter: freshSchedule.notify_expires_after,
+        });
       }
     });
   }
