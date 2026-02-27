@@ -16,7 +16,7 @@ export const updateAgentSchema = z.object({
   thread_lifetime: z
     .enum(["ephemeral", "daily", "persistent"])
     .optional()
-    .describe("New thread ID strategy: ephemeral (new thread every run), daily (shared per day), persistent (one thread forever)"),
+    .describe("ephemeral | daily | persistent"),
   model_settings_key: z
     .string()
     .optional()
@@ -32,11 +32,11 @@ export const updateAgentSchema = z.object({
   add_tools: z
     .array(z.string())
     .optional()
-    .describe("Tool names to add to the agent (e.g. MCP tool names like 'mcp__notion__notion-search')"),
+    .describe("Tool names to add"),
   remove_tools: z
     .array(z.string())
     .optional()
-    .describe("Tool names to remove from the agent"),
+    .describe("Tool names to remove"),
 });
 
 export const updateAgentTool = tool(

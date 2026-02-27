@@ -15,7 +15,7 @@ const batchItemSchema = z.object({
   type: z.string().describe("Item type (must exist in item_types)"),
   day: z.string().optional().describe("YYYY-MM-DD, defaults to today"),
   metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
-  parent_id: z.string().optional().describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists."),
+  parent_id: z.string().optional().describe("Parent item ID (for hierarchical items, not lists)"),
   list_id: z.string().uuid().optional().describe("List UUID"),
   list_name: z.string().optional().describe("List name (resolved automatically)"),
   confirmed: z.boolean().optional().describe("Default true. Set false when approval is needed."),

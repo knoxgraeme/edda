@@ -21,22 +21,13 @@ export const updateItemSchema = z.object({
     .uuid()
     .nullable()
     .optional()
-    .describe("Parent item ID for hierarchical items (meeting→decision). NOT for lists — use list_id."),
+    .describe("Parent item ID (for hierarchical items, not lists)"),
   list_id: z
     .string()
     .uuid()
     .nullable()
     .optional()
     .describe("Move item to a list, or null to remove from list"),
-  superseded_by: z
-    .string()
-    .uuid()
-    .optional()
-    .describe("ID of the item that supersedes this one (marks it as obsolete)"),
-  last_reinforced_at: z
-    .string()
-    .optional()
-    .describe("ISO timestamp of the last reinforcement (near-duplicate detection)"),
   confirmed: z
     .boolean()
     .optional()
@@ -45,11 +36,11 @@ export const updateItemSchema = z.object({
     .string()
     .nullable()
     .optional()
-    .describe("Pending review action (e.g. 'confirm', 'merge'), or null to clear"),
+    .describe("Pending action (e.g. 'confirm', 'merge'), or null to clear"),
 });
 
 export const updateItemTool = tool(
-  async ({ item_id, status, content, metadata, parent_id, list_id, superseded_by, last_reinforced_at, confirmed, pending_action }) => {
+  async ({ item_id, status, content, metadata, parent_id, list_id, confirmed, pending_action }) => {
     const updates: Parameters<typeof updateItem>[1] = {};
 
     if (status !== undefined) {
@@ -80,8 +71,6 @@ export const updateItemTool = tool(
     if (metadata !== undefined) updates.metadata = metadata;
     if (parent_id !== undefined) updates.parent_id = parent_id;
     if (list_id !== undefined) updates.list_id = list_id;
-    if (superseded_by !== undefined) updates.superseded_by = superseded_by;
-    if (last_reinforced_at !== undefined) updates.last_reinforced_at = last_reinforced_at;
     if (confirmed !== undefined) updates.confirmed = confirmed;
     if (pending_action !== undefined) updates.pending_action = pending_action;
 

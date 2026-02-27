@@ -17,7 +17,7 @@ export const updateSettingsSchema = z.object({
         .min(1)
         .max(100)
         .optional()
-        .describe("Name of the agent to use as the default conversational agent"),
+        .describe("Default conversational agent name"),
       user_display_name: z.string().optional(),
       user_timezone: z.string().optional(),
       daily_digest_time: z
@@ -33,7 +33,7 @@ export const updateSettingsSchema = z.object({
       agents_md_token_budget: z.number().int().min(100).max(10000).optional(),
       agents_md_max_versions: z.number().int().min(1).max(50).optional(),
     })
-    .describe("Settings key-value pairs to update. Only user-facing settings are modifiable."),
+    .describe("Settings to update"),
 });
 
 /** Settings the agent is allowed to modify — derived from the Zod schema */

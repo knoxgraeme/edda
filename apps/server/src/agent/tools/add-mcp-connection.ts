@@ -27,9 +27,7 @@ export const addMcpConnectionSchema = z.object({
       "auth_env_var must match MCP_AUTH_* pattern (e.g. MCP_AUTH_MYSERVICE_TOKEN)",
     )
     .optional()
-    .describe(
-      "Name of the env var holding the Bearer token (must start with MCP_AUTH_, e.g. MCP_AUTH_MYSERVICE_TOKEN). Set the actual secret in Railway secrets or .env — never pass the token value directly.",
-    ),
+    .describe("Env var name for Bearer token (e.g. MCP_AUTH_MYSERVICE_TOKEN)"),
 });
 
 export const addMcpConnectionTool = tool(

@@ -42,7 +42,7 @@ COPY --from=builder /app/apps/server/dist apps/server/dist/
 RUN pnpm install --frozen-lockfile --prod
 
 # Run migrations then start
-CMD ["sh", "-c", "node packages/db/dist/migrate.js && node apps/server/dist/index.js"]
+CMD ["sh", "-c", "node packages/db/dist/migrate.js && node packages/db/dist/seed-settings.js && node apps/server/dist/index.js"]
 
 EXPOSE 8000
 
