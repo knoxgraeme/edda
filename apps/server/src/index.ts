@@ -79,13 +79,20 @@ async function main() {
   // 7. Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
-    initTelegram(telegramToken);
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new Error(
+        "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set. " +
+        "Generate one with: openssl rand -hex 32"
+      );
+    }
 
-    // TELEGRAM_WEBHOOK_URL must point at the server (port 8000), not the web app (port 3000)
+    await initTelegram(telegramToken);
+
     const webhookUrl =
       process.env.TELEGRAM_WEBHOOK_URL ?? `http://localhost:${port}/api/telegram/webhook`;
     try {
-      await registerWebhook(webhookUrl, process.env.TELEGRAM_WEBHOOK_SECRET);
+      await registerWebhook(webhookUrl, webhookSecret);
     } catch (err) {
       console.warn("  Telegram webhook registration failed (will work with manual setup):", err);
     }

@@ -15,6 +15,7 @@ import {
   Save,
   X,
   Radio,
+  Bell,
 } from "lucide-react";
 import Link from "next/link";
 import type { Agent, TaskRun, AgentSchedule, AgentChannel, ChannelPlatform, ThreadLifetime } from "../../types/db";
@@ -51,22 +52,138 @@ import { formatDuration, statusVariant } from "@/lib/format";
 
 // ─── Schedule Dialog ────────────────────────────────────────────────
 
+const NOTIFY_EXPIRES_OPTIONS = [
+  { value: "1 hour", label: "1 hour" },
+  { value: "24 hours", label: "24 hours" },
+  { value: "72 hours", label: "72 hours (default)" },
+  { value: "168 hours", label: "7 days" },
+  { value: "720 hours", label: "30 days" },
+  { value: "never", label: "No expiry" },
+];
+
+function NotifyTargetBuilder({
+  targets,
+  onChange,
+  availableAgents,
+}: {
+  targets: string[];
+  onChange: (targets: string[]) => void;
+  availableAgents: string[];
+}) {
+  const [newType, setNewType] = useState<"inbox" | "agent" | "agent_active" | "announce">("inbox");
+  const [newAgent, setNewAgent] = useState(availableAgents[0] ?? "");
+
+  const addTarget = () => {
+    let target: string;
+    if (newType === "inbox") {
+      target = "inbox";
+    } else if (newType === "agent") {
+      if (!newAgent) return;
+      target = `agent:${newAgent}`;
+    } else if (newType === "agent_active") {
+      if (!newAgent) return;
+      target = `agent:${newAgent}:active`;
+    } else {
+      if (!newAgent) return;
+      target = `announce:${newAgent}`;
+    }
+    if (!targets.includes(target)) {
+      onChange([...targets, target]);
+    }
+  };
+
+  const removeTarget = (idx: number) => {
+    onChange(targets.filter((_, i) => i !== idx));
+  };
+
+  const needsAgent = newType !== "inbox";
+
+  return (
+    <div className="grid gap-2">
+      {targets.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {targets.map((t, i) => (
+            <Badge key={i} variant="secondary" className="text-xs gap-1 pr-1">
+              {t}
+              <button
+                type="button"
+                className="ml-0.5 rounded-sm hover:bg-muted-foreground/20 p-0.5"
+                onClick={() => removeTarget(i)}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as typeof newType)}
+          >
+            <option value="inbox">Inbox</option>
+            <option value="agent">Agent (passive)</option>
+            <option value="agent_active">Agent (active)</option>
+            <option value="announce">Announce</option>
+          </Select>
+          {needsAgent ? (
+            <Select
+              value={newAgent}
+              onChange={(e) => setNewAgent(e.target.value)}
+            >
+              {availableAgents.length === 0 && <option value="">No agents</option>}
+              {availableAgents.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <div />
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9"
+          onClick={addTarget}
+          disabled={needsAgent && !newAgent}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Inbox: web UI notification. Agent: deliver on next run. Active: trigger immediate run.
+        Announce: push to channels.
+      </p>
+    </div>
+  );
+}
+
 function ScheduleDialogInner({
   onOpenChange,
   agentName,
   schedule,
   onSaved,
+  availableAgents,
 }: {
   onOpenChange: (open: boolean) => void;
   agentName: string;
   schedule?: AgentSchedule;
   onSaved: () => void;
+  availableAgents: string[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState(schedule?.name ?? "");
   const [cron, setCron] = useState(schedule?.cron ?? "");
   const [prompt, setPrompt] = useState(schedule?.prompt ?? "");
   const [threadLifetime, setThreadLifetime] = useState(schedule?.thread_lifetime ?? "");
+  const [notify, setNotify] = useState<string[]>(schedule?.notify ?? []);
+  const [notifyExpiresAfter, setNotifyExpiresAfter] = useState(
+    schedule?.notify_expires_after ?? "72 hours",
+  );
 
   const isEdit = !!schedule;
   const cronValid = cron.length > 0 && isValidCron(cron);
@@ -81,6 +198,8 @@ function ScheduleDialogInner({
             cron,
             prompt,
             thread_lifetime: (threadLifetime || null) as ThreadLifetime | null,
+            notify,
+            notify_expires_after: notifyExpiresAfter,
           });
           toast.success("Schedule updated");
         } else {
@@ -90,6 +209,8 @@ function ScheduleDialogInner({
             cron,
             prompt,
             thread_lifetime: threadLifetime ? (threadLifetime as ThreadLifetime) : undefined,
+            notify,
+            notify_expires_after: notifyExpiresAfter !== "72 hours" ? notifyExpiresAfter : undefined,
           });
           toast.success("Schedule created");
         }
@@ -164,6 +285,31 @@ function ScheduleDialogInner({
             <option value="persistent">Persistent</option>
           </Select>
         </div>
+        <Separator />
+        <div className="grid gap-2">
+          <Label>Notification Targets</Label>
+          <NotifyTargetBuilder
+            targets={notify}
+            onChange={setNotify}
+            availableAgents={availableAgents}
+          />
+        </div>
+        {notify.length > 0 && (
+          <div className="grid gap-2">
+            <Label htmlFor="sched-expires">Notification Expiry</Label>
+            <Select
+              id="sched-expires"
+              value={notifyExpiresAfter}
+              onChange={(e) => setNotifyExpiresAfter(e.target.value)}
+            >
+              {NOTIFY_EXPIRES_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -184,12 +330,14 @@ function ScheduleDialog({
   agentName,
   schedule,
   onSaved,
+  availableAgents,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agentName: string;
   schedule?: AgentSchedule;
   onSaved: () => void;
+  availableAgents: string[];
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -200,6 +348,7 @@ function ScheduleDialog({
           agentName={agentName}
           schedule={schedule}
           onSaved={onSaved}
+          availableAgents={availableAgents}
         />
       </DialogContent>
     </Dialog>
@@ -603,9 +752,11 @@ function OverviewTab({
 function SchedulesTab({
   agentName,
   schedules: initialSchedules,
+  availableAgents,
 }: {
   agentName: string;
   schedules: AgentSchedule[];
+  availableAgents: string[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [schedules, setSchedules] = useState(initialSchedules);
@@ -689,10 +840,25 @@ function SchedulesTab({
                         {sched.thread_lifetime}
                       </Badge>
                     )}
+                    {sched.notify && sched.notify.length > 0 && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        <Bell className="h-3 w-3" />
+                        {sched.notify.length}
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2">
                     {sched.prompt}
                   </p>
+                  {sched.notify && sched.notify.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {sched.notify.map((t, i) => (
+                        <Badge key={i} variant="outline" className="text-xs">
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <Switch
@@ -733,6 +899,7 @@ function SchedulesTab({
         agentName={agentName}
         schedule={editingSchedule}
         onSaved={refresh}
+        availableAgents={availableAgents}
       />
     </div>
   );
@@ -820,7 +987,7 @@ function ChannelDialogInner({
           />
           <p className="text-xs text-muted-foreground">
             {platform === "telegram"
-              ? "Format: chat_id:thread_id (use 0 for DMs)"
+              ? "Format: chat_id:thread_id or chat_id:dm for direct messages"
               : platform === "slack"
                 ? "Format: workspace_id:channel_id"
                 : "Format: guild_id:channel_id"}
@@ -1267,7 +1434,7 @@ export function AgentDetailClient({
         </TabsContent>
 
         <TabsContent value="schedules">
-          <SchedulesTab agentName={agent.name} schedules={schedules} />
+          <SchedulesTab agentName={agent.name} schedules={schedules} availableAgents={availableAgents} />
         </TabsContent>
 
         <TabsContent value="channels">

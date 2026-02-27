@@ -17,8 +17,10 @@ export function registerSender(sender: ChannelSender): void {
 export async function deliverToChannel(channel: AgentChannel, text: string): Promise<void> {
   const sender = senders.get(channel.platform);
   if (!sender) {
-    console.warn(`[deliver] No sender registered for platform "${channel.platform}", skipping`);
-    return;
+    throw new Error(
+      `No sender registered for platform "${channel.platform}". ` +
+      `Ensure the ${channel.platform} adapter is initialized before attempting delivery.`
+    );
   }
   await sender.send(channel.external_id, text);
 }

@@ -38,11 +38,13 @@ export async function createChannel(input: {
 export async function getChannelByExternalId(
   platform: ChannelPlatform,
   externalId: string,
+  opts?: { includeDisabled?: boolean },
 ): Promise<AgentChannel | null> {
   const pool = getPool();
+  const enabledFilter = opts?.includeDisabled ? "" : " AND enabled = true";
   const { rows } = await pool.query(
     `SELECT ${CHANNEL_COLS} FROM agent_channels
-     WHERE platform = $1 AND external_id = $2 AND enabled = true`,
+     WHERE platform = $1 AND external_id = $2${enabledFilter}`,
     [platform, externalId],
   );
   return (rows[0] as AgentChannel) ?? null;
@@ -70,15 +72,6 @@ export async function getChannelsByAgent(
   const { rows } = await pool.query(
     `SELECT ${CHANNEL_COLS} FROM agent_channels WHERE ${conditions.join(" AND ")} ORDER BY created_at`,
     params,
-  );
-  return rows as AgentChannel[];
-}
-
-export async function getChannelsByPlatform(platform: ChannelPlatform): Promise<AgentChannel[]> {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT ${CHANNEL_COLS} FROM agent_channels WHERE platform = $1 AND enabled = true ORDER BY created_at`,
-    [platform],
   );
   return rows as AgentChannel[];
 }
