@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseBody, badRequest } from "../_lib/helpers";
+import { parseBody, badRequest, getServerUrl } from "../_lib/helpers";
 
-const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
+const SERVER_URL = getServerUrl();
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 const ChatSchema = z.object({

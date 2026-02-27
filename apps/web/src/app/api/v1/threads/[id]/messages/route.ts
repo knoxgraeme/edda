@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { badRequest } from "../../../_lib/helpers";
+import { badRequest, getServerUrl } from "../../../_lib/helpers";
 
-const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
+const SERVER_URL = getServerUrl();
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
 /** Thread IDs are alphanumeric strings with hyphens, underscores, colons */

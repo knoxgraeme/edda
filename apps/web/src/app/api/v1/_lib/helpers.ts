@@ -39,3 +39,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function isUUID(s: string): boolean {
   return UUID_RE.test(s);
 }
+
+/**
+ * Resolve the internal backend server URL.
+ * Handles bare hostnames (e.g. "edda-server") by prepending http://.
+ */
+export function getServerUrl(): string {
+  const raw = process.env.SERVER_URL ?? "http://localhost:8000";
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  return `http://${raw}`;
+}
