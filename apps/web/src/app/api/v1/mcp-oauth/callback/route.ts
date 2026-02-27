@@ -58,8 +58,7 @@ export async function GET(req: NextRequest) {
 
   // 4. Delegate token exchange to the server
   try {
-    const serverPort = process.env.PORT ?? "8000";
-    const serverBase = process.env.INTERNAL_SERVER_URL ?? `http://localhost:${serverPort}`;
+    const serverBase = process.env.INTERNAL_SERVER_URL ?? "http://localhost:8000";
     const secret = process.env.INTERNAL_API_SECRET;
 
     const res = await fetch(`${serverBase}/internal/mcp-oauth/complete`, {

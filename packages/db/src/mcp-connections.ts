@@ -49,7 +49,11 @@ export async function updateMcpConnection(
   }
 
   const sets = entries.map(([k], i) => `"${k}" = $${i + 2}`).join(", ");
-  const vals = entries.map(([, v]) => (typeof v === "object" && v !== null ? JSON.stringify(v) : v));
+  const vals = entries.map(([, v]) => {
+    if (Array.isArray(v)) return v; // pg driver handles JS arrays → PostgreSQL arrays
+    if (typeof v === "object" && v !== null) return JSON.stringify(v);
+    return v;
+  });
 
   const { rows } = await pool.query(
     `UPDATE mcp_connections SET ${sets} WHERE id = $1 RETURNING *`,

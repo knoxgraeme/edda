@@ -16,6 +16,8 @@ import {
   X,
   Radio,
   Bell,
+  History,
+  MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
 import type { Agent, TaskRun, AgentSchedule, AgentChannel, ChannelPlatform, ThreadLifetime } from "../../types/db";
@@ -49,6 +51,9 @@ import {
 } from "../../actions";
 import { AVAILABLE_SKILLS, MODEL_KEYS, isValidCron } from "../../agents/constants";
 import { formatDuration, statusVariant } from "@/lib/format";
+import { ChatProvider, useChatContext } from "@/providers/ChatProvider";
+import { ChatInterface } from "@/app/components/ChatInterface";
+import { ThreadList } from "@/app/components/ThreadList";
 
 // ─── Schedule Dialog ────────────────────────────────────────────────
 
@@ -232,7 +237,7 @@ function ScheduleDialogInner({
             : "Create a new cron schedule for this agent."}
         </DialogDescription>
       </DialogHeader>
-      <div className="grid gap-4 py-2">
+      <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto pr-1">
         <div className="grid gap-2">
           <Label htmlFor="sched-name">Name</Label>
           <Input
@@ -1319,6 +1324,64 @@ function RunsTab({ agentName, runs: initialRuns }: { agentName: string; runs: Ta
   );
 }
 
+// ─── Chat Tab ───────────────────────────────────────────────────────
+
+function ChatTabContent({ agentName, threadLifetime }: { agentName: string; threadLifetime: ThreadLifetime }) {
+  const [showThreads, setShowThreads] = useState(false);
+  const { threadId, loadThread } = useChatContext();
+
+  const handleThreadSelect = useCallback(
+    (id: string) => {
+      void loadThread(id);
+      setShowThreads(false);
+    },
+    [loadThread],
+  );
+
+  // Only show thread sidebar for daily agents (multiple threads over time)
+  const showThreadSidebar = threadLifetime === "daily";
+
+  return (
+    <div className="flex h-full -mx-6">
+      {showThreadSidebar && showThreads && (
+        <div className="relative w-72 flex-shrink-0 border-r border-border bg-muted/30">
+          <ThreadList
+            agentName={agentName}
+            currentThreadId={threadId ?? undefined}
+            onThreadSelect={handleThreadSelect}
+            onClose={() => setShowThreads(false)}
+          />
+        </div>
+      )}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {showThreadSidebar && (
+          <div className="flex flex-shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowThreads((prev) => !prev)}
+              title="Toggle thread history"
+              className="h-8 gap-1.5 px-2"
+            >
+              <History className="h-4 w-4" />
+              <span className="text-xs">History</span>
+            </Button>
+          </div>
+        )}
+        <ChatInterface />
+      </div>
+    </div>
+  );
+}
+
+function ChatTab({ agentName, threadLifetime }: { agentName: string; threadLifetime: ThreadLifetime }) {
+  return (
+    <ChatProvider agentName={agentName}>
+      <ChatTabContent agentName={agentName} threadLifetime={threadLifetime} />
+    </ChatProvider>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────
 
 export function AgentDetailClient({
@@ -1380,8 +1443,8 @@ export function AgentDetailClient({
   };
 
   return (
-    <main className="max-w-4xl mx-auto p-6">
-      <div className="flex items-center gap-2 mb-6">
+    <main className="flex h-full flex-col overflow-hidden">
+      <div className="flex flex-shrink-0 items-center gap-2 px-6 pt-6 pb-4">
         <Link href="/agents">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4" />
@@ -1401,8 +1464,12 @@ export function AgentDetailClient({
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
-        <TabsList>
+      <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col px-6">
+        <TabsList className="flex-shrink-0">
+          <TabsTrigger value="chat">
+            <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+            Chat
+          </TabsTrigger>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="schedules">
             Schedules
@@ -1423,7 +1490,11 @@ export function AgentDetailClient({
           <TabsTrigger value="runs">Runs</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview">
+        <TabsContent value="chat" className="flex-1 min-h-0">
+          <ChatTab agentName={agent.name} threadLifetime={agent.thread_lifetime} />
+        </TabsContent>
+
+        <TabsContent value="overview" className="overflow-auto pb-6">
           <OverviewTab
             agent={agent}
             availableAgents={availableAgents}
@@ -1433,15 +1504,15 @@ export function AgentDetailClient({
           />
         </TabsContent>
 
-        <TabsContent value="schedules">
+        <TabsContent value="schedules" className="overflow-auto pb-6">
           <SchedulesTab agentName={agent.name} schedules={schedules} availableAgents={availableAgents} />
         </TabsContent>
 
-        <TabsContent value="channels">
+        <TabsContent value="channels" className="overflow-auto pb-6">
           <ChannelsTab agentName={agent.name} channels={channels} />
         </TabsContent>
 
-        <TabsContent value="runs">
+        <TabsContent value="runs" className="overflow-auto pb-6">
           <RunsTab agentName={agent.name} runs={runs} />
         </TabsContent>
       </Tabs>

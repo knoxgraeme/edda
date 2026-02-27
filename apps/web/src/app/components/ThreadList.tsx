@@ -66,13 +66,14 @@ function EmptyState() {
 }
 
 interface ThreadListProps {
+  agentName?: string;
   currentThreadId?: string;
   onThreadSelect: (id: string) => void;
   onClose?: () => void;
 }
 
-export function ThreadList({ currentThreadId, onThreadSelect, onClose }: ThreadListProps) {
-  const { threads, error, isLoading, mutate } = useEddaThreads();
+export function ThreadList({ agentName, currentThreadId, onThreadSelect, onClose }: ThreadListProps) {
+  const { threads, error, isLoading, mutate } = useEddaThreads(agentName);
 
   const isEmpty = threads.length === 0;
 

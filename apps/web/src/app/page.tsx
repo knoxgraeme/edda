@@ -1,14 +1,7 @@
-/**
- * Main chat page — the primary Edda interface
- */
+import { redirect } from "next/navigation";
+import { getSettings } from "@edda/db";
 
-import { Suspense } from "react";
-import { ChatPageClient } from "./components/ChatPageClient";
-
-export default function ChatPage() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <ChatPageClient />
-    </Suspense>
-  );
+export default async function ChatPage() {
+  const settings = await getSettings();
+  redirect(`/agents/${encodeURIComponent(settings.default_agent)}`);
 }

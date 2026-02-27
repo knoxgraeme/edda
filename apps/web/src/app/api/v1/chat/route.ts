@@ -6,7 +6,8 @@ const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8000";
 
 const ChatSchema = z.object({
   message: z.string().min(1).max(50_000),
-  thread_id: z.string().uuid(),
+  thread_id: z.string().optional(),
+  agent_name: z.string().min(1),
 });
 
 export async function POST(request: Request) {
@@ -21,7 +22,8 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: [{ content: parsed.data.message }],
-      thread_id: parsed.data.thread_id,
+      agent_name: parsed.data.agent_name,
+      ...(parsed.data.thread_id ? { thread_id: parsed.data.thread_id } : {}),
     }),
   });
 

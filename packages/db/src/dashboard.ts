@@ -108,7 +108,8 @@ export async function getPendingConfirmationsCount(): Promise<number> {
     `SELECT
        (SELECT count(*) FROM items WHERE confirmed = false) +
        (SELECT count(*) FROM item_types WHERE confirmed = false) +
-       (SELECT count(*) FROM entities WHERE confirmed = false)
+       (SELECT count(*) FROM entities WHERE confirmed = false) +
+       (SELECT count(*) FROM telegram_paired_users WHERE status = 'pending')
      AS total`,
   );
   return Number(rows[0]?.total) || 0;

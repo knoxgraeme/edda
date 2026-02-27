@@ -28,15 +28,19 @@ async function fetcher(url: string): Promise<ThreadItem[]> {
   });
 }
 
-export function useEddaThreads() {
+export function useEddaThreads(agentName?: string) {
+  const url = agentName
+    ? `${SERVER_URL}/api/threads?agent_name=${encodeURIComponent(agentName)}`
+    : `${SERVER_URL}/api/threads`;
+
   const { data, error, isLoading, mutate } = useSWR<ThreadItem[]>(
-    `${SERVER_URL}/api/threads`,
+    url,
     fetcher,
     {
       revalidateOnFocus: false,
       dedupingInterval: 10_000,
       errorRetryCount: 3,
-    }
+    },
   );
 
   return { threads: data ?? [], error, isLoading, mutate };

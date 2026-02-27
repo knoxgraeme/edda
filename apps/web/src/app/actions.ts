@@ -36,7 +36,7 @@ import { computeSessionToken, COOKIE_NAME, THIRTY_DAYS } from "@/lib/auth";
 // Mirrors UpdateSettingsSchema from /api/v1/settings/route.ts — keep in sync
 const UpdateSettingsSchema = z
   .object({
-    user_display_name: z.string().max(200).optional(),
+    user_display_name: z.string().max(200).nullable().optional(),
     user_timezone: z.string().max(100).optional(),
     llm_provider: z
       .enum(["anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock"])
@@ -141,14 +141,20 @@ export async function updateItemStatusAction(
 }
 
 export async function saveSettingsAction(updates: Partial<Settings>) {
-  const validated = UpdateSettingsSchema.parse(updates);
   try {
+    const validated = UpdateSettingsSchema.parse(updates);
     const saved = await updateSettings(validated);
     revalidatePath("/settings");
     return saved;
-  } catch (err) {
-    console.error("Failed to save settings:", err);
-    throw new Error("Failed to save settings. Please try again.");
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Unknown error";
+    console.error("Failed to save settings:", message, err);
+    // Always throw a plain Error — library errors (Zod, pg) may have
+    // non-writable `message` properties that break Next.js serialization.
+    const plain = new Error(`Failed to save settings: ${message}`);
+    plain.stack = undefined;
+    throw plain;
   }
 }
 

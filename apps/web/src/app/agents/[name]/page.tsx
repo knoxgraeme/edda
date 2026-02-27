@@ -20,12 +20,16 @@ export default async function AgentDetailPage({
 
   const agentNames = allNames.filter((n) => n !== name);
 
+  // JSON round-trip ensures all DB values (Date, pg interval objects, etc.)
+  // are converted to plain serializable objects for the Client Component boundary.
+  const serialize = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+
   return (
     <AgentDetailClient
-      agent={agent}
-      runs={runs}
-      schedules={schedules}
-      channels={channels}
+      agent={serialize(agent)}
+      runs={serialize(runs)}
+      schedules={serialize(schedules)}
+      channels={serialize(channels)}
       availableAgents={agentNames}
     />
   );
