@@ -47,7 +47,7 @@ const UpdateSettingsSchema = z
     context_refresh_cron: z.string().max(50).optional(),
     default_agent: z.string().min(1).max(200).optional(),
   })
-  .strict();
+  .strip();
 
 const CRON_FIELD_RE = /^(\*|(\d+(-\d+)?(,\d+(-\d+)?)*)(\/\d+)?|\*\/\d+)$/;
 function isValidCron(expr: string): boolean {

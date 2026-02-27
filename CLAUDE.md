@@ -63,20 +63,23 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
 - **`src/llm/index.ts`** — LLM provider factory (reads from `settings` DB table; supports Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock)
 - **`src/embed/index.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
-- **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `self_improvement`, `type_evolution`, `weekly_reflect`
-- **`src/cron/standalone.ts`** — Standalone cron runner; reads `agents` table for schedules, creates `task_run` records, syncs dynamically
-- **`src/cron/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
-- **`src/notifications/index.ts`** — Creates notification items for agent run completions/failures
-- **`src/checkpointer/index.ts`** — State checkpointing backend (postgres, sqlite, or memory)
+- **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `reminders`, `self_improvement`, `type_evolution`, `weekly_reflect`
+- **`src/cron/local.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
+- **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `deliver.ts` (routes messages to platform adapters), `types.ts` (shared channel types)
+- **`src/utils/notify.ts`** — Multi-target notification delivery; routes to inbox (DB row), announce (channel delivery via `deliverToChannel`), or agent (triggers agent run)
+- **`src/utils/reminder-recurrence.ts`** — Cron expression and interval string parsing, validation, and next-date computation (uses `cron-parser`)
+- **`src/utils/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
+- **`src/utils/with-timeout.ts`** — Promise timeout wrapper for agent executions
 - **`src/utils/sanitize-error.ts`** — Strips internal details from errors before returning to agents
+- **`src/checkpointer/index.ts`** — State checkpointing backend (postgres, sqlite, or memory)
 - **`src/evals/`** — Vitest-based evaluation suite
 
 ### Frontend (`apps/web`)
 
 Next.js App Router with React 19.
 
-- **`src/app/`** — Route pages: `/` (chat), `/dashboard`, `/entities`, `/inbox`, `/settings`, `/login`
-- **`src/app/api/v1/`** — REST API routes (agents, task-runs, items, entities, threads, settings, dashboard, timeline, confirmations, mcp-connections)
+- **`src/app/`** — Route pages: `/` (chat), `/agents`, `/dashboard`, `/entities`, `/inbox`, `/settings`, `/skills`, `/login`
+- **`src/app/api/v1/`** — REST API routes (agents, channels, confirmations, dashboard, entities, item-types, items, mcp-connections, mcp-oauth, notifications, reminders, schedules, settings, skills, task-runs, threads, timeline)
 - **`src/middleware.ts`** — Next.js middleware; enforces optional password auth via `EDDA_PASSWORD`
 - **`src/lib/auth.ts`** — Session token helpers (HMAC-based cookie auth)
 - **`src/providers/`** — `ChatProvider` and `ClientProvider` context providers
@@ -87,12 +90,23 @@ Next.js App Router with React 19.
 
 Single source of truth for data model and queries.
 
-- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `TaskRun`
+- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `AgentSchedule`, `TaskRun`, `Notification`, `Channel`, `TelegramUser`, `List`, `Thread`, `PendingItem`
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
-- **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getScheduled)
+- **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getByName)
+- **`src/agent-schedules.ts`** — Per-agent cron schedule CRUD
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
-- **`migrations/`** — Ordered SQL migration files (001–036); applied via `pnpm migrate`
-- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `mcp_connections`, `agents_md_versions`, `agents`, `task_runs`
+- **`src/notifications.ts`** — Notification lifecycle: create, dismiss, claim due reminders, advance/complete recurring reminders, cleanup expired
+- **`src/channels.ts`** — Agent-channel link CRUD (agent_channels table)
+- **`src/telegram-users.ts`** — Telegram user pairing and lookup
+- **`src/threads.ts`** — Thread management with agent scoping and processing watermarks
+- **`src/lists.ts`** — First-class lists with pgvector embeddings
+- **`src/mcp-oauth.ts`** — OAuth state and token management for MCP connections
+- **`src/crypto.ts`** — AES-256-GCM encryption/decryption for sensitive credentials
+- **`src/confirmations.ts`** — Pending confirmation queries (item_types, entities)
+- **`src/dashboard.ts`** — Dashboard aggregation queries
+- **`src/skills.ts`** — Skill metadata storage and retrieval
+- **`migrations/`** — Ordered SQL migration files (001–023); applied via `pnpm migrate`
+- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `lists`, `mcp_connections`, `mcp_oauth_states`, `agents_md_versions`, `agents`, `agent_schedules`, `agent_channels`, `task_runs`, `notifications`, `threads`, `telegram_paired_users`, `skills`
 
 ### Configuration Strategy
 
@@ -107,6 +121,8 @@ Critical env vars (see `.env.example`):
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
 - `ALLOW_FILESYSTEM_ACCESS` — set to `true` to enable per-agent filesystem access (requires `FILESYSTEM_ROOT`)
 - `FILESYSTEM_ROOT` — absolute path root for agent filesystem mounts (e.g. `/data`)
+- `TELEGRAM_BOT_TOKEN` — optional; enables Telegram channel integration for agent message delivery
+- `MCP_ENCRYPTION_KEY` — optional; 32-byte hex key for AES-256-GCM encryption of MCP OAuth tokens
 
 Notable DB settings (in `settings` table):
 - `default_agent` — Name of the agent to use as the default conversational agent (default: `edda`)
@@ -117,7 +133,7 @@ Notable DB settings (in `settings` table):
 Edda uses a unified multi-agent architecture. All agents are built by `buildAgent(agent)` — there is no separate orchestrator factory. A `default_agent` setting (default: `edda`) determines which agent serves as the conversational interface. Any agent can be the default.
 
 - **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], thread_lifetime, trigger, model_settings_key, enabled flag, metadata.
-- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional thread_lifetime override, enabled flag. One agent can have multiple schedules.
+- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional thread_lifetime override, enabled flag, `notify` (target array for delivery on completion/failure), `notify_expires_after` (interval for notification expiry). One agent can have multiple schedules.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Thread lifetimes**: `ephemeral` (new thread every run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
@@ -169,6 +185,35 @@ Memory uses three complementary mechanisms:
 - **`get_entity_profile` tool** — Dynamically assembles a complete entity profile from `entities` + linked `items`; always fresh, no cron needed
 - **`memory` agent** — Runs nightly (`memory_catchup` schedule); iterates unprocessed threads and invokes `memory_extraction` for each
 - **Dedup**: Semantic similarity thresholds — reinforce ≥0.95, supersede 0.85–0.95, create new otherwise
+
+### Notification System
+
+Edda has a multi-target notification system for delivering messages from agents, schedules, and reminders.
+
+- **`notify()` utility** (`apps/server/src/utils/notify.ts`) — Central delivery function. Routes to targets based on prefix: `inbox` (creates DB notification row), `announce:<agent_name>` (delivers to agent's linked channels), `agent:<agent_name>:active` (triggers a live agent run).
+- **`notifications` table** — Stores all notifications with status lifecycle. Statuses: `unread` → `read` → `dismissed` for standard notifications; `scheduled` → `sending` → `sent` for reminders. `dismissed` also used for cancellation.
+- **Scheduled reminders** — Zero-LLM notifications that fire on time without an agent run. Created via `create_reminder` tool. The cron runner polls every 60 seconds, claims due rows atomically (`UPDATE ... SET status='sending' WHERE status='scheduled' AND scheduled_at <= now() ... FOR UPDATE SKIP LOCKED`), fires through `notify()`, then advances (recurring) or completes (one-shot).
+- **Recurrence** — Supports cron expressions (5 fields, e.g. `0 9 * * 4`) computed via `cron-parser`, or PostgreSQL interval strings (e.g. `1 day`, `2 hours`) with a 5-minute minimum floor. Cron computes next date explicitly; intervals use `scheduled_at + interval` in SQL.
+- **Crash recovery** — `resetStuckSendingReminders()` resets `sending` rows older than 5 minutes back to `scheduled` on startup and during periodic sync.
+- **Per-schedule notifications** — Each `agent_schedule` has a `notify` array and optional `notify_expires_after`. On schedule completion/failure, results are delivered to the configured targets.
+
+### Channels (External Delivery)
+
+Agents can be linked to external messaging platforms for receiving messages and broadcasting output.
+
+- **`agent_channels` table** — Links agents to external platform channels. Each row defines: agent_id, platform (e.g. `telegram`), external_id (platform-specific chat ID), config, and flags for `receive_messages` and `receive_announcements`.
+- **`telegram_paired_users` table** — Maps Telegram user IDs to Edda for authenticated message routing.
+- **`apps/server/src/channels/telegram.ts`** — Telegram bot adapter using webhook-based message handling. Receives user messages, routes to the linked agent, returns agent responses.
+- **`apps/server/src/channels/deliver.ts`** — Platform-agnostic delivery router. `deliverToChannel(channel, message)` dispatches to the appropriate platform adapter.
+- **Announcement flow** — When a scheduled agent run completes, the cron runner queries `getChannelsByAgent(agentId, { receiveAnnouncements: true })` and delivers the last assistant message to each linked channel.
+
+### MCP OAuth
+
+Edda supports OAuth authentication for connecting to remote MCP servers.
+
+- **`mcp_oauth_states` table** — Stores OAuth flow state (PKCE challenge, redirect URI) during the authorization dance.
+- **`packages/db/src/crypto.ts`** — AES-256-GCM encryption for storing OAuth tokens at rest. Requires `MCP_ENCRYPTION_KEY` env var.
+- **`apps/web/src/app/api/v1/mcp-oauth/`** — OAuth callback handler that completes the authorization flow and stores encrypted tokens.
 
 ## Code Style
 
