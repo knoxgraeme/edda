@@ -16,7 +16,7 @@ import {
   upsertOAuthState,
   decrypt,
 } from "@edda/db";
-import { getServerUrl } from "../_lib/helpers";
+import { getServerUrl } from "../../_lib/helpers";
 
 const PKCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
