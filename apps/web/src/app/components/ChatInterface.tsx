@@ -10,6 +10,16 @@ import { useChatContext } from "@/providers/ChatProvider";
 import { cn } from "@/lib/utils";
 import { useStickToBottom } from "use-stick-to-bottom";
 
+function ThinkingIndicator() {
+  return (
+    <div className="mt-4 flex items-center gap-1 py-2">
+      <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.3s]" />
+      <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:-0.15s]" />
+      <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/50" />
+    </div>
+  );
+}
+
 export const ChatInterface = React.memo(function ChatInterface() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [input, setInput] = useState("");
@@ -180,6 +190,7 @@ export const ChatInterface = React.memo(function ChatInterface() {
               />
             ))
           )}
+          {isLoading && <ThinkingIndicator />}
         </div>
       </div>
 
