@@ -88,26 +88,13 @@ async function main() {
   await cronRunner.start();
   log.info("Cron runner started");
 
-  const shutdown = async (signal: string) => {
-    log.info({ signal }, "Shutting down");
-    try {
-      await cronRunner.stop();
-      await closeMCPClients();
-    } catch (err) {
-      log.error({ err }, "Shutdown cleanup failed");
-    } finally {
-      process.exit(0);
-    }
-  };
-  process.once("SIGINT", () => void shutdown("SIGINT"));
-  process.once("SIGTERM", () => void shutdown("SIGTERM"));
-
   // 6. Health endpoint
   const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
   log.info({ port, url: `http://localhost:${port}/api/health` }, "Health server started");
 
   // 7. Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
+  let telegram: TelegramAdapter | null = null;
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
     const apiSecret = process.env.INTERNAL_API_SECRET;
@@ -119,7 +106,7 @@ async function main() {
       );
     }
 
-    const telegram = new TelegramAdapter(telegramToken, { webhookSecret: apiSecret });
+    telegram = new TelegramAdapter(telegramToken, { webhookSecret: apiSecret });
     await telegram.init();
 
     const webhookUrl =
@@ -130,6 +117,22 @@ async function main() {
       log.warn({ err }, "Telegram webhook registration failed (will work with manual setup)");
     }
   }
+
+  // 8. Shutdown handler
+  const shutdown = async (signal: string) => {
+    log.info({ signal }, "Shutting down");
+    try {
+      if (telegram) await telegram.shutdown();
+      await cronRunner.stop();
+      await closeMCPClients();
+    } catch (err) {
+      log.error({ err }, "Shutdown cleanup failed");
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
   log.info("Edda ready");
 }

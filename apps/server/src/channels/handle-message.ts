@@ -25,7 +25,7 @@ const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export async function handleInboundMessage(opts: {
   parsed: ParsedMessage;
   adapter: ChannelAdapter;
-  fallbackAgentName?: string;
+  useFallbackAgent?: boolean;
 }): Promise<void> {
   const { parsed, adapter } = opts;
   const log = getLogger();
@@ -49,8 +49,8 @@ export async function handleInboundMessage(opts: {
     }
 
     // No channel row — try fallback agent
-    if (opts.fallbackAgentName) {
-      const fallback = await getAgentByName(opts.fallbackAgentName);
+    if (opts.useFallbackAgent) {
+      const fallback = await getAgentByName((await getSettings()).default_agent);
       if (fallback?.enabled) {
         agentDef = fallback;
       }
@@ -69,18 +69,18 @@ export async function handleInboundMessage(opts: {
     return;
   }
 
-  const settings = await getSettings();
+  const { user_timezone } = await getSettings();
   const threadId = resolveThreadId(
     agentDef,
     { platform: adapter.platform, external_id: parsed.externalId },
-    { timezone: settings.user_timezone },
+    { timezone: user_timezone },
   );
 
   // 3. Execute with tracing + error handling
   await withTraceId({ module: adapter.platform, agent: agentDef.name }, async () => {
     // Start typing indicator
     if (adapter.sendTypingIndicator) {
-      adapter.sendTypingIndicator(parsed.externalId, parsed.replyContext).catch((err: unknown) => {
+      adapter.sendTypingIndicator(parsed.externalId).catch((err: unknown) => {
         log.warn({ err, platform: adapter.platform }, "Typing indicator failed");
       });
     }
@@ -89,7 +89,7 @@ export async function handleInboundMessage(opts: {
     let typingFailLogged = false;
     const typingInterval = adapter.sendTypingIndicator
       ? setInterval(() => {
-          adapter.sendTypingIndicator!(parsed.externalId, parsed.replyContext).catch((err: unknown) => {
+          adapter.sendTypingIndicator!(parsed.externalId).catch((err: unknown) => {
             if (!typingFailLogged) {
               typingFailLogged = true;
               log.warn({ err, platform: adapter.platform }, "Typing indicator failed");
@@ -99,8 +99,6 @@ export async function handleInboundMessage(opts: {
       : null;
 
     try {
-      // Phase 3 will add streaming support here (streamToAdapter).
-      // For now, use invoke() and send the full response.
       const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } =
         await withTimeout(
           state.agent.invoke(

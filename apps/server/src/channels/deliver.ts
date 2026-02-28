@@ -18,6 +18,10 @@ export function getAdapter(platform: string): ChannelAdapter | undefined {
   return adapters.get(platform);
 }
 
+export function unregisterAdapter(platform: string): void {
+  adapters.delete(platform);
+}
+
 export async function deliverToChannel(channel: AgentChannel, text: string): Promise<void> {
   const adapter = adapters.get(channel.platform);
   if (!adapter) {

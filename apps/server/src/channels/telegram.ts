@@ -16,14 +16,13 @@ import {
   getAgentByName,
   getAgentNames,
   getRecentTaskRuns,
-  getSettings,
   createChannel,
   deleteChannel,
   getPairedUser,
   createPairingRequest,
 } from "@edda/db";
 import { getLogger } from "../logger.js";
-import { registerAdapter } from "./deliver.js";
+import { registerAdapter, unregisterAdapter } from "./deliver.js";
 import { handleInboundMessage } from "./handle-message.js";
 import type { ChannelAdapter, ParsedMessage } from "./adapter.js";
 
@@ -100,7 +99,7 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   async shutdown(): Promise<void> {
-    // grammY doesn't require explicit cleanup for webhook mode
+    unregisterAdapter(this.platform);
     this.bot = null;
     getLogger().info("Telegram adapter shut down");
   }
@@ -116,14 +115,19 @@ export class TelegramAdapter implements ChannelAdapter {
       return;
     }
 
-    // Validate secret token
-    if (this.webhookSecret) {
-      const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
-      if (!validateWebhookSecret(headerSecret, this.webhookSecret)) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Invalid secret token" }));
-        return;
-      }
+    // Validate secret token (fail-closed: reject if secret is not configured)
+    if (!this.webhookSecret) {
+      getLogger().error("Webhook secret not configured — rejecting request");
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Webhook secret not configured" }));
+      return;
+    }
+
+    const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
+    if (!validateWebhookSecret(headerSecret, this.webhookSecret)) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid secret token" }));
+      return;
     }
 
     let update: Update;
@@ -144,15 +148,6 @@ export class TelegramAdapter implements ChannelAdapter {
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Auth
-  // ---------------------------------------------------------------------------
-
-  async isAuthorized(platformUserId: string): Promise<boolean> {
-    const paired = await getPairedUser(Number(platformUserId));
-    return paired?.status === "approved";
   }
 
   // ---------------------------------------------------------------------------
@@ -400,21 +395,16 @@ export class TelegramAdapter implements ChannelAdapter {
 
     const externalId = threadId ? `${chatId}:${threadId}` : `${chatId}:dm`;
 
-    // For DMs with no channel link, fall back to the default agent
-    const settings = await getSettings();
-    const fallbackAgentName = !threadId ? settings.default_agent : undefined;
-
     const parsed: ParsedMessage = {
       text,
       externalId,
       platformUserId: String(ctx.from?.id ?? ""),
-      replyContext: { chatId, threadId },
     };
 
     await handleInboundMessage({
       parsed,
       adapter: this,
-      fallbackAgentName,
+      useFallbackAgent: !threadId,
     });
   }
 }
