@@ -15,10 +15,14 @@ import { startHealthServer } from "./server/index.js";
 import { initTelegram, registerWebhook } from "./channels/telegram.js";
 import { closeMCPClients } from "./mcp/client.js";
 import { logger } from "./logger.js";
+import { patchAnthropicToolSchemas } from "./agent/patch-anthropic-schemas.js";
 
 async function main() {
   const log = logger.child({ module: "startup" });
   log.info("Edda starting");
+
+  // 0. Patch Anthropic tool schema serialization — ensures all tools have type: "object"
+  patchAnthropicToolSchemas();
 
   // 1. Load settings (must happen before anything else)
   const settings = await refreshSettings();
