@@ -2,7 +2,7 @@
  * Telegram channel adapter — grammY bot with webhook handling.
  *
  * Receives messages via Telegram webhook, routes them to the linked agent
- * via buildAgent().invoke(), and replies in the same forum topic.
+ * via the shared agent cache, and replies in the same forum topic.
  * Also exports sendToTelegram() for proactive announcement delivery.
  */
 
@@ -23,8 +23,9 @@ import {
   createPairingRequest,
 } from "@edda/db";
 import type { Agent } from "@edda/db";
-import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
-import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
+import { resolveThreadId } from "../agent/build-agent.js";
+import { getOrBuildAgent } from "../agent/agent-cache.js";
+import { extractLastAssistantMessage } from "../agent/tool-helpers.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import { registerSender } from "./deliver.js";
 import { getLogger, withTraceId } from "../logger.js";
@@ -391,21 +392,26 @@ async function handleTextMessage(ctx: Context): Promise<void> {
         message_thread_id: threadId,
       });
 
+      const state = await getOrBuildAgent(agentDef.name);
+      if (!state) {
+        await sendSplitMessage(ctx, "The agent is currently unavailable.", threadId);
+        return;
+      }
+
       const settings = await getSettings();
-      const agent = await buildAgent(agentDef);
       const agentThreadId = resolveThreadId(agentDef, {
         platform: "telegram",
         external_id: externalId,
       }, { timezone: settings.user_timezone });
 
       const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } = await withTimeout(
-        agent.invoke(
+        state.agent.invoke(
           { messages: [{ role: "user", content: text }] },
           {
             configurable: {
               thread_id: agentThreadId,
               agent_name: agentDef.name,
-              retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+              retrieval_context: state.retrievalContext,
             },
           },
         ),

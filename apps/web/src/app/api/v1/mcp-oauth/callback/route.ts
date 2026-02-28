@@ -16,6 +16,7 @@ import {
   upsertOAuthState,
   decrypt,
 } from "@edda/db";
+import { getServerUrl } from "../_lib/helpers";
 
 const PKCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -58,8 +59,7 @@ export async function GET(req: NextRequest) {
 
   // 4. Delegate token exchange to the server
   try {
-    const rawBase = process.env.INTERNAL_SERVER_URL ?? "http://localhost:8000";
-    const serverBase = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `http://${rawBase}`;
+    const serverBase = getServerUrl();
     const secret = process.env.INTERNAL_API_SECRET;
 
     const res = await fetch(`${serverBase}/internal/mcp-oauth/complete`, {

@@ -4,8 +4,8 @@
 
 import { startTaskRun, completeTaskRun, failTaskRun } from "@edda/db";
 import type { Agent } from "@edda/db";
-import { buildAgent } from "./build-agent.js";
-import { resolveRetrievalContext, extractLastAssistantMessage } from "./tool-helpers.js";
+import { getOrBuildAgent } from "./agent-cache.js";
+import { extractLastAssistantMessage } from "./tool-helpers.js";
 import { sanitizeError } from "../utils/sanitize-error.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import { getLogger, withTraceId } from "../logger.js";
@@ -34,15 +34,17 @@ export async function executeAgentRun(opts: {
       await startTaskRun(runId);
       getLogger().info({ agent: agentDef.name, runId, trigger }, "Executing agent run");
 
-      const agent = await buildAgent(agentDef);
+      const state = await getOrBuildAgent(agentDef.name);
+      if (!state) throw new Error(`Agent "${agentDef.name}" not found or disabled`);
+
       const result: AgentResult = await withTimeout(
-        agent.invoke(
+        state.agent.invoke(
           { messages: [{ role: "user", content: prompt }] },
           {
             configurable: {
               thread_id: threadId,
               agent_name: agentDef.name,
-              retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
+              retrieval_context: state.retrievalContext,
             },
           },
         ),

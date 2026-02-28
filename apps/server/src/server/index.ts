@@ -15,9 +15,7 @@ import {
   getSettingsSync,
   refreshSettings,
 } from "@edda/db";
-import type { RetrievalContext, Agent } from "@edda/db";
 import { HumanMessage } from "@langchain/core/messages";
-import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod";
 import { getSharedCheckpointer } from "../checkpointer.js";
 import { embed } from "../embed.js";
@@ -27,84 +25,13 @@ import { invalidateMCPClient, ssrfSafeFetch } from "../mcp/client.js";
 import { MCPOAuthProvider } from "../mcp/oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
-import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
+import { resolveThreadId } from "../agent/build-agent.js";
+import { getOrBuildAgent } from "../agent/agent-cache.js";
+export { setAgent, invalidateAgent } from "../agent/agent-cache.js";
 import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverRunResults } from "../utils/notify.js";
-import { resolveRetrievalContext } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import type { Update } from "grammy/types";
-
-interface AgentState {
-  agent: Runnable;
-  agentName: string;
-  agentRow?: Agent;
-  retrievalContext?: RetrievalContext;
-}
-
-interface CachedAgent {
-  state: AgentState;
-  cachedAt: number;
-}
-
-const AGENT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-const agentCache = new Map<string, CachedAgent>();
-const buildLocks = new Map<string, Promise<AgentState | null>>();
-
-async function getOrBuildAgent(name: string): Promise<AgentState | null> {
-  const cached = agentCache.get(name);
-  if (cached && Date.now() - cached.cachedAt < AGENT_CACHE_TTL_MS) return cached.state;
-
-  // Coalesce concurrent builds for the same agent
-  const existing = buildLocks.get(name);
-  if (existing) return existing;
-
-  const buildPromise = (async (): Promise<AgentState | null> => {
-    try {
-      const agentRow = await getAgentByName(name);
-      if (!agentRow || !agentRow.enabled) return null;
-
-      const agent = await buildAgent(agentRow);
-      const state: AgentState = {
-        agent,
-        agentName: agentRow.name,
-        agentRow,
-        retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
-      };
-      agentCache.set(name, { state, cachedAt: Date.now() });
-      return state;
-    } finally {
-      buildLocks.delete(name);
-    }
-  })();
-
-  buildLocks.set(name, buildPromise);
-  return buildPromise;
-}
-
-export function setAgent(
-  agent: Runnable,
-  opts: { agentName: string; retrievalContext?: RetrievalContext },
-) {
-  const state: AgentState = { agent, ...opts };
-  agentCache.set(opts.agentName, { state, cachedAt: Date.now() });
-}
-
-/**
- * Invalidate a cached agent and rebuild it from the DB.
- * Call after tool/skill/config/memory changes so the next request
- * picks up the new definition without a server restart.
- */
-export async function rebuildAgent(name: string): Promise<void> {
-  agentCache.delete(name);
-
-  const rebuilt = await getOrBuildAgent(name);
-  if (!rebuilt) {
-    getLogger().warn({ agent: name }, "Agent not found or disabled — skipping rebuild");
-    return;
-  }
-  getLogger().info({ agent: name }, "Agent rebuilt");
-}
 
 const StreamRequestSchema = z.object({
   messages: z.array(z.object({ content: z.string().min(1) })).min(1),
