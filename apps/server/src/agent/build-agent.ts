@@ -109,6 +109,32 @@ function scopeTools(available: StructuredTool[], declared: Set<string>): Structu
   return tools;
 }
 
+/**
+ * Ensure every plain JSON schema tool has type: "object".
+ * Anthropic requires input_schema.type === "object" on every tool.
+ * MCP tools (plain JSON schemas after simplifyJsonSchemaForLLM) may have
+ * type missing entirely, or set to a non-object value (e.g. "string").
+ * Zod-based tools are handled correctly by @langchain/anthropic's
+ * formatStructuredToolToAnthropic, so we skip them here.
+ */
+function ensureObjectSchemas(tools: StructuredTool[]): void {
+  for (const t of tools) {
+    const schema = t.schema as Record<string, unknown> | undefined;
+    if (schema && typeof schema === "object" && !("_def" in schema) && !("_zod" in schema)) {
+      if (schema.type !== "object") {
+        getLogger().debug(
+          { tool: t.name, originalType: schema.type ?? "(missing)" },
+          "Patched non-object schema type on tool",
+        );
+        schema.type = "object";
+        if (!schema.properties) {
+          schema.properties = {};
+        }
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Duplicate tool check
 // ---------------------------------------------------------------------------
@@ -200,6 +226,7 @@ async function resolveSubagents(
       for (const t of row.tools) declared.add(t);
       declared.add("list_my_runs");
       const scoped = scopeTools(available, declared);
+      ensureObjectSchemas(scoped);
       const subTools = isGeminiModel(model) ? scoped.map(normalizeToolForGemini) : scoped;
 
       return {
@@ -485,20 +512,8 @@ export async function buildAgent(agent: Agent): Promise<any> {
 
   let tools = scopeTools(allAvailable, declaredToolNames);
 
-  // 3b. Normalize tool schemas — ensure every schema has type: "object".
-  // Some conversion paths (zodToJsonSchema edge cases, MCP servers) can
-  // produce schemas missing the top-level "type" field, which Anthropic
-  // rejects with "input_schema.type: Field required".
-  for (const t of tools) {
-    const schema = t.schema as Record<string, unknown> | undefined;
-    if (schema && typeof schema === "object" && !("_def" in schema) && !("_zod" in schema)) {
-      // Already a plain JSON schema (not Zod) — ensure type is set
-      if (!schema.type) {
-        schema.type = "object";
-        getLogger().debug({ tool: t.name }, "Patched missing schema type on tool");
-      }
-    }
-  }
+  // 3b. Normalize plain JSON schemas for Anthropic compatibility
+  ensureObjectSchemas(tools);
 
   // 3c. Gemini schema normalization — convert Zod schemas to pre-normalized
   // JSON Schema to avoid unsupported features (const, anyOf, array type).
