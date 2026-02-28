@@ -125,10 +125,12 @@ export async function streamToAdapter(opts: {
     }
   }
 
+  const abortController = new AbortController();
+
   const streamPromise = (async () => {
     const stream = agent.streamEvents(
       { messages: [new HumanMessage(input)] },
-      { ...config, version: "v2" },
+      { ...config, signal: abortController.signal, version: "v2" },
     );
 
     for await (const event of stream) {
@@ -189,6 +191,7 @@ export async function streamToAdapter(opts: {
     }
     throw err;
   } finally {
+    abortController.abort();
     clearTyping();
     if (editTimer) clearTimeout(editTimer);
   }
