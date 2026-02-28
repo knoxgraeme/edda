@@ -40,6 +40,7 @@ import { allTools, loadCommunityTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
 import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
+import { isGeminiModel, normalizeToolForGemini } from "./normalize-schemas.js";
 
 // ---------------------------------------------------------------------------
 // Skill frontmatter parsing (DB-backed, no disk reads)
@@ -194,16 +195,17 @@ async function resolveSubagents(
       const model = getModelString(row.model_provider, row.model);
       const systemPrompt = await buildPrompt(row, settings, prefetched);
 
+      const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
+      for (const t of row.tools) declared.add(t);
+      declared.add("list_my_runs");
+      const scoped = scopeTools(available, declared);
+      const subTools = isGeminiModel(model) ? scoped.map(normalizeToolForGemini) : scoped;
+
       return {
         name: row.name,
         description: row.description,
         systemPrompt,
-        tools: (() => {
-          const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
-          for (const t of row.tools) declared.add(t);
-          declared.add("list_my_runs");
-          return scopeTools(available, declared);
-        })(),
+        tools: subTools,
         skills: row.skills.length > 0 ? ["/skills/"] : [],
         model,
       } satisfies SubagentSpec;
@@ -474,7 +476,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
   for (const t of agent.tools) declaredToolNames.add(t);
   declaredToolNames.add("list_my_runs");
 
-  const tools = scopeTools(allAvailable, declaredToolNames);
+  let tools = scopeTools(allAvailable, declaredToolNames);
 
   // 3b. Normalize tool schemas — ensure every schema has type: "object".
   // Some conversion paths (zodToJsonSchema edge cases, MCP servers) can
@@ -489,6 +491,13 @@ export async function buildAgent(agent: Agent): Promise<any> {
         getLogger().debug({ tool: t.name }, "Patched missing schema type on tool");
       }
     }
+  }
+
+  // 3c. Gemini schema normalization — convert Zod schemas to pre-normalized
+  // JSON Schema to avoid unsupported features (const, anyOf, array type).
+  if (isGeminiModel(model)) {
+    tools = tools.map(normalizeToolForGemini);
+    getLogger().debug({ agent: agent.name }, "Normalized tool schemas for Gemini compatibility");
   }
 
   if (getLogger().isLevelEnabled("debug")) {
