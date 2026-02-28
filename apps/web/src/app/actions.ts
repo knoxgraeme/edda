@@ -34,11 +34,24 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { computeSessionToken, COOKIE_NAME, THIRTY_DAYS } from "@/lib/auth";
 
+const isValidIanaTimezone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Mirrors UpdateSettingsSchema from /api/v1/settings/route.ts — keep in sync
 const UpdateSettingsSchema = z
   .object({
     user_display_name: z.string().max(200).nullable().optional(),
-    user_timezone: z.string().max(100).optional(),
+    user_timezone: z
+      .string()
+      .max(100)
+      .optional()
+      .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
     llm_provider: z
       .enum(["anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock"])
       .optional(),

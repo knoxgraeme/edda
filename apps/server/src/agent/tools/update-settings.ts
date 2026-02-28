@@ -8,6 +8,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { updateSettings, getAgentByName } from "@edda/db";
+import { isValidIanaTimezone } from "../../utils/timezone.js";
 
 export const updateSettingsSchema = z.object({
   updates: z
@@ -19,7 +20,10 @@ export const updateSettingsSchema = z.object({
         .optional()
         .describe("Default conversational agent name"),
       user_display_name: z.string().optional(),
-      user_timezone: z.string().optional(),
+      user_timezone: z
+        .string()
+        .optional()
+        .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
       web_search_enabled: z.boolean().optional(),
       web_search_max_results: z.number().int().min(1).max(20).optional(),
       approval_new_type: z.enum(["auto", "confirm"]).optional(),

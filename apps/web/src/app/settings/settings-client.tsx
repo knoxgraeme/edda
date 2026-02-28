@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Save, AlertTriangle, RefreshCw, LogOut, ChevronDown } from "lucide-react";
 import type { Settings } from "../types/db";
@@ -80,6 +80,21 @@ export function SettingsClient({
   const embeddingChanged =
     form.embedding_provider !== initial.embedding_provider ||
     form.embedding_model !== initial.embedding_model;
+  const timezoneOptions = useMemo(() => {
+    const supportedValuesOf = (Intl as unknown as {
+      supportedValuesOf?: (key: string) => string[];
+    }).supportedValuesOf;
+    const supported = typeof supportedValuesOf === "function"
+      ? supportedValuesOf("timeZone")
+      : [];
+    if (supported.length === 0) {
+      return form.user_timezone ? [form.user_timezone] : ["UTC"];
+    }
+    if (form.user_timezone && !supported.includes(form.user_timezone)) {
+      return [form.user_timezone, ...supported];
+    }
+    return supported;
+  }, [form.user_timezone]);
 
   function update<K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -140,12 +155,17 @@ export function SettingsClient({
               />
             </FieldGroup>
             <FieldGroup label="Timezone" htmlFor="user_timezone">
-              <Input
+              <Select
                 id="user_timezone"
                 value={form.user_timezone}
                 onChange={(e) => update("user_timezone", e.target.value)}
-                placeholder="America/New_York"
-              />
+              >
+                {timezoneOptions.map((timezone) => (
+                  <option key={timezone} value={timezone}>
+                    {timezone}
+                  </option>
+                ))}
+              </Select>
             </FieldGroup>
           </CardContent>
         </Card>

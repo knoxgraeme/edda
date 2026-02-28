@@ -9,11 +9,23 @@ const LLM_PROVIDERS: LlmProvider[] = [
 ];
 const EMBEDDING_PROVIDERS: EmbeddingProvider[] = ["voyage", "openai", "google"];
 const SANDBOX_PROVIDERS: SandboxProvider[] = ["none", "node-vfs"];
+const isValidIanaTimezone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const UpdateSettingsSchema = z
   .object({
     user_display_name: z.string().max(200).optional(),
-    user_timezone: z.string().max(100).optional(),
+    user_timezone: z
+      .string()
+      .max(100)
+      .optional()
+      .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
     llm_provider: z.enum(LLM_PROVIDERS as [string, ...string[]]).optional(),
     default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),

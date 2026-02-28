@@ -632,6 +632,12 @@ describe("updateSettingsSchema", () => {
       updateSettingsSchema.parse({ updates: { approval_new_type: "maybe" } }),
     ).toThrow(ZodError);
   });
+
+  it("rejects invalid user timezone", () => {
+    expect(() =>
+      updateSettingsSchema.parse({ updates: { user_timezone: "Mars/Phobos" } }),
+    ).toThrow(ZodError);
+  });
 });
 
 // ---------------------------------------------------------------------------

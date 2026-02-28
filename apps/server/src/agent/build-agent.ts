@@ -41,6 +41,7 @@ import { buildBackend } from "./backends.js";
 import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
 import { isGeminiModel, normalizeToolForGemini } from "./normalize-schemas.js";
+import { formatDateInTimezoneOrUtc, isValidIanaTimezone } from "../utils/timezone.js";
 
 // ---------------------------------------------------------------------------
 // Skill frontmatter parsing (DB-backed, no disk reads)
@@ -410,13 +411,19 @@ list might have metadata: {recommended_by: "Tom", category: "movie", source: "di
 export function resolveThreadId(
   agent: Agent,
   channel?: { platform: string; external_id: string },
+  options?: { timezone?: string; now?: Date },
 ): string {
   const channelSuffix =
     agent.thread_scope === "per_channel" && channel
       ? `-${channel.platform}:${channel.external_id}`
       : "";
 
-  const today = new Date().toISOString().split("T")[0];
+  const now = options?.now ?? new Date();
+  const timezone = options?.timezone;
+  if (timezone && !isValidIanaTimezone(timezone)) {
+    getLogger().warn({ timezone, agent: agent.name }, "Invalid user_timezone; falling back to UTC date");
+  }
+  const today = formatDateInTimezoneOrUtc(now, timezone);
   switch (agent.thread_lifetime) {
     case "ephemeral":
       return `task-${agent.name}-${randomUUID()}`;
