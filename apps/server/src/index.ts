@@ -10,7 +10,8 @@ import { seedSkills } from "./agent/seed-skills.js";
 import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
 import { resolveRetrievalContext } from "./agent/tool-helpers.js";
 import { createCronRunner } from "./cron.js";
-import { setAgent, startHealthServer } from "./server/index.js";
+import { setAgent } from "./agent/agent-cache.js";
+import { startHealthServer } from "./server/index.js";
 import { initTelegram, registerWebhook } from "./channels/telegram.js";
 import { closeMCPClients } from "./mcp/client.js";
 import { logger } from "./logger.js";
@@ -44,6 +45,7 @@ async function main() {
   const agent = await buildAgent(agentRow);
   setAgent(agent, {
     agentName: agentRow.name,
+    agentRow,
     retrievalContext: resolveRetrievalContext(agentRow.metadata, agentRow.name),
   });
   log.info({ agent: agentRow.name }, "Agent ready");

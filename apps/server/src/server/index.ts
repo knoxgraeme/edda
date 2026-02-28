@@ -27,7 +27,6 @@ import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthSt
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
 import { resolveThreadId } from "../agent/build-agent.js";
 import { getOrBuildAgent } from "../agent/agent-cache.js";
-export { setAgent, invalidateAgent } from "../agent/agent-cache.js";
 import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverRunResults } from "../utils/notify.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
@@ -132,13 +131,11 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       // Resolve thread ID: use provided or resolve from agent config
       const thread_id = parsed.data.thread_id
         ? parsed.data.thread_id
-        : state.agentRow
-          ? resolveThreadId(
-              state.agentRow,
-              { platform: "web", external_id: "default" },
-              { timezone: getSettingsSync().user_timezone },
-            )
-          : randomUUID();
+        : resolveThreadId(
+            state.agentRow,
+            { platform: "web", external_id: "default" },
+            { timezone: getSettingsSync().user_timezone },
+          );
 
       // Ensure thread exists and set title from first message
       upsertThread(thread_id, agent_name)

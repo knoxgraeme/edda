@@ -15,7 +15,7 @@ import { getLogger } from "../logger.js";
 export interface AgentState {
   agent: Runnable;
   agentName: string;
-  agentRow?: Agent;
+  agentRow: Agent;
   retrievalContext?: RetrievalContext;
 }
 
@@ -73,7 +73,7 @@ export async function getOrBuildAgent(name: string): Promise<AgentState | null> 
  */
 export function setAgent(
   agent: Runnable,
-  opts: { agentName: string; agentRow?: Agent; retrievalContext?: RetrievalContext },
+  opts: { agentName: string; agentRow: Agent; retrievalContext?: RetrievalContext },
 ): void {
   const state: AgentState = { agent, ...opts };
   agentCache.set(opts.agentName, { state, cachedAt: Date.now() });
@@ -90,9 +90,3 @@ export function invalidateAgent(name: string): void {
   getLogger().debug({ agent: name }, "Agent cache invalidated");
 }
 
-/** Invalidate all cached agents. */
-export function invalidateAll(): void {
-  agentCache.clear();
-  buildLocks.clear();
-  getLogger().debug("All agent caches invalidated");
-}

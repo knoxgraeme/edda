@@ -5,6 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getAgentByName, getSettingsSync, deleteAgent } from "@edda/db";
+import { invalidateAgent } from "../agent-cache.js";
 
 export const deleteAgentSchema = z.object({
   agent_name: z.string().describe("Name of the agent to delete"),
@@ -21,6 +22,7 @@ export const deleteAgentTool = tool(
     }
 
     await deleteAgent(definition.id);
+    invalidateAgent(agent_name);
 
     return JSON.stringify({ deleted: true, name: agent_name });
   },
