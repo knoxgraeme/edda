@@ -12,7 +12,7 @@ import { resolveRetrievalContext } from "./agent/tool-helpers.js";
 import { createCronRunner } from "./cron.js";
 import { setAgent } from "./agent/agent-cache.js";
 import { startHealthServer } from "./server/index.js";
-import { initTelegram, registerWebhook } from "./channels/telegram.js";
+import { TelegramAdapter } from "./channels/telegram.js";
 import { closeMCPClients } from "./mcp/client.js";
 import { logger } from "./logger.js";
 import { patchAnthropicToolSchemas } from "./agent/patch-anthropic-schemas.js";
@@ -114,17 +114,18 @@ async function main() {
     if (!apiSecret) {
       throw new Error(
         "INTERNAL_API_SECRET is required when TELEGRAM_BOT_TOKEN is set. " +
-        "It is used to authenticate both internal API calls and Telegram webhook requests. " +
-        "Generate one with: openssl rand -hex 32"
+          "It is used to authenticate both internal API calls and Telegram webhook requests. " +
+          "Generate one with: openssl rand -hex 32",
       );
     }
 
-    await initTelegram(telegramToken);
+    const telegram = new TelegramAdapter(telegramToken, { webhookSecret: apiSecret });
+    await telegram.init();
 
     const webhookUrl =
-      process.env.TELEGRAM_WEBHOOK_URL ?? `http://localhost:${port}/api/telegram/webhook`;
+      process.env.TELEGRAM_WEBHOOK_URL ?? `http://localhost:${port}/api/channels/telegram/webhook`;
     try {
-      await registerWebhook(webhookUrl, apiSecret);
+      await telegram.registerWebhook(webhookUrl);
     } catch (err) {
       log.warn({ err }, "Telegram webhook registration failed (will work with manual setup)");
     }
