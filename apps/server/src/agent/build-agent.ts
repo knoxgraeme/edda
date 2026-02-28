@@ -485,17 +485,22 @@ export async function buildAgent(agent: Agent): Promise<any> {
 
   let tools = scopeTools(allAvailable, declaredToolNames);
 
-  // 3b. Normalize tool schemas — ensure every schema has type: "object".
-  // Some conversion paths (zodToJsonSchema edge cases, MCP servers) can
-  // produce schemas missing the top-level "type" field, which Anthropic
+  // 3b. Normalize plain JSON tool schemas — ensure type: "object" is set.
+  // MCP tools come through as DynamicStructuredTool with plain JSON schemas
+  // (not Zod). If simplifyJsonSchemaForLLM doesn't set type, Anthropic
   // rejects with "input_schema.type: Field required".
   for (const t of tools) {
     const schema = t.schema as Record<string, unknown> | undefined;
     if (schema && typeof schema === "object" && !("_def" in schema) && !("_zod" in schema)) {
-      // Already a plain JSON schema (not Zod) — ensure type is set
-      if (!schema.type) {
+      if (schema.type !== "object") {
+        getLogger().warn(
+          { tool: t.name, originalType: schema.type ?? "(missing)" },
+          "Patched non-object schema type on plain JSON tool",
+        );
         schema.type = "object";
-        getLogger().debug({ tool: t.name }, "Patched missing schema type on tool");
+        if (!schema.properties) {
+          schema.properties = {};
+        }
       }
     }
   }
