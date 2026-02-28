@@ -15,8 +15,17 @@ export interface ParsedMessage {
   platformUserId: string; // platform-native user identifier
 }
 
+/** Handle returned by sendInitial(), used to edit a sent message in-place. */
+export interface MessageHandle {
+  messageId: string;
+  externalId: string;
+}
+
 export interface ChannelAdapter {
   readonly platform: ChannelPlatform;
+
+  /** Platform's maximum message length (used for split decisions during streaming). */
+  readonly maxMessageLength?: number;
 
   // --- Lifecycle ---
   init(): Promise<void>;
@@ -35,6 +44,13 @@ export interface ChannelAdapter {
   // --- Outbound ---
   /** Send a complete text message (for announcements, final replies). */
   send(externalId: string, text: string): Promise<void>;
+
+  // --- Streaming outbound ---
+  /** Send the first chunk of a streamed response. Returns a handle for subsequent edits. */
+  sendInitial?(externalId: string, text: string): Promise<MessageHandle>;
+
+  /** Edit a previously sent message in-place (for progressive streaming updates). */
+  editMessage?(handle: MessageHandle, text: string): Promise<void>;
 
   // --- UX ---
   /** Send a typing indicator. Called periodically during agent execution. */
