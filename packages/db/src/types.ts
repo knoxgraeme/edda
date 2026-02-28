@@ -363,7 +363,7 @@ export type AgentTrigger = "schedule" | "on_demand";
 export type ThreadScope = "shared" | "per_channel";
 export type ChannelPlatform = "telegram" | "slack" | "discord";
 export type TaskRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
-export type TaskRunTrigger = "cron" | "user" | "orchestrator" | "hook" | "agent" | "notification";
+export type TaskRunTrigger = "cron" | "user" | "agent" | "hook" | "notification";
 
 export interface Agent {
   id: string;

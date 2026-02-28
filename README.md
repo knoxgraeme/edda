@@ -7,7 +7,7 @@
 
 **A self-hosted AI assistant that remembers you.**
 
-Edda is an open-source personal assistant powered by LLMs. It extracts knowledge from your conversations, learns your preferences, remembers corrections, and runs background tasks on a schedule. It gets better at helping you over time.
+Edda is an open-source personal assistant powered by LLMs. It extracts knowledge from your conversations, learns your preferences, remembers corrections, and runs scheduled tasks automatically. It gets better at helping you over time.
 
 Self-hosted. Your infrastructure, your data.
 
@@ -23,36 +23,28 @@ Corrections are durable. Tell Edda "don't summarize, give me the raw data" and t
 
 ## How it works
 
-Edda runs a **multi-agent system**. A primary conversational agent handles direct interaction, while specialized background agents run on cron schedules:
+Edda runs a **unified multi-agent system**. Any agent can serve as the default conversational interface, run on a cron schedule, be triggered by another agent, or all three. A `default_agent` setting (default: `edda`) determines which agent handles direct chat.
 
 ```
-You <──> Edda (primary agent)
+You <──> Default agent (edda)
               |
               |── Digest ────── Daily summaries, weekly reflections
               |── Memory ────── Nightly knowledge extraction
               |── Maintenance ── Context refresh, schema evolution
               |
-              |── Custom agents (optional)
+              |── Custom agents
 ```
 
-### Primary agent
+### Built-in agents
 
-The default `edda` agent ships with four skill sets:
+| Agent | Skills | Schedules | Purpose |
+|-------|--------|-----------|---------|
+| **Edda** (default) | capture, recall, manage, admin | — | Conversational interface: save, search, organize, configure |
+| **Digest** | daily_digest, weekly_reflect | 7am daily, 3am Sunday | Daily summaries, weekly pattern analysis, dropped thread detection |
+| **Memory** | memory_extraction | 10pm nightly | Extract preferences, facts, and entities from conversations |
+| **Maintenance** | context_refresh, type_evolution | 5am and 6am daily | Refresh operating memory, evolve data schemas |
 
-- **Capture** — Save notes, tasks, bookmarks, and structured data
-- **Recall** — Semantic search across all stored items
-- **Manage** — Update, archive, and organize items
-- **Admin** — Create agents, manage schedules, configure the system
-
-### Background agents
-
-| Agent | Schedule | Purpose |
-|-------|----------|---------|
-| **Digest** | 7am daily, 3am Sunday | Daily summaries, weekly pattern analysis, dropped thread detection |
-| **Memory** | 10pm nightly | Extract preferences, facts, and entities from conversations |
-| **Maintenance** | 5am and 6am daily | Refresh operating memory, evolve data schemas |
-
-All schedules are configurable — disable, reschedule, or add your own.
+All agents are configurable — change skills, schedules, models, or disable them. Any agent can be set as the default.
 
 ### Custom agents
 
@@ -198,8 +190,6 @@ Server on port 8000, web UI on port 3000. Open [http://localhost:3000](http://lo
 | `TELEGRAM_BOT_TOKEN` | Telegram integration (see below) |
 | `INTERNAL_API_SECRET` | Backend auth (required for Telegram) |
 | `LANGSMITH_API_KEY` | LangSmith tracing |
-| `CRON_RUNNER` | `local` (default) or `langgraph` |
-| `CHECKPOINTER_BACKEND` | `postgres` (default), `sqlite`, or `memory` |
 | `ALLOW_FILESYSTEM_ACCESS` | `true` + `FILESYSTEM_ROOT` for agent file access |
 | `CORS_ORIGIN` | Backend CORS origin (default: `http://localhost:3000`) |
 
@@ -247,8 +237,6 @@ LLM_MODEL             → claude-sonnet-4-20250514
 ANTHROPIC_API_KEY     → sk-ant-...
 EMBEDDING_PROVIDER    → voyage
 VOYAGEAI_API_KEY      → ...
-CRON_RUNNER           → local
-CHECKPOINTER_BACKEND  → postgres
 NODE_ENV              → production
 EDDA_PASSWORD         → (set for public deployments)
 INTERNAL_API_SECRET   → (openssl rand -hex 32)

@@ -12,9 +12,7 @@ import {
   searchItems,
   getAgentByName,
   createTaskRun,
-  startTaskRun,
-  completeTaskRun,
-  failTaskRun,
+  getSettingsSync,
   refreshSettings,
 } from "@edda/db";
 import type { RetrievalContext, Agent } from "@edda/db";
@@ -30,10 +28,9 @@ import { MCPOAuthProvider } from "../mcp/oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
 import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
 import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
+import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverRunResults } from "../utils/notify.js";
-import { resolveRetrievalContext, extractLastAssistantMessage } from "../agent/tool-helpers.js";
-import { sanitizeError } from "../utils/sanitize-error.js";
-import { withTimeout } from "../utils/with-timeout.js";
+import { resolveRetrievalContext } from "../agent/tool-helpers.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import type { Update } from "grammy/types";
 
@@ -49,19 +46,10 @@ interface CachedAgent {
   cachedAt: number;
 }
 
-interface AgentResult {
-  messages?: Array<{
-    role?: string;
-    content?: unknown;
-    _getType?: () => string;
-  }>;
-}
-
 const AGENT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const agentCache = new Map<string, CachedAgent>();
 const buildLocks = new Map<string, Promise<AgentState | null>>();
-let defaultAgentName: string | null = null;
 
 async function getOrBuildAgent(name: string): Promise<AgentState | null> {
   const cached = agentCache.get(name);
@@ -74,7 +62,7 @@ async function getOrBuildAgent(name: string): Promise<AgentState | null> {
   const buildPromise = (async (): Promise<AgentState | null> => {
     try {
       const agentRow = await getAgentByName(name);
-      if (!agentRow) return null;
+      if (!agentRow || !agentRow.enabled) return null;
 
       const agent = await buildAgent(agentRow);
       const state: AgentState = {
@@ -100,26 +88,22 @@ export function setAgent(
 ) {
   const state: AgentState = { agent, ...opts };
   agentCache.set(opts.agentName, { state, cachedAt: Date.now() });
-  defaultAgentName = opts.agentName;
 }
 
 /**
- * Rebuild the default chat agent from the DB. Call after tool/skill/config
- * changes so the streaming endpoint picks up the new agent definition
- * without a server restart.
+ * Invalidate a cached agent and rebuild it from the DB.
+ * Call after tool/skill/config/memory changes so the next request
+ * picks up the new definition without a server restart.
  */
-export async function rebuildDefaultAgent(): Promise<void> {
-  if (!defaultAgentName) return; // not initialized yet
+export async function rebuildAgent(name: string): Promise<void> {
+  agentCache.delete(name);
 
-  // Invalidate cached entry so it's rebuilt on next request
-  agentCache.delete(defaultAgentName);
-
-  const rebuilt = await getOrBuildAgent(defaultAgentName);
+  const rebuilt = await getOrBuildAgent(name);
   if (!rebuilt) {
-    getLogger().warn({ agent: defaultAgentName }, "Agent not found — skipping rebuild");
+    getLogger().warn({ agent: name }, "Agent not found or disabled — skipping rebuild");
     return;
   }
-  getLogger().info({ agent: defaultAgentName }, "Default agent rebuilt");
+  getLogger().info({ agent: name }, "Agent rebuilt");
 }
 
 const StreamRequestSchema = z.object({
@@ -214,7 +198,7 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       const state = await getOrBuildAgent(agent_name);
       if (!state) {
         res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: `Agent "${agent_name}" not found` }));
+        res.end(JSON.stringify({ error: `Agent "${agent_name}" not found or disabled` }));
         return;
       }
 
@@ -222,7 +206,11 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
       const thread_id = parsed.data.thread_id
         ? parsed.data.thread_id
         : state.agentRow
-          ? resolveThreadId(state.agentRow, { platform: "web", external_id: "default" })
+          ? resolveThreadId(
+              state.agentRow,
+              { platform: "web", external_id: "default" },
+              { timezone: getSettingsSync().user_timezone },
+            )
           : randomUUID();
 
       // Ensure thread exists and set title from first message
@@ -352,8 +340,17 @@ async function handleAgentThread(agentName: string, res: ServerResponse) {
       res.end(JSON.stringify({ error: `Agent "${agentName}" not found` }));
       return;
     }
+    if (!agentRow.enabled) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Agent "${agentName}" is disabled` }));
+      return;
+    }
 
-    const thread_id = resolveThreadId(agentRow, { platform: "web", external_id: "default" });
+    const thread_id = resolveThreadId(
+      agentRow,
+      { platform: "web", external_id: "default" },
+      { timezone: getSettingsSync().user_timezone },
+    );
     await upsertThread(thread_id, agentName);
 
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -575,60 +572,6 @@ async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) 
   res.end(JSON.stringify({ ok: true }));
 }
 
-const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-/**
- * Execute an agent run: build agent, invoke with prompt, track task_run lifecycle.
- * Shared execution logic used by handleAgentRun (and potentially cron).
- */
-export async function executeAgentRun(opts: {
-  agentDef: Agent;
-  runId: string;
-  threadId: string;
-  prompt: string;
-  trigger: string;
-}): Promise<string | undefined> {
-  const { agentDef, runId, threadId, prompt, trigger } = opts;
-  return withTraceId({ module: "run", agent: agentDef.name, runId, trigger }, async () => {
-    const startTime = Date.now();
-    try {
-      await startTaskRun(runId);
-      getLogger().info({ agent: agentDef.name, runId, trigger }, "Executing agent run");
-
-      const agent = await buildAgent(agentDef);
-      const result: AgentResult = await withTimeout(
-        agent.invoke(
-          { messages: [{ role: "user", content: prompt }] },
-          {
-            configurable: {
-              thread_id: threadId,
-              agent_name: agentDef.name,
-              retrieval_context: resolveRetrievalContext(agentDef.metadata, agentDef.name),
-            },
-          },
-        ),
-        AGENT_TIMEOUT_MS,
-        agentDef.name,
-      );
-
-      const duration = Date.now() - startTime;
-      const lastMessage = extractLastAssistantMessage(result);
-      await completeTaskRun(runId, {
-        output_summary: lastMessage?.slice(0, 500),
-        duration_ms: duration,
-      });
-      getLogger().info({ agent: agentDef.name, runId, durationMs: duration }, "Agent run completed");
-      return lastMessage;
-    } catch (err) {
-      getLogger().error({ agent: agentDef.name, runId, err }, "Agent run failed");
-      await failTaskRun(runId, sanitizeError(err)).catch((dbErr) =>
-        getLogger().error({ runId, err: dbErr }, "Failed to record task_run failure"),
-      );
-      throw err;
-    }
-  });
-}
-
 const AgentRunRequestSchema = z.object({
   prompt: z.string().min(1).max(10_000),
   notify: z.array(z.string().min(1).max(200)).max(20).default(["inbox"]),
@@ -667,7 +610,11 @@ async function handleAgentRun(agentName: string, req: IncomingMessage, res: Serv
   const modelName = agentDef.model || settings.default_model;
 
   // Force ephemeral thread — manual runs always get a fresh thread
-  const threadId = resolveThreadId({ ...agentDef, thread_lifetime: "ephemeral" });
+  const threadId = resolveThreadId(
+    { ...agentDef, thread_lifetime: "ephemeral" },
+    undefined,
+    { timezone: settings.user_timezone },
+  );
 
   const run = await createTaskRun({
     agent_id: agentDef.id,

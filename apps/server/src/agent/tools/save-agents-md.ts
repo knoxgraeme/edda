@@ -15,7 +15,7 @@ import {
 } from "@edda/db";
 import { buildDeterministicTemplate } from "../agents-md-template.js";
 import { getAgentName } from "../tool-helpers.js";
-import { rebuildDefaultAgent } from "../../server/index.js";
+import { rebuildAgent } from "../../server/index.js";
 import { getLogger } from "../../logger.js";
 
 export const saveAgentsMdSchema = z.object({
@@ -38,7 +38,7 @@ export const saveAgentsMdTool = tool(
     }
 
     // Rebuild the live agent so the next conversation picks up the new memory
-    rebuildDefaultAgent().catch((err) =>
+    rebuildAgent(agentName).catch((err) =>
       getLogger().warn({ err }, "save_agents_md background rebuild failed"),
     );
 

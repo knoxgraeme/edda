@@ -361,7 +361,7 @@ export async function buildPrompt(
   const hasSubagents = agent.subagents.length > 0;
   const delegationLine =
     hasRunAgent && hasSubagents
-      ? `\n- Delegation: \`task\` (synchronous subagent, returns result inline) vs \`run_agent\` (background job, returns task_run_id)`
+      ? `\n- Delegation: \`task\` (synchronous subagent, returns result inline) vs \`run_agent\` (async, returns task_run_id)`
       : "";
 
   const capabilities = `\n\n## Capabilities
