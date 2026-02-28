@@ -24,13 +24,12 @@ import { getLogger, withTraceId } from "../logger.js";
 import { invalidateMCPClient, ssrfSafeFetch } from "../mcp/client.js";
 import { MCPOAuthProvider } from "../mcp/oauth-provider.js";
 import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
-import { handleWebhookUpdate, validateWebhookSecret } from "../channels/telegram.js";
 import { resolveThreadId } from "../agent/build-agent.js";
 import { getOrBuildAgent } from "../agent/agent-cache.js";
 import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverRunResults } from "../utils/notify.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
-import type { Update } from "grammy/types";
+import { getAdapter } from "../channels/deliver.js";
 
 const StreamRequestSchema = z.object({
   messages: z.array(z.object({ content: z.string().min(1) })).min(1),
@@ -460,40 +459,14 @@ async function handleSearchItems(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-async function handleTelegramWebhook(req: IncomingMessage, res: ServerResponse) {
-  // Validate secret token — reuses INTERNAL_API_SECRET (set as secret_token during webhook registration)
-  const secret = process.env.INTERNAL_API_SECRET;
-  if (!secret) {
-    // No secret configured — reject all webhook requests (Telegram should not be enabled without it)
-    res.writeHead(403, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Webhook authentication not configured" }));
+async function handleChannelWebhook(platform: string, req: IncomingMessage, res: ServerResponse) {
+  const adapter = getAdapter(platform);
+  if (!adapter?.handleWebhook) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `No webhook handler for platform "${platform}"` }));
     return;
   }
-  const headerSecret = req.headers["x-telegram-bot-api-secret-token"] as string | undefined;
-  if (!validateWebhookSecret(headerSecret, secret)) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid secret token" }));
-    return;
-  }
-
-  let update: Update;
-  try {
-    const raw = await readBody(req);
-    update = JSON.parse(raw);
-  } catch (err) {
-    getLogger().error({ err }, "Failed to parse Telegram webhook body");
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid request body" }));
-    return;
-  }
-
-  // Process asynchronously — always return 200 for valid Telegram updates
-  handleWebhookUpdate(update).catch((err) => {
-    getLogger().error({ err }, "Telegram webhook update processing failed");
-  });
-
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: true }));
+  await adapter.handleWebhook(req, res);
 }
 
 const AgentRunRequestSchema = z.object({
@@ -596,14 +569,21 @@ export async function startHealthServer(port: number): Promise<void> {
     const threadDetailMatch = urlPath.match(/^\/api\/threads\/([^/]+)$/);
     const agentThreadMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/thread$/);
     const agentRunMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/run$/);
+    const channelWebhookMatch = urlPath.match(/^\/api\/channels\/(\w+)\/webhook$/);
 
     // Unauthenticated endpoints (own auth or public)
     if (urlPath === "/api/health" && req.method === "GET") {
       await handleHealth(res);
       return;
     }
+    // Dynamic channel webhook route — adapters handle their own auth
+    if (channelWebhookMatch && req.method === "POST") {
+      await handleChannelWebhook(channelWebhookMatch[1], req, res);
+      return;
+    }
+    // Backward-compatible alias for Telegram webhook
     if (urlPath === "/api/telegram/webhook" && req.method === "POST") {
-      await handleTelegramWebhook(req, res);
+      await handleChannelWebhook("telegram", req, res);
       return;
     }
 
