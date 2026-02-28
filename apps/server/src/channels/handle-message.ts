@@ -47,7 +47,8 @@ export async function handleInboundMessage(opts: {
 
     // No channel row — try fallback agent
     if (opts.useFallbackAgent) {
-      const fallback = await getAgentByName((await getSettings()).default_agent);
+      const settings = await getSettings();
+      const fallback = await getAgentByName(settings.default_agent);
       if (fallback?.enabled) {
         agentDef = fallback;
       }
@@ -91,7 +92,11 @@ export async function handleInboundMessage(opts: {
       });
     } catch (err) {
       log.error({ err, agent: agentDef.name, platform: adapter.platform }, "Channel agent streaming failed");
-      await adapter.send(parsed.externalId, "Sorry, something went wrong.");
+      try {
+        await adapter.send(parsed.externalId, "Sorry, something went wrong.");
+      } catch (sendErr) {
+        log.error({ err: sendErr, platform: adapter.platform }, "Failed to send error message to user");
+      }
     }
   });
 }

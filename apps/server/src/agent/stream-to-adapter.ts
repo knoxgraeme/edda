@@ -14,6 +14,7 @@ import type { ChannelAdapter, MessageHandle } from "../channels/adapter.js";
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const EDIT_DEBOUNCE_MS = 1000; // max 1 edit per second
 const MIN_CHUNK_CHARS = 50; // minimum chars accumulated before triggering an edit
+const MAX_RESPONSE_BYTES = 100 * 1024; // 100 KB — prevent unbounded accumulation
 
 /**
  * Extract text content from a streamEvents chunk, normalizing Anthropic's
@@ -27,7 +28,6 @@ function extractChunkContent(chunk: Record<string, unknown>): string {
     for (const block of content) {
       if (typeof block === "string") text += block;
       else if (block?.type === "text" && block.text) text += block.text;
-      else if (block?.type === "text_delta" && block.text) text += block.text;
     }
     return text;
   }
@@ -46,7 +46,7 @@ export async function streamToAdapter(opts: {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const log = getLogger();
 
-  const canStream = Boolean(adapter.sendInitial && adapter.editMessage);
+  let canStream = Boolean(adapter.sendInitial && adapter.editMessage);
   const maxLen = adapter.maxMessageLength ?? 4096;
 
   // Accumulates the full response text
@@ -57,6 +57,7 @@ export async function streamToAdapter(opts: {
   let lastEditTime = 0;
   let pendingEdit = false;
   let editTimer: ReturnType<typeof setTimeout> | null = null;
+  let charsSinceLastEdit = 0;
 
   // Typing indicator — start before streaming, clear on first chunk
   let typingInterval: ReturnType<typeof setInterval> | null = null;
@@ -89,33 +90,20 @@ export async function streamToAdapter(opts: {
     }
   }
 
-  /**
-   * Flush accumulated text to the adapter via edit. If the text exceeds the
-   * platform's max message length, send the overflow as new messages.
-   */
+  /** Flush accumulated text to the adapter via edit (capped to maxLen). */
   async function flushEdit(): Promise<void> {
     if (!handle || !adapter.editMessage) return;
 
-    pendingEdit = false;
     lastEditTime = Date.now();
+    charsSinceLastEdit = 0;
 
-    // If text fits in one message, just edit in place
-    if (fullText.length <= maxLen) {
-      try {
-        await adapter.editMessage(handle, fullText);
-      } catch (err) {
-        log.warn({ err, platform: adapter.platform }, "Edit message failed — will send remainder at end");
-      }
-      return;
-    }
-
-    // Text exceeds max — edit current message to capacity, send overflow as new messages
     try {
       await adapter.editMessage(handle, fullText.slice(0, maxLen));
     } catch (err) {
-      log.warn({ err, platform: adapter.platform }, "Edit message failed during overflow");
+      log.error({ err, platform: adapter.platform }, "Edit message failed");
+    } finally {
+      pendingEdit = false;
     }
-    // Overflow will be sent as new messages in the finalize step
   }
 
   function scheduleEdit(): void {
@@ -125,13 +113,13 @@ export async function streamToAdapter(opts: {
     if (elapsed >= EDIT_DEBOUNCE_MS) {
       pendingEdit = true;
       flushEdit().catch((err) => {
-        log.warn({ err, platform: adapter.platform }, "Scheduled edit failed");
+        log.error({ err, platform: adapter.platform }, "Scheduled edit failed");
       });
     } else {
       pendingEdit = true;
       editTimer = setTimeout(() => {
         flushEdit().catch((err) => {
-          log.warn({ err, platform: adapter.platform }, "Debounced edit failed");
+          log.error({ err, platform: adapter.platform }, "Debounced edit failed");
         });
       }, EDIT_DEBOUNCE_MS - elapsed);
     }
@@ -154,6 +142,13 @@ export async function streamToAdapter(opts: {
 
       fullText += content;
 
+      // Cap response size to prevent unbounded accumulation
+      if (fullText.length > MAX_RESPONSE_BYTES) {
+        fullText = fullText.slice(0, MAX_RESPONSE_BYTES);
+        log.warn({ platform: adapter.platform }, "Response truncated at max length");
+        break;
+      }
+
       if (!canStream) continue;
 
       // First chunk — send initial message and clear typing
@@ -164,18 +159,19 @@ export async function streamToAdapter(opts: {
         try {
           handle = await adapter.sendInitial!(externalId, fullText);
           lastEditTime = Date.now();
+          charsSinceLastEdit = 0;
         } catch (err) {
-          log.warn({ err, platform: adapter.platform }, "sendInitial failed — falling back to send()");
-          // Fall back to non-streaming: collect full text and send at end
-          handle = null;
-          break;
+          log.error({ err, platform: adapter.platform }, "sendInitial failed — falling back to send()");
+          // Don't break — continue consuming stream so fullText is complete.
+          // The finalize block will send via adapter.send() since handle is null.
+          canStream = false;
         }
         continue;
       }
 
       // Subsequent chunks — debounced edits
-      const sinceLast = fullText.length - (handle ? fullText.length - content.length : 0);
-      if (sinceLast >= MIN_CHUNK_CHARS || fullText.length >= maxLen) {
+      charsSinceLastEdit += content.length;
+      if (charsSinceLastEdit >= MIN_CHUNK_CHARS) {
         scheduleEdit();
       }
     }
@@ -183,39 +179,38 @@ export async function streamToAdapter(opts: {
 
   try {
     await withTimeout(streamPromise, timeoutMs, `${adapter.platform} stream`);
+  } catch (err) {
+    // If we already sent an initial message, edit it to show error state
+    if (handle && adapter.editMessage) {
+      const errorText = fullText
+        ? fullText.slice(0, maxLen - 50) + "\n\n[Response interrupted]"
+        : "Sorry, something went wrong.";
+      await adapter.editMessage(handle, errorText).catch(() => {});
+    }
+    throw err;
   } finally {
     clearTyping();
     if (editTimer) clearTimeout(editTimer);
   }
 
-  if (!fullText) return undefined;
+  if (!fullText) {
+    log.warn({ platform: adapter.platform, externalId }, "Agent produced no text response");
+    return undefined;
+  }
 
   // Finalize: ensure the complete text is delivered
   if (canStream && handle) {
-    // Final edit with complete text
-    if (fullText.length <= maxLen) {
-      try {
-        await adapter.editMessage!(handle, fullText);
-      } catch (err) {
-        log.warn({ err, platform: adapter.platform }, "Final edit failed");
-      }
-    } else {
-      // Edit first message to max, send overflow as new messages
-      try {
-        await adapter.editMessage!(handle, fullText.slice(0, maxLen));
-      } catch (err) {
-        log.warn({ err, platform: adapter.platform }, "Final edit failed during overflow");
-      }
-      // Send remaining text as new message(s)
-      let remaining = fullText.slice(maxLen);
-      while (remaining.length > 0) {
-        const chunk = remaining.slice(0, maxLen);
-        remaining = remaining.slice(maxLen);
-        await adapter.send(externalId, chunk);
-      }
+    // Final edit — then send overflow as new messages if needed
+    await flushEdit();
+    if (fullText.length > maxLen) {
+      // Delegate overflow to adapter.send() which handles word-boundary splitting
+      await adapter.send(externalId, fullText.slice(maxLen));
     }
+  } else if (canStream && !handle) {
+    // sendInitial failed — edit the partial message if possible, then send full via send()
+    await adapter.send(externalId, fullText);
   } else {
-    // No streaming support or sendInitial failed — send complete response
+    // No streaming support — send complete response
     await adapter.send(externalId, fullText);
   }
 
