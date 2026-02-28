@@ -7,7 +7,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { Bot, type Context, type CommandContext } from "grammy";
+import { Bot, GrammyError, type Context, type CommandContext } from "grammy";
 import type { Update } from "grammy/types";
 import {
   getChannelByExternalId,
@@ -182,7 +182,13 @@ export class TelegramAdapter implements ChannelAdapter {
   async editMessage(handle: MessageHandle, text: string): Promise<void> {
     if (!this.bot) throw new Error("Telegram adapter not initialized");
     const { chatId } = parseExternalId(handle.externalId);
-    await this.bot.api.editMessageText(chatId, Number(handle.messageId), text);
+    try {
+      await this.bot.api.editMessageText(chatId, Number(handle.messageId), text);
+    } catch (err) {
+      // Telegram returns 400 when message content hasn't changed — not a real error
+      if (err instanceof GrammyError && err.description?.includes("message is not modified")) return;
+      throw err;
+    }
   }
 
   // ---------------------------------------------------------------------------
