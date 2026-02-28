@@ -15,12 +15,9 @@ import {
 import type { Agent } from "@edda/db";
 import { resolveThreadId } from "../agent/build-agent.js";
 import { getOrBuildAgent } from "../agent/agent-cache.js";
-import { extractLastAssistantMessage } from "../agent/tool-helpers.js";
-import { withTimeout } from "../utils/with-timeout.js";
+import { streamToAdapter } from "../agent/stream-to-adapter.js";
 import { getLogger, withTraceId } from "../logger.js";
 import type { ChannelAdapter, ParsedMessage } from "./adapter.js";
-
-const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function handleInboundMessage(opts: {
   parsed: ParsedMessage;
@@ -76,54 +73,25 @@ export async function handleInboundMessage(opts: {
     { timezone: user_timezone },
   );
 
-  // 3. Execute with tracing + error handling
+  // 3. Stream agent response with tracing + error handling
   await withTraceId({ module: adapter.platform, agent: agentDef.name }, async () => {
-    // Start typing indicator
-    if (adapter.sendTypingIndicator) {
-      adapter.sendTypingIndicator(parsed.externalId).catch((err: unknown) => {
-        log.warn({ err, platform: adapter.platform }, "Typing indicator failed");
-      });
-    }
-
-    // Typing interval — refresh every 4 seconds
-    let typingFailLogged = false;
-    const typingInterval = adapter.sendTypingIndicator
-      ? setInterval(() => {
-          adapter.sendTypingIndicator!(parsed.externalId).catch((err: unknown) => {
-            if (!typingFailLogged) {
-              typingFailLogged = true;
-              log.warn({ err, platform: adapter.platform }, "Typing indicator failed");
-            }
-          });
-        }, 4000)
-      : null;
-
     try {
-      const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } =
-        await withTimeout(
-          state.agent.invoke(
-            { messages: [{ role: "user", content: parsed.text }] },
-            {
-              configurable: {
-                thread_id: threadId,
-                agent_name: agentDef.name,
-                retrieval_context: state.retrievalContext,
-              },
-            },
-          ),
-          AGENT_TIMEOUT_MS,
-          agentDef.name,
-        );
-
-      const reply = extractLastAssistantMessage(result);
-      if (reply) {
-        await adapter.send(parsed.externalId, reply);
-      }
+      await streamToAdapter({
+        agent: state.agent,
+        input: parsed.text,
+        config: {
+          configurable: {
+            thread_id: threadId,
+            agent_name: agentDef.name,
+            retrieval_context: state.retrievalContext,
+          },
+        },
+        adapter,
+        externalId: parsed.externalId,
+      });
     } catch (err) {
-      log.error({ err, agent: agentDef.name, platform: adapter.platform }, "Channel agent invocation failed");
+      log.error({ err, agent: agentDef.name, platform: adapter.platform }, "Channel agent streaming failed");
       await adapter.send(parsed.externalId, "Sorry, something went wrong.");
-    } finally {
-      if (typingInterval) clearInterval(typingInterval);
     }
   });
 }

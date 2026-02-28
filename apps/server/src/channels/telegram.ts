@@ -24,7 +24,7 @@ import {
 import { getLogger } from "../logger.js";
 import { registerAdapter, unregisterAdapter } from "./deliver.js";
 import { handleInboundMessage } from "./handle-message.js";
-import type { ChannelAdapter, ParsedMessage } from "./adapter.js";
+import type { ChannelAdapter, MessageHandle, ParsedMessage } from "./adapter.js";
 
 const TELEGRAM_MAX_LENGTH = 4096;
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
@@ -164,6 +164,25 @@ export class TelegramAdapter implements ChannelAdapter {
         message_thread_id: threadId,
       });
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Streaming outbound
+  // ---------------------------------------------------------------------------
+
+  async sendInitial(externalId: string, text: string): Promise<MessageHandle> {
+    if (!this.bot) throw new Error("Telegram adapter not initialized");
+    const { chatId, threadId } = parseExternalId(externalId);
+    const msg = await this.bot.api.sendMessage(chatId, text, {
+      message_thread_id: threadId,
+    });
+    return { messageId: String(msg.message_id), externalId };
+  }
+
+  async editMessage(handle: MessageHandle, text: string): Promise<void> {
+    if (!this.bot) throw new Error("Telegram adapter not initialized");
+    const { chatId } = parseExternalId(handle.externalId);
+    await this.bot.api.editMessageText(chatId, Number(handle.messageId), text);
   }
 
   // ---------------------------------------------------------------------------
