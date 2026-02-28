@@ -1,7 +1,26 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { Message } from "@/app/types/types";
+import type { Message, SDKToolCall } from "@/app/types/types";
+
+function mergeToolCalls(
+  existing: Message["tool_calls"],
+  incoming: Message["tool_calls"],
+): Message["tool_calls"] {
+  if (!incoming || incoming.length === 0) return existing;
+  if (!existing || existing.length === 0) return incoming;
+  // Accumulate by tool call id — later chunks update existing entries, new ids are appended
+  const merged = [...existing] as SDKToolCall[];
+  for (const tc of incoming) {
+    const idx = tc.id ? merged.findIndex((m) => m.id === tc.id) : -1;
+    if (idx >= 0) {
+      merged[idx] = tc;
+    } else {
+      merged.push(tc);
+    }
+  }
+  return merged;
+}
 
 function mergeMessageChunk(messages: Message[], chunk: Message): Message[] {
   const existingIndex = messages.findIndex((m) => m.id === chunk.id);
@@ -20,7 +39,7 @@ function mergeMessageChunk(messages: Message[], chunk: Message): Message[] {
     ...existing,
     ...chunk,
     content: mergedContent,
-    tool_calls: chunk.tool_calls ?? existing.tool_calls,
+    tool_calls: mergeToolCalls(existing.tool_calls, chunk.tool_calls),
     additional_kwargs: {
       ...existing.additional_kwargs,
       ...chunk.additional_kwargs,
