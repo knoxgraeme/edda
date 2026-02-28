@@ -12,6 +12,7 @@ import { resolveRetrievalContext } from "./agent/tool-helpers.js";
 import { createCronRunner } from "./cron.js";
 import { setAgent, startHealthServer } from "./server/index.js";
 import { initTelegram, registerWebhook } from "./channels/telegram.js";
+import { closeMCPClients } from "./mcp/client.js";
 import { logger } from "./logger.js";
 
 async function main() {
@@ -34,6 +35,12 @@ async function main() {
         `Check settings.default_agent and ensure the agent exists.`,
     );
   }
+  if (!agentRow.enabled) {
+    throw new Error(
+      `Default agent "${settings.default_agent}" is disabled. ` +
+        `Enable it or change settings.default_agent.`,
+    );
+  }
   const agent = await buildAgent(agentRow);
   setAgent(agent, {
     agentName: agentRow.name,
@@ -49,7 +56,9 @@ async function main() {
       const maintenanceDef = await getAgentByName("maintenance");
       if (maintenanceDef) {
         const crAgent = await buildAgent(maintenanceDef);
-        const threadId = resolveThreadId(maintenanceDef);
+        const threadId = resolveThreadId(maintenanceDef, undefined, {
+          timezone: settings.user_timezone,
+        });
         await crAgent.invoke(
           {
             messages: [
@@ -72,6 +81,20 @@ async function main() {
   const cronRunner = await createCronRunner();
   await cronRunner.start();
   log.info("Cron runner started");
+
+  const shutdown = async (signal: string) => {
+    log.info({ signal }, "Shutting down");
+    try {
+      await cronRunner.stop();
+      await closeMCPClients();
+    } catch (err) {
+      log.error({ err }, "Shutdown cleanup failed");
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
   // 6. Health endpoint
   const port = parseInt(process.env.PORT ?? "8000", 10);

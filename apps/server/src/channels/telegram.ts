@@ -358,7 +358,10 @@ async function handleTextMessage(ctx: Context): Promise<void> {
     // No channel row — try default agent for DMs
     if (!threadId) {
       const settings = await getSettings();
-      agentDef = await getAgentByName(settings.default_agent);
+      const fallback = await getAgentByName(settings.default_agent);
+      if (fallback?.enabled) {
+        agentDef = fallback;
+      }
     }
 
     if (!agentDef) {
@@ -388,11 +391,12 @@ async function handleTextMessage(ctx: Context): Promise<void> {
         message_thread_id: threadId,
       });
 
+      const settings = await getSettings();
       const agent = await buildAgent(agentDef);
       const agentThreadId = resolveThreadId(agentDef, {
         platform: "telegram",
         external_id: externalId,
-      });
+      }, { timezone: settings.user_timezone });
 
       const result: { messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }> } = await withTimeout(
         agent.invoke(
@@ -488,4 +492,3 @@ async function sendSplitMessage(
     await ctx.reply(chunk, { message_thread_id: threadId });
   }
 }
-

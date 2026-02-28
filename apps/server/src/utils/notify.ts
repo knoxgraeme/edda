@@ -12,20 +12,15 @@ import {
   getAgentByName,
   getChannelsByAgent,
   createTaskRun,
-  startTaskRun,
-  completeTaskRun,
   failTaskRun,
   refreshSettings,
 } from "@edda/db";
-import { buildAgent, resolveThreadId } from "../agent/build-agent.js";
-import { resolveRetrievalContext } from "../agent/tool-helpers.js";
+import { resolveThreadId } from "../agent/build-agent.js";
+import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverToChannel } from "../channels/deliver.js";
 import { runWithConcurrencyLimit } from "./semaphore.js";
 import { sanitizeError } from "./sanitize-error.js";
-import { withTimeout } from "./with-timeout.js";
 import { getLogger } from "../logger.js";
-
-const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -277,42 +272,26 @@ async function triggerAgentRun(agentName: string): Promise<void> {
     .map((n) => `[notification from ${n.source_id}]\n${n.summary}`)
     .join("\n\n");
 
-  const threadId = resolveThreadId(definition);
+  const settings = await refreshSettings();
+  const threadId = resolveThreadId(definition, undefined, {
+    timezone: settings.user_timezone,
+  });
   const run = await createTaskRun({
     agent_id: definition.id,
     agent_name: agentName,
     trigger: "notification",
     thread_id: threadId,
   });
-
-  const settings = await refreshSettings();
   setImmediate(() => {
     runWithConcurrencyLimit(settings.task_max_concurrency, async () => {
-      const startTime = Date.now();
       try {
-        await startTaskRun(run.id);
         log.info({ agent: agentName, runId: run.id, notifications: claimed.length }, "Triggered active run");
-        const agent = await buildAgent(definition);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result: any = await withTimeout(
-          agent.invoke(
-            { messages: [{ role: "user", content: message }] },
-            {
-              configurable: {
-                thread_id: threadId,
-                agent_name: agentName,
-                retrieval_context: resolveRetrievalContext(definition.metadata, agentName),
-              },
-            },
-          ),
-          AGENT_TIMEOUT_MS,
-          agentName,
-        );
-        const lastMsg = result?.messages?.[result.messages.length - 1]?.content;
-        const fullResponse = typeof lastMsg === "string" ? lastMsg : undefined;
-        await completeTaskRun(run.id, {
-          output_summary: fullResponse?.slice(0, 500),
-          duration_ms: Date.now() - startTime,
+        const fullResponse = await executeAgentRun({
+          agentDef: definition,
+          runId: run.id,
+          threadId,
+          prompt: message,
+          trigger: "notification",
         });
 
         // Deliver full agent response to announcement channels
@@ -321,9 +300,6 @@ async function triggerAgentRun(agentName: string): Promise<void> {
         }
       } catch (err) {
         log.error({ agent: agentName, runId: run.id, err }, "Active run failed");
-        await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) => {
-          log.error({ runId: run.id, err: dbErr }, "Failed to record failure");
-        });
       }
     }).catch((err) => {
       log.error({ agent: agentName, err }, "Concurrency/setup failure");

@@ -21,7 +21,11 @@ interface NormalizedMessage {
 }
 
 export const getThreadMessagesSchema = z.object({
-  thread_id: z.string().uuid().describe("The thread ID to retrieve messages from"),
+  thread_id: z
+    .string()
+    .max(200)
+    .regex(/^[a-zA-Z0-9_:-]+$/)
+    .describe("The thread ID to retrieve messages from"),
   limit: z
     .number()
     .int()

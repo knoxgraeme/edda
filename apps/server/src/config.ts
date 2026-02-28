@@ -24,12 +24,6 @@ const envSchema = z.object({
   // Community tools (optional)
   WOLFRAM_APP_ID: z.string().min(1).optional(),
 
-  // Cron runner
-  CRON_RUNNER: z.enum(['local', 'langgraph']).default('local'),
-
-  // Checkpointer
-  CHECKPOINTER_BACKEND: z.enum(['postgres', 'sqlite', 'memory']).default('postgres'),
-
   // LangSmith (optional)
   LANGSMITH_API_KEY: z.string().optional(),
   LANGSMITH_PROJECT: z.string().optional(),

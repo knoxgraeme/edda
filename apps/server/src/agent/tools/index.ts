@@ -6,11 +6,7 @@
  * skills determine which subset it actually receives.
  */
 
-import { z } from "zod";
 import type { StructuredTool } from "@langchain/core/tools";
-
-// Barrel schema — satisfies tool-file validation hook
-export const allToolsSchema = z.object({});
 
 // Item tools
 import { createItemTool } from "./create-item.js";

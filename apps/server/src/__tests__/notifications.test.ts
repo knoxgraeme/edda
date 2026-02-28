@@ -32,6 +32,7 @@ const mockFailTaskRun = vi.fn().mockResolvedValue(undefined);
 const mockRefreshSettings = vi.fn().mockResolvedValue({ task_max_concurrency: 3 });
 const mockGetUnreadNotifications = vi.fn().mockResolvedValue([]);
 const mockMarkNotificationsRead = vi.fn();
+const mockGetChannelsByAgent = vi.fn().mockResolvedValue([]);
 
 vi.mock("@edda/db", () => ({
   createNotification: (...args: unknown[]) => mockCreateNotification(...args),
@@ -44,6 +45,7 @@ vi.mock("@edda/db", () => ({
   refreshSettings: (...args: unknown[]) => mockRefreshSettings(...args),
   getUnreadNotifications: (...args: unknown[]) => mockGetUnreadNotifications(...args),
   markNotificationsRead: (...args: unknown[]) => mockMarkNotificationsRead(...args),
+  getChannelsByAgent: (...args: unknown[]) => mockGetChannelsByAgent(...args),
 }));
 
 // Mock build-agent to avoid pulling in the full agent stack
@@ -58,6 +60,7 @@ vi.mock("../agent/build-agent.js", () => ({
 
 vi.mock("../agent/tool-helpers.js", () => ({
   resolveRetrievalContext: vi.fn(),
+  extractLastAssistantMessage: vi.fn().mockReturnValue("Notification processed."),
   getAgentName: vi.fn().mockReturnValue("edda"),
 }));
 

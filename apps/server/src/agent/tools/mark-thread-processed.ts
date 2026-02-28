@@ -7,7 +7,11 @@ import { z } from "zod";
 import { setThreadMetadata } from "@edda/db";
 
 export const markThreadProcessedSchema = z.object({
-  thread_id: z.string().uuid().describe("The thread ID to mark as processed"),
+  thread_id: z
+    .string()
+    .max(200)
+    .regex(/^[a-zA-Z0-9_:-]+$/)
+    .describe("The thread ID to mark as processed"),
 });
 
 export const markThreadProcessedTool = tool(

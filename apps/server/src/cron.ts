@@ -9,13 +9,11 @@
 import cron from "node-cron";
 
 import {
+  getSettings,
   getEnabledSchedules,
   getScheduleById,
   getAgentByName,
   createTaskRun,
-  startTaskRun,
-  completeTaskRun,
-  failTaskRun,
   refreshSettings,
   getUnreadNotifications,
   markNotificationsRead,
@@ -28,12 +26,10 @@ import {
 } from "@edda/db";
 import type { Notification } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
-import { sanitizeError } from "./utils/sanitize-error.js";
-import { withTimeout } from "./utils/with-timeout.js";
 import { detectRecurrenceFormat, getNextCronDate } from "./utils/reminder-recurrence.js";
 
-import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
-import { resolveRetrievalContext, extractLastAssistantMessage } from "./agent/tool-helpers.js";
+import { resolveThreadId } from "./agent/build-agent.js";
+import { executeAgentRun } from "./agent/run-execution.js";
 import { runWithConcurrencyLimit } from "./utils/semaphore.js";
 import { notify, deliverRunResults } from "./utils/notify.js";
 import { getLogger, withTraceId } from "./logger.js";
@@ -44,6 +40,12 @@ export interface CronRunner {
 }
 
 export async function createCronRunner(): Promise<CronRunner> {
+  const settings = await getSettings();
+  if (settings.cron_runner === "langgraph") {
+    getLogger().warn(
+      "settings.cron_runner=langgraph is not implemented in @edda/server. Falling back to local runner.",
+    );
+  }
   return new LocalCronRunner();
 }
 
@@ -51,7 +53,6 @@ export async function createCronRunner(): Promise<CronRunner> {
 // Constants
 // ---------------------------------------------------------------------------
 
-const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const SCHEDULE_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const REMINDER_POLL_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -280,7 +281,9 @@ export class LocalCronRunner implements CronRunner {
     const contextAgent = freshSchedule.thread_lifetime
       ? { ...freshDef, thread_lifetime: freshSchedule.thread_lifetime }
       : freshDef;
-    const threadId = resolveThreadId(contextAgent);
+    const threadId = resolveThreadId(contextAgent, undefined, {
+      timezone: settings.user_timezone,
+    });
 
     const run = await createTaskRun({
       agent_id: freshDef.id,
@@ -296,7 +299,6 @@ export class LocalCronRunner implements CronRunner {
         const log = getLogger();
         const startTime = Date.now();
         try {
-          await startTaskRun(run.id);
           log.info("Executing schedule");
 
           // Passive notification consumption: prepend unread notifications to the prompt
@@ -314,26 +316,14 @@ export class LocalCronRunner implements CronRunner {
             log.error({ err: notifyErr }, "Failed to read pending notifications");
           }
 
-          const agent = await buildAgent(freshDef);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const result: any = await withTimeout(
-            agent.invoke(
-              { messages: [{ role: "user", content: userMessage }] },
-              {
-                configurable: {
-                  thread_id: threadId,
-                  agent_name: freshDef.name,
-                  retrieval_context: resolveRetrievalContext(freshDef.metadata, freshDef.name),
-                },
-              },
-            ),
-            AGENT_TIMEOUT_MS,
-            freshDef.name,
-          );
-
+          const lastMessage = await executeAgentRun({
+            agentDef: freshDef,
+            runId: run.id,
+            threadId,
+            prompt: userMessage,
+            trigger: "cron",
+          });
           const duration = Date.now() - startTime;
-          const lastMessage = extractLastAssistantMessage(result);
-          await completeTaskRun(run.id, { output_summary: lastMessage?.slice(0, 500), duration_ms: duration });
 
           await deliverRunResults({
             agentId: freshDef.id,
@@ -350,11 +340,6 @@ export class LocalCronRunner implements CronRunner {
           log.info({ durationMs: duration }, "Schedule completed");
         } catch (err) {
           log.error({ err }, "Schedule execution failed");
-          try {
-            await failTaskRun(run.id, sanitizeError(err));
-          } catch (dbErr) {
-            log.error({ err: dbErr }, "Failed to record task_run failure");
-          }
           await deliverRunResults({
             agentId: freshDef.id,
             agentName: freshDef.name,

@@ -120,14 +120,15 @@ LLM provider, model, embedding provider, and feature flags are stored in the **`
 Critical env vars (see `.env.example`):
 - `DATABASE_URL` — PostgreSQL connection string
 - `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` — API keys for whichever LLM/embedding provider is selected in DB settings
-- `CHECKPOINTER` — `postgres`, `sqlite`, or `memory`
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
 - `TELEGRAM_BOT_TOKEN` — optional; enables Telegram channel integration for agent message delivery
-- `MCP_ENCRYPTION_KEY` — optional; 32-byte hex key for AES-256-GCM encryption of MCP OAuth tokens
+- `EDDA_ENCRYPTION_KEY` — required for MCP OAuth token encryption (generate with `openssl rand -base64 32`)
 
 Notable DB settings (in `settings` table):
 - `default_agent` — Name of the agent to use as the default conversational agent (default: `edda`)
 - `task_max_concurrency` — Max parallel agent executions (default: 3)
+- `checkpointer_backend` — `postgres`, `sqlite`, or `memory` (server uses this directly)
+- `cron_runner` — `local` or `langgraph` (server currently runs local; logs fallback when set to `langgraph`)
 
 ### Agents (Multi-Agent System)
 
@@ -212,7 +213,7 @@ Agents can be linked to external messaging platforms for receiving messages and 
 Edda supports OAuth authentication for connecting to remote MCP servers.
 
 - **`mcp_oauth_states` table** — Stores OAuth flow state (PKCE challenge, redirect URI) during the authorization dance.
-- **`packages/db/src/crypto.ts`** — AES-256-GCM encryption for storing OAuth tokens at rest. Requires `MCP_ENCRYPTION_KEY` env var.
+- **`packages/db/src/crypto.ts`** — AES-256-GCM encryption for storing OAuth tokens at rest. Requires `EDDA_ENCRYPTION_KEY` env var.
 - **`apps/web/src/app/api/v1/mcp-oauth/`** — OAuth callback handler that completes the authorization flow and stores encrypted tokens.
 
 ## Code Style

@@ -31,7 +31,6 @@
     "async-mutex": "^0.5.0",
     "cron-parser": "^5.5.0",
     "deepagents": "^1.7.0",
-    "duck-duck-scrape": "^2.2.7",
     "grammy": "^1.40.1",
     "node-cron": "^3.0.0",
     "pino": "^10.3.1",

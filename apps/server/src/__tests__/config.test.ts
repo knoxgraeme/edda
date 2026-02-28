@@ -37,8 +37,6 @@ describe("loadConfig", () => {
   it("optional vars use correct defaults", () => {
     process.env.DATABASE_URL = "postgresql://localhost:5432/edda";
     const config = loadConfig();
-    expect(config.CRON_RUNNER).toBe("local");
-    expect(config.CHECKPOINTER_BACKEND).toBe("postgres");
     expect(config.PORT).toBe(8000);
     // Vitest sets NODE_ENV=test, so default won't be "development" in test runner
     expect(config.NODE_ENV).toBe("test");

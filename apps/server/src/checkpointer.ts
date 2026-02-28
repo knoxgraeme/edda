@@ -1,7 +1,7 @@
 /**
- * Checkpointer factory — returns a BaseCheckpointSaver based on settings + env override
+ * Checkpointer factory — returns a BaseCheckpointSaver based on DB settings.
  *
- * Precedence: env CHECKPOINTER → settings.checkpointer_backend → "postgres"
+ * Source of truth: settings.checkpointer_backend
  */
 
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
@@ -18,7 +18,7 @@ export async function getCheckpointer(): Promise<BaseCheckpointSaver> {
   if (_checkpointer) return _checkpointer;
 
   const settings = getSettingsSync();
-  const backend = process.env.CHECKPOINTER || settings.checkpointer_backend || "postgres";
+  const backend = settings.checkpointer_backend || "postgres";
 
   let saver: BaseCheckpointSaver;
 
@@ -31,7 +31,7 @@ export async function getCheckpointer(): Promise<BaseCheckpointSaver> {
       break;
     }
     case "sqlite": {
-      // @ts-expect-error — optional dependency, only needed when CHECKPOINTER=sqlite
+      // @ts-expect-error — optional dependency, only needed when checkpointer_backend=sqlite
       const { SqliteSaver } = await import("@langchain/langgraph-checkpoint-sqlite");
       const path = process.env.SQLITE_PATH || "./edda-checkpoints.db";
       saver = SqliteSaver.fromConnString(path);
