@@ -5,9 +5,15 @@
 import { getPool } from "./connection.js";
 import type { PendingItem } from "./types.js";
 
-const ALLOWED_TABLES = new Set(["items", "entities", "item_types", "telegram_paired_users"]);
+const ALLOWED_TABLES = new Set([
+  "items",
+  "entities",
+  "item_types",
+  "telegram_paired_users",
+  "paired_users",
+]);
 
-type ConfirmableTable = "items" | "entities" | "item_types" | "telegram_paired_users";
+type ConfirmableTable = "items" | "entities" | "item_types" | "telegram_paired_users" | "paired_users";
 
 function assertValidTable(table: string): asserts table is ConfirmableTable {
   if (!ALLOWED_TABLES.has(table)) {
@@ -24,6 +30,11 @@ export async function confirmPending(
   if (table === "telegram_paired_users") {
     await pool.query(
       "UPDATE telegram_paired_users SET status = 'approved' WHERE id = $1",
+      [id],
+    );
+  } else if (table === "paired_users") {
+    await pool.query(
+      "UPDATE paired_users SET status = 'approved', updated_at = now() WHERE id = $1",
       [id],
     );
   } else if (table === "item_types") {
@@ -50,6 +61,11 @@ export async function rejectPending(
       "UPDATE telegram_paired_users SET status = 'rejected' WHERE id = $1",
       [id],
     );
+  } else if (table === "paired_users") {
+    await pool.query(
+      "UPDATE paired_users SET status = 'rejected', updated_at = now() WHERE id = $1",
+      [id],
+    );
   } else if (table === "item_types") {
     await pool.query("DELETE FROM item_types WHERE name = $1 AND confirmed = false", [id]);
   } else {
@@ -60,7 +76,7 @@ export async function rejectPending(
 export async function getPendingItems(): Promise<PendingItem[]> {
   const pool = getPool();
 
-  const [items, entities, itemTypes, pairings] = await Promise.all([
+  const [items, entities, itemTypes, pairings, generalPairings] = await Promise.all([
     pool.query(
       "SELECT id, type, content, summary, pending_action, created_at FROM items WHERE confirmed = false ORDER BY created_at DESC",
     ),
@@ -72,6 +88,9 @@ export async function getPendingItems(): Promise<PendingItem[]> {
     ),
     pool.query(
       "SELECT id, telegram_id, display_name, status, created_at FROM telegram_paired_users WHERE status = 'pending' ORDER BY created_at DESC",
+    ),
+    pool.query(
+      "SELECT id, platform, platform_user_id, display_name, status, created_at FROM paired_users WHERE status = 'pending' ORDER BY created_at DESC",
     ),
   ]);
 
@@ -121,6 +140,19 @@ export async function getPendingItems(): Promise<PendingItem[]> {
       label: row.display_name || `Telegram user ${row.telegram_id}`,
       description: null,
       pendingAction: "Telegram user requesting access",
+      createdAt: row.created_at,
+    });
+  }
+
+  for (const row of generalPairings.rows) {
+    const platform = row.platform as string;
+    pending.push({
+      id: row.id,
+      table: "paired_users",
+      type: `${platform}_pairing`,
+      label: row.display_name || `${platform} user ${row.platform_user_id}`,
+      description: null,
+      pendingAction: `${platform.charAt(0).toUpperCase() + platform.slice(1)} user requesting access`,
       createdAt: row.created_at,
     });
   }

@@ -6,21 +6,29 @@
  */
 
 import type { AgentChannel } from "@edda/db";
-import type { ChannelSender } from "./types.js";
+import type { ChannelAdapter } from "./adapter.js";
 
-const senders = new Map<string, ChannelSender>();
+const adapters = new Map<string, ChannelAdapter>();
 
-export function registerSender(sender: ChannelSender): void {
-  senders.set(sender.platform, sender);
+export function registerAdapter(adapter: ChannelAdapter): void {
+  adapters.set(adapter.platform, adapter);
+}
+
+export function getAdapter(platform: string): ChannelAdapter | undefined {
+  return adapters.get(platform);
+}
+
+export function unregisterAdapter(platform: string): void {
+  adapters.delete(platform);
 }
 
 export async function deliverToChannel(channel: AgentChannel, text: string): Promise<void> {
-  const sender = senders.get(channel.platform);
-  if (!sender) {
+  const adapter = adapters.get(channel.platform);
+  if (!adapter) {
     throw new Error(
-      `No sender registered for platform "${channel.platform}". ` +
-      `Ensure the ${channel.platform} adapter is initialized before attempting delivery.`
+      `No adapter registered for platform "${channel.platform}". ` +
+        `Ensure the ${channel.platform} adapter is initialized before attempting delivery.`,
     );
   }
-  await sender.send(channel.external_id, text);
+  await adapter.send(channel.external_id, text);
 }

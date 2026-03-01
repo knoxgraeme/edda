@@ -130,7 +130,7 @@ Bad: "Be careful with emails." (not actionable)
 
 ### List Channels
 "what channels are connected?", "show linked channels for digest"
-- list_channels: List external channels (e.g. Telegram) linked to an agent.
+- list_channels: List external channels (e.g. Telegram, Discord, Slack) linked to an agent.
 - Can filter by agent name.
 
 ### Manage Channel

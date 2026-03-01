@@ -40,6 +40,13 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
 
+  // Discord (optional — omit to disable)
+  DISCORD_BOT_TOKEN: z.string().optional(),
+
+  // Slack (optional — omit to disable; both tokens required)
+  SLACK_BOT_TOKEN: z.string().optional(),
+  SLACK_APP_TOKEN: z.string().optional(),
+
   // Sandbox
   SANDBOX_TIMEOUT_MS: z.coerce.number().optional().default(30000),
 

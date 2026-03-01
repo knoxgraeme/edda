@@ -307,7 +307,7 @@ export interface EntitySearchResult extends Entity {
 
 export interface PendingItem {
   id: string;
-  table: "items" | "entities" | "item_types" | "telegram_paired_users";
+  table: "items" | "entities" | "item_types" | "telegram_paired_users" | "paired_users";
   type: string;
   label: string;
   description: string | null;
@@ -325,6 +325,22 @@ export interface TelegramPairedUser {
   display_name: string | null;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+}
+
+// ──────────────────────────────────────────────
+// Paired Users (platform-agnostic)
+// ──────────────────────────────────────────────
+
+export type PairingStatus = "pending" | "approved" | "rejected";
+
+export interface PairedUser {
+  id: string;
+  platform: string;
+  platform_user_id: string;
+  display_name: string | null;
+  status: PairingStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 // ──────────────────────────────────────────────
