@@ -35,13 +35,15 @@ export async function getSkillsByNames(names: string[]): Promise<Skill[]> {
 export async function upsertSkill(input: UpsertSkillInput): Promise<Skill> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `INSERT INTO skills (name, description, content, is_system, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO skills (name, description, content, files, is_system, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (name) DO UPDATE SET
        description = EXCLUDED.description,
        content = EXCLUDED.content,
+       files = EXCLUDED.files,
        version = CASE
          WHEN skills.content IS DISTINCT FROM EXCLUDED.content
+           OR skills.files IS DISTINCT FROM EXCLUDED.files
          THEN skills.version + 1
          ELSE skills.version
        END,
@@ -51,6 +53,7 @@ export async function upsertSkill(input: UpsertSkillInput): Promise<Skill> {
       input.name,
       input.description,
       input.content,
+      JSON.stringify(input.files ?? {}),
       input.is_system ?? false,
       input.created_by ?? "seed",
     ],
