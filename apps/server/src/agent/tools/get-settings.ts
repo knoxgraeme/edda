@@ -26,6 +26,7 @@ const AGENT_VISIBLE_KEYS: (keyof Settings)[] = [
   "agents_md_max_per_category",
   "agents_md_max_versions",
   "agents_md_max_entities",
+  "sandbox_provider",
 ];
 
 export const getSettingsSchema = z.object({});

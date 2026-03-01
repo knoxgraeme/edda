@@ -11,11 +11,43 @@
  */
 
 import { StateBackend, StoreBackend, CompositeBackend } from "deepagents";
-import type { BackendProtocol, WriteResult, EditResult, SandboxBackendProtocol } from "deepagents";
+import type {
+  BackendProtocol,
+  WriteResult,
+  EditResult,
+  SandboxBackendProtocol,
+  ExecuteResponse,
+} from "deepagents";
 import type { BaseStore } from "@langchain/langgraph";
 import { z } from "zod";
 import type { Agent } from "@edda/db";
 import { getAgents } from "@edda/db";
+
+// ---------------------------------------------------------------------------
+// SandboxCompositeBackend — CompositeBackend that satisfies isSandboxBackend()
+// ---------------------------------------------------------------------------
+
+/**
+ * Extends CompositeBackend with `id` and `execute` so that deepagents'
+ * duck-type check (`isSandboxBackend`) passes and the `execute` tool is
+ * exposed to the agent. The default backend must be a SandboxBackendProtocol.
+ */
+class SandboxCompositeBackend extends CompositeBackend implements SandboxBackendProtocol {
+  private sandbox: SandboxBackendProtocol;
+
+  constructor(sandbox: SandboxBackendProtocol, routes: Record<string, BackendProtocol>) {
+    super(sandbox, routes);
+    this.sandbox = sandbox;
+  }
+
+  get id(): string {
+    return this.sandbox.id;
+  }
+
+  execute(command: string): Promise<ExecuteResponse> {
+    return Promise.resolve(this.sandbox.execute(command));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Read-only wrappers
@@ -164,7 +196,9 @@ export async function buildBackend(
       }
     }
 
-    const defaultBackend = options?.sandbox ?? new StateBackend(rt);
-    return new CompositeBackend(defaultBackend, routes);
+    if (options?.sandbox) {
+      return new SandboxCompositeBackend(options.sandbox, routes);
+    }
+    return new CompositeBackend(new StateBackend(rt), routes);
   };
 }
