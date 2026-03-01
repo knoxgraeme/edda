@@ -18,12 +18,13 @@ import {
   getRecentTaskRuns,
   createChannel,
   deleteChannel,
-  getPairedUser,
-  createPairingRequest,
+  checkPlatformUser,
+  requestPlatformPairing,
 } from "@edda/db";
 import { getLogger } from "../logger.js";
 import { registerAdapter, unregisterAdapter } from "./deliver.js";
 import { handleInboundMessage } from "./handle-message.js";
+import { splitMessage } from "./utils.js";
 import type { ChannelAdapter, MessageHandle, ParsedMessage } from "./adapter.js";
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -55,7 +56,7 @@ export class TelegramAdapter implements ChannelAdapter {
       const userId = ctx.from?.id;
       if (!userId) return;
 
-      const paired = await getPairedUser(userId);
+      const paired = await checkPlatformUser("telegram", String(userId));
 
       if (paired?.status === "approved") {
         await next();
@@ -77,7 +78,7 @@ export class TelegramAdapter implements ChannelAdapter {
         [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") ||
         ctx.from.username ||
         undefined;
-      await createPairingRequest(userId, displayName);
+      await requestPlatformPairing("telegram", String(userId), displayName);
       getLogger().info({ userId, displayName }, "New Telegram pairing request");
       await ctx.reply(
         "Access requested — waiting for approval. You'll be able to use the bot once an admin approves your request.",
@@ -445,29 +446,6 @@ function parseExternalId(externalId: string): { chatId: number; threadId: number
     chatId: Number(match[1]),
     threadId: match[2] === "dm" ? undefined : Number(match[2]),
   };
-}
-
-function splitMessage(text: string, maxLength: number): string[] {
-  if (text.length <= maxLength) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLength) {
-      chunks.push(remaining);
-      break;
-    }
-    let splitAt = remaining.lastIndexOf("\n", maxLength);
-    if (splitAt < maxLength / 2) {
-      splitAt = remaining.lastIndexOf(" ", maxLength);
-    }
-    if (splitAt < maxLength / 2) {
-      splitAt = maxLength;
-    }
-    chunks.push(remaining.slice(0, splitAt));
-    remaining = remaining.slice(splitAt).trimStart();
-  }
-  return chunks;
 }
 
 function validateWebhookSecret(

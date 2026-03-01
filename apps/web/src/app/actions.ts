@@ -68,12 +68,18 @@ function isValidCron(expr: string): boolean {
   return fields.length === 5 && fields.every((f) => CRON_FIELD_RE.test(f));
 }
 
-const VALID_TABLES = new Set(["items", "entities", "item_types", "telegram_paired_users"] as const);
+const VALID_TABLES = new Set([
+  "items",
+  "entities",
+  "item_types",
+  "telegram_paired_users",
+  "paired_users",
+] as const);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_STATUSES = new Set(["active", "done", "archived", "snoozed"] as const);
 const MAX_BATCH_SIZE = 500;
 
-type ConfirmableTable = "items" | "entities" | "item_types" | "telegram_paired_users";
+type ConfirmableTable = "items" | "entities" | "item_types" | "telegram_paired_users" | "paired_users";
 
 function validateTable(table: string): asserts table is ConfirmableTable {
   if (!VALID_TABLES.has(table as ConfirmableTable)) {

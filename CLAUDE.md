@@ -71,7 +71,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/checkpointer.ts`** — State checkpointing backend (postgres, sqlite, or memory)
 - **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `reminders`, `self_improvement`, `type_evolution`, `weekly_reflect`
 - **`src/cron.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
-- **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `deliver.ts` (routes messages to platform adapters), `types.ts` (shared channel types)
+- **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `discord.ts` (Gateway WebSocket via discord.js), `slack.ts` (Socket Mode via @slack/bolt), `deliver.ts` (routes messages to platform adapters), `handle-message.ts` (platform-agnostic inbound handler), `stream-to-adapter.ts` (streaming delivery with debounced edits), `adapter.ts` (ChannelAdapter interface), `utils.ts` (shared helpers like `splitMessage`)
 - **`src/utils/notify.ts`** — Multi-target notification delivery; routes to inbox (DB row), announce (channel delivery via `deliverToChannel`), or agent (triggers agent run)
 - **`src/utils/reminder-recurrence.ts`** — Cron expression and interval string parsing, validation, and next-date computation (uses `cron-parser`)
 - **`src/utils/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
@@ -95,14 +95,15 @@ Next.js App Router with React 19.
 
 Single source of truth for data model and queries.
 
-- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `AgentSchedule`, `TaskRun`, `Notification`, `Channel`, `TelegramUser`, `List`, `Thread`, `PendingItem`
+- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `AgentSchedule`, `TaskRun`, `Notification`, `Channel`, `TelegramUser`, `PairedUser`, `List`, `Thread`, `PendingItem`
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
 - **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getByName)
 - **`src/agent-schedules.ts`** — Per-agent cron schedule CRUD
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
 - **`src/notifications.ts`** — Notification lifecycle: create, dismiss, claim due reminders, advance/complete recurring reminders, cleanup expired
 - **`src/channels.ts`** — Agent-channel link CRUD (agent_channels table)
-- **`src/telegram-users.ts`** — Telegram user pairing and lookup
+- **`src/telegram-users.ts`** — Telegram user pairing and lookup (legacy; see `paired-users.ts`)
+- **`src/paired-users.ts`** — Platform-agnostic user pairing: `checkPlatformUser`, `requestPlatformPairing`, approve/reject, pending list
 - **`src/threads.ts`** — Thread management with agent scoping and processing watermarks
 - **`src/lists.ts`** — First-class lists with pgvector embeddings
 - **`src/mcp-oauth.ts`** — OAuth state and token management for MCP connections
@@ -110,8 +111,8 @@ Single source of truth for data model and queries.
 - **`src/confirmations.ts`** — Pending confirmation queries (item_types, entities)
 - **`src/dashboard.ts`** — Dashboard aggregation queries
 - **`src/skills.ts`** — Skill metadata storage and retrieval
-- **`migrations/`** — Ordered SQL migration files (001–024); applied via `pnpm migrate`
-- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `lists`, `mcp_connections`, `mcp_oauth_states`, `agents_md_versions`, `agents`, `agent_schedules`, `agent_channels`, `task_runs`, `notifications`, `threads`, `telegram_paired_users`, `skills`
+- **`migrations/`** — Ordered SQL migration files; applied via `pnpm migrate`
+- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `lists`, `mcp_connections`, `mcp_oauth_states`, `agents_md_versions`, `agents`, `agent_schedules`, `agent_channels`, `task_runs`, `notifications`, `threads`, `telegram_paired_users`, `paired_users`, `skills`
 
 ### Configuration Strategy
 
@@ -122,6 +123,8 @@ Critical env vars (see `.env.example`):
 - `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` — API keys for whichever LLM/embedding provider is selected in DB settings
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
 - `TELEGRAM_BOT_TOKEN` — optional; enables Telegram channel integration for agent message delivery
+- `DISCORD_BOT_TOKEN` — optional; enables Discord channel integration (Gateway WebSocket)
+- `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` — optional; both required to enable Slack channel integration (Socket Mode)
 - `EDDA_ENCRYPTION_KEY` — required for MCP OAuth token encryption (generate with `openssl rand -base64 32`)
 
 Notable DB settings (in `settings` table):
@@ -200,12 +203,17 @@ Edda has a multi-target notification system for delivering messages from agents,
 
 ### Channels (External Delivery)
 
-Agents can be linked to external messaging platforms for receiving messages and broadcasting output.
+Agents can be linked to external messaging platforms for receiving messages and broadcasting output. All adapters implement the `ChannelAdapter` interface (`adapter.ts`) and share inbound routing (`handle-message.ts`) and streaming delivery (`stream-to-adapter.ts`).
 
-- **`agent_channels` table** — Links agents to external platform channels. Each row defines: agent_id, platform (e.g. `telegram`), external_id (platform-specific chat ID), config, and flags for `receive_messages` and `receive_announcements`.
-- **`telegram_paired_users` table** — Maps Telegram user IDs to Edda for authenticated message routing.
-- **`apps/server/src/channels/telegram.ts`** — Telegram bot adapter using webhook-based message handling. Receives user messages, routes to the linked agent, returns agent responses.
-- **`apps/server/src/channels/deliver.ts`** — Platform-agnostic delivery router. `deliverToChannel(channel, message)` dispatches to the appropriate platform adapter.
+- **`agent_channels` table** — Links agents to external platform channels. Each row defines: agent_id, platform (`telegram`, `discord`, `slack`), external_id (platform-specific chat ID), config, and flags for `receive_messages` and `receive_announcements`.
+- **`paired_users` table** — Platform-agnostic user pairing for access control. Maps `(platform, platform_user_id)` to approval status (`pending`, `approved`, `rejected`). All adapters check pairing before routing messages.
+- **`telegram_paired_users` table** — Legacy Telegram-specific pairing (preserved; new pairing uses `paired_users`).
+- **`apps/server/src/channels/telegram.ts`** — Telegram bot adapter (grammY, webhook-based). Forum topic support via `message_thread_id`.
+- **`apps/server/src/channels/discord.ts`** — Discord bot adapter (discord.js, Gateway WebSocket). Slash commands: `/edda link|unlink|status`. Uses channel cache and single REST call for streaming edits.
+- **`apps/server/src/channels/slack.ts`** — Slack bot adapter (@slack/bolt, Socket Mode). Slash command: `/edda link|unlink|status`. Ephemeral responses for errors/status.
+- **`apps/server/src/channels/deliver.ts`** — Platform-agnostic delivery router. `deliverToChannel(channel, message)` dispatches to the appropriate registered adapter.
+- **`apps/server/src/channels/handle-message.ts`** — Shared inbound handler: resolves channel→agent, builds thread, streams response.
+- **`apps/server/src/channels/stream-to-adapter.ts`** — Streaming delivery with debounced message edits and fallback to `send()`.
 - **Announcement flow** — When a scheduled agent run completes, the cron runner queries `getChannelsByAgent(agentId, { receiveAnnouncements: true })` and delivers the last assistant message to each linked channel.
 
 ### MCP OAuth

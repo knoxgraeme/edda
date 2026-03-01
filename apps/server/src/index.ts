@@ -13,6 +13,8 @@ import { createCronRunner } from "./cron.js";
 import { setAgent } from "./agent/agent-cache.js";
 import { startHealthServer } from "./server/index.js";
 import { TelegramAdapter } from "./channels/telegram.js";
+import { DiscordAdapter } from "./channels/discord.js";
+import { SlackAdapter } from "./channels/slack.js";
 import { closeMCPClients } from "./mcp/client.js";
 import { logger } from "./logger.js";
 import { patchAnthropicToolSchemas } from "./agent/patch-anthropic-schemas.js";
@@ -118,11 +120,32 @@ async function main() {
     }
   }
 
-  // 8. Shutdown handler
+  // 8. Discord bot (optional — only if DISCORD_BOT_TOKEN is set)
+  let discord: DiscordAdapter | null = null;
+  const discordToken = process.env.DISCORD_BOT_TOKEN;
+  if (discordToken) {
+    discord = new DiscordAdapter(discordToken);
+    await discord.init();
+  }
+
+  // 9. Slack bot (optional — only if both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are set)
+  let slack: SlackAdapter | null = null;
+  const slackBotToken = process.env.SLACK_BOT_TOKEN;
+  const slackAppToken = process.env.SLACK_APP_TOKEN;
+  if (slackBotToken && slackAppToken) {
+    slack = new SlackAdapter(slackBotToken, slackAppToken);
+    await slack.init();
+  } else if (slackBotToken || slackAppToken) {
+    log.warn("Both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are required for Slack — skipping");
+  }
+
+  // 10. Shutdown handler
   const shutdown = async (signal: string) => {
     log.info({ signal }, "Shutting down");
     try {
       if (telegram) await telegram.shutdown();
+      if (discord) await discord.shutdown();
+      if (slack) await slack.shutdown();
       await cronRunner.stop();
       await closeMCPClients();
     } catch (err) {
