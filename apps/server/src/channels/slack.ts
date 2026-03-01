@@ -34,6 +34,7 @@ export class SlackAdapter implements ChannelAdapter {
   private app: App | null = null;
   private botToken: string;
   private appToken: string;
+  private defaultTeamId?: string;
 
   constructor(botToken: string, appToken: string) {
     this.botToken = botToken;
@@ -79,8 +80,11 @@ export class SlackAdapter implements ChannelAdapter {
       const parts = command.text.trim().split(/\s+/);
       const subcommand = parts[0]?.toLowerCase() ?? "";
       const channelId = command.channel_id;
-      const teamId = command.team_id ?? "workspace";
-      const externalId = `${teamId}:${channelId}`;
+      const externalId = buildSlackExternalId(
+        channelId,
+        command.team_id ?? undefined,
+        this.defaultTeamId,
+      );
 
       switch (subcommand) {
         case "link":
@@ -106,6 +110,12 @@ export class SlackAdapter implements ChannelAdapter {
     });
 
     await this.app.start();
+    try {
+      const auth = await this.app.client.auth.test();
+      this.defaultTeamId = auth.team_id;
+    } catch (err) {
+      getLogger().warn({ err }, "Unable to resolve default Slack team_id");
+    }
 
     registerAdapter(this);
     getLogger().info("Slack adapter initialized (Socket Mode)");
@@ -349,8 +359,7 @@ export class SlackAdapter implements ChannelAdapter {
 
     // Slack DM channel IDs start with "D"
     const isDM = channelId.startsWith("D");
-    const prefix = teamId ?? "workspace";
-    const externalId = `${prefix}:${channelId}`;
+    const externalId = buildSlackExternalId(channelId, teamId, this.defaultTeamId);
 
     log.info({ channelId, isDM }, "Slack message received");
     log.debug({ channelId, preview: text.slice(0, 80) }, "Message preview");
@@ -387,3 +396,11 @@ function parseExternalId(externalId: string): string {
   return parts[1];
 }
 
+export function buildSlackExternalId(
+  channelId: string,
+  eventTeamId?: string,
+  defaultTeamId?: string,
+): string {
+  const prefix = eventTeamId ?? defaultTeamId ?? "workspace";
+  return `${prefix}:${channelId}`;
+}

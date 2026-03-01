@@ -30,14 +30,15 @@ const envSchema = z.object({
 
   // Auth
   EDDA_PASSWORD: z.string().optional(),
-  INTERNAL_API_SECRET: z.string().optional(),
+  INTERNAL_API_SECRET: z.string().min(1, 'INTERNAL_API_SECRET is required — generate one with: openssl rand -hex 32'),
 
   // OAuth encryption + callback
   EDDA_ENCRYPTION_KEY: z.string().optional(),
   EDDA_BASE_URL: z.string().url().default('http://localhost:3000'),
 
-  // Telegram (optional — omit to disable; requires INTERNAL_API_SECRET)
+  // Telegram (optional — omit to disable)
   TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
 
   // Discord (optional — omit to disable)
@@ -58,6 +59,14 @@ const envSchema = z.object({
   // Server
   PORT: z.coerce.number().int().positive().default(8000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+}).superRefine((env, ctx) => {
+  if (env.TELEGRAM_BOT_TOKEN && !env.TELEGRAM_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['TELEGRAM_WEBHOOK_SECRET'],
+      message: 'TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set',
+    });
+  }
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

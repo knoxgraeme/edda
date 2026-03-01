@@ -99,16 +99,16 @@ async function main() {
   let telegram: TelegramAdapter | null = null;
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
-    const apiSecret = process.env.INTERNAL_API_SECRET;
-    if (!apiSecret) {
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (!webhookSecret) {
       throw new Error(
-        "INTERNAL_API_SECRET is required when TELEGRAM_BOT_TOKEN is set. " +
-          "It is used to authenticate both internal API calls and Telegram webhook requests. " +
+        "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set. " +
+          "Use a dedicated secret for Telegram webhook verification. " +
           "Generate one with: openssl rand -hex 32",
       );
     }
 
-    telegram = new TelegramAdapter(telegramToken, { webhookSecret: apiSecret });
+    telegram = new TelegramAdapter(telegramToken, { webhookSecret });
     await telegram.init();
 
     const webhookUrl =

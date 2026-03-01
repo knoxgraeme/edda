@@ -50,12 +50,10 @@ function setCors(res: ServerResponse) {
 
 /**
  * Validate the Authorization bearer token against INTERNAL_API_SECRET.
- * If INTERNAL_API_SECRET is not set, all requests are allowed (local dev).
  * Health endpoint is always unauthenticated.
  */
 function checkAuth(req: IncomingMessage, res: ServerResponse): boolean {
-  const secret = process.env.INTERNAL_API_SECRET;
-  if (!secret) return true;
+  const secret = process.env.INTERNAL_API_SECRET!;
 
   const authHeader = req.headers.authorization ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";

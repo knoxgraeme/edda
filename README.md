@@ -188,7 +188,8 @@ Server on port 8000, web UI on port 3000. Open [http://localhost:3000](http://lo
 | `SEARCH_PROVIDER` | Web search: `tavily`, `brave`, `serper`, `serpapi` (+ API key) |
 | `WOLFRAM_APP_ID` | WolframAlpha tool |
 | `TELEGRAM_BOT_TOKEN` | Telegram integration (see below) |
-| `INTERNAL_API_SECRET` | Backend auth (required for Telegram) |
+| `INTERNAL_API_SECRET` | Backend auth for server API |
+| `TELEGRAM_WEBHOOK_SECRET` | Telegram webhook verification secret |
 | `LANGSMITH_API_KEY` | LangSmith tracing |
 | `ALLOW_FILESYSTEM_ACCESS` | `true` + `FILESYSTEM_ROOT` for agent file access |
 | `CORS_ORIGIN` | Backend CORS origin (default: `http://localhost:3000`) |
@@ -203,7 +204,7 @@ Two-way messaging from your phone, with per-topic agent routing.
 
 ```
 TELEGRAM_BOT_TOKEN=<your token>
-INTERNAL_API_SECRET=<openssl rand -hex 32>
+TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 32>
 TELEGRAM_WEBHOOK_URL=https://your-server.railway.app/api/telegram/webhook
 ```
 

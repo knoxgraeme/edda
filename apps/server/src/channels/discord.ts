@@ -212,6 +212,8 @@ export class DiscordAdapter implements ChannelAdapter {
       return;
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     const subcommand = interaction.options.getSubcommand();
     const channelId = interaction.channelId;
     const guildId = interaction.guildId ?? "dm";
@@ -228,7 +230,7 @@ export class DiscordAdapter implements ChannelAdapter {
         await this.handleStatusCommand(interaction, externalId);
         break;
       default:
-        await interaction.reply({ content: "Unknown subcommand.", ephemeral: true });
+        await interaction.editReply({ content: "Unknown subcommand." });
     }
   }
 
@@ -243,11 +245,10 @@ export class DiscordAdapter implements ChannelAdapter {
     });
     if (existing) {
       const existingAgent = await getAgentById(existing.agent_id);
-      await interaction.reply({
+      await interaction.editReply({
         content:
           `This channel is already linked to "${existingAgent?.name ?? "unknown"}". ` +
           `Use \`/edda unlink\` first to change it.`,
-        ephemeral: true,
       });
       return;
     }
@@ -255,16 +256,14 @@ export class DiscordAdapter implements ChannelAdapter {
     const agent = await getAgentByName(agentName);
     if (!agent) {
       const names = await getAgentNames();
-      await interaction.reply({
+      await interaction.editReply({
         content: `Agent "${agentName}" not found.\n\nAvailable agents: ${names.join(", ")}`,
-        ephemeral: true,
       });
       return;
     }
     if (!agent.enabled) {
-      await interaction.reply({
+      await interaction.editReply({
         content: `Agent "${agentName}" is currently disabled.`,
-        ephemeral: true,
       });
       return;
     }
@@ -286,16 +285,13 @@ export class DiscordAdapter implements ChannelAdapter {
         receive_announcements: false,
       });
 
-      await interaction.reply(
+      await interaction.editReply(
         `Linked to agent "${agent.name}" (${agent.thread_lifetime} thread, ${agent.thread_scope} scope).\n\n` +
           "Messages here will now be routed to this agent.",
       );
     } catch (err) {
       getLogger().error({ err }, "Discord /edda link failed");
-      await interaction.reply({
-        content: "Failed to create channel link. Check server logs for details.",
-        ephemeral: true,
-      });
+      await interaction.editReply({ content: "Failed to create channel link. Check server logs for details." });
     }
   }
 
@@ -307,9 +303,8 @@ export class DiscordAdapter implements ChannelAdapter {
       includeDisabled: true,
     });
     if (!channel) {
-      await interaction.reply({
+      await interaction.editReply({
         content: "This channel is not linked to any agent.",
-        ephemeral: true,
       });
       return;
     }
@@ -317,13 +312,10 @@ export class DiscordAdapter implements ChannelAdapter {
     try {
       const agent = await getAgentById(channel.agent_id);
       await deleteChannel(channel.id);
-      await interaction.reply(`Unlinked from agent "${agent?.name ?? "unknown"}".`);
+      await interaction.editReply(`Unlinked from agent "${agent?.name ?? "unknown"}".`);
     } catch (err) {
       getLogger().error({ err }, "Discord /edda unlink failed");
-      await interaction.reply({
-        content: "Failed to remove channel link. Check server logs for details.",
-        ephemeral: true,
-      });
+      await interaction.editReply({ content: "Failed to remove channel link. Check server logs for details." });
     }
   }
 
@@ -333,19 +325,17 @@ export class DiscordAdapter implements ChannelAdapter {
   ): Promise<void> {
     const channel = await getChannelByExternalId("discord", externalId);
     if (!channel) {
-      await interaction.reply({
+      await interaction.editReply({
         content:
           "This channel is not linked to any agent.\nUse `/edda link agent:<name>` to set one up.",
-        ephemeral: true,
       });
       return;
     }
 
     const agent = await getAgentById(channel.agent_id);
     if (!agent) {
-      await interaction.reply({
+      await interaction.editReply({
         content: "Linked agent no longer exists. Use `/edda unlink` then `/edda link` to fix.",
-        ephemeral: true,
       });
       return;
     }
@@ -375,7 +365,7 @@ export class DiscordAdapter implements ChannelAdapter {
       lines.push("", `Total channels for ${agent.name}: ${allChannels.length}`);
     }
 
-    await interaction.reply(lines.join("\n"));
+    await interaction.editReply(lines.join("\n"));
   }
 
   // ---------------------------------------------------------------------------

@@ -71,7 +71,8 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/checkpointer.ts`** — State checkpointing backend (postgres, sqlite, or memory)
 - **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `reminders`, `self_improvement`, `type_evolution`, `weekly_reflect`
 - **`src/cron.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
-- **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `discord.ts` (Gateway WebSocket via discord.js), `slack.ts` (Socket Mode via @slack/bolt), `deliver.ts` (routes messages to platform adapters), `handle-message.ts` (platform-agnostic inbound handler), `stream-to-adapter.ts` (streaming delivery with debounced edits), `adapter.ts` (ChannelAdapter interface), `utils.ts` (shared helpers like `splitMessage`)
+- **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `discord.ts` (Gateway WebSocket via discord.js), `slack.ts` (Socket Mode via @slack/bolt), `deliver.ts` (routes messages to platform adapters), `handle-message.ts` (platform-agnostic inbound handler), `adapter.ts` (ChannelAdapter interface), `utils.ts` (shared helpers like `splitMessage`)
+- **`src/agent/stream-to-adapter.ts`** — Streaming delivery with debounced edits and adapter fallback behavior
 - **`src/utils/notify.ts`** — Multi-target notification delivery; routes to inbox (DB row), announce (channel delivery via `deliverToChannel`), or agent (triggers agent run)
 - **`src/utils/reminder-recurrence.ts`** — Cron expression and interval string parsing, validation, and next-date computation (uses `cron-parser`)
 - **`src/utils/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
@@ -123,6 +124,7 @@ Critical env vars (see `.env.example`):
 - `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` — API keys for whichever LLM/embedding provider is selected in DB settings
 - `EDDA_PASSWORD` — optional; set to enable password-gated web UI (leave empty for local dev)
 - `TELEGRAM_BOT_TOKEN` — optional; enables Telegram channel integration for agent message delivery
+- `TELEGRAM_WEBHOOK_SECRET` — required when `TELEGRAM_BOT_TOKEN` is set; dedicated secret for Telegram webhook verification
 - `DISCORD_BOT_TOKEN` — optional; enables Discord channel integration (Gateway WebSocket)
 - `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` — optional; both required to enable Slack channel integration (Socket Mode)
 - `EDDA_ENCRYPTION_KEY` — required for MCP OAuth token encryption (generate with `openssl rand -base64 32`)
@@ -205,15 +207,15 @@ Edda has a multi-target notification system for delivering messages from agents,
 
 Agents can be linked to external messaging platforms for receiving messages and broadcasting output. All adapters implement the `ChannelAdapter` interface (`adapter.ts`) and share inbound routing (`handle-message.ts`) and streaming delivery (`stream-to-adapter.ts`).
 
-- **`agent_channels` table** — Links agents to external platform channels. Each row defines: agent_id, platform (`telegram`, `discord`, `slack`), external_id (platform-specific chat ID), config, and flags for `receive_messages` and `receive_announcements`.
+- **`agent_channels` table** — Links agents to external platform channels. Each row defines: agent_id, platform (`telegram`, `discord`, `slack`), external_id (platform-specific chat ID), config, `enabled`, and `receive_announcements`.
 - **`paired_users` table** — Platform-agnostic user pairing for access control. Maps `(platform, platform_user_id)` to approval status (`pending`, `approved`, `rejected`). All adapters check pairing before routing messages.
 - **`telegram_paired_users` table** — Legacy Telegram-specific pairing (preserved; new pairing uses `paired_users`).
-- **`apps/server/src/channels/telegram.ts`** — Telegram bot adapter (grammY, webhook-based). Forum topic support via `message_thread_id`.
+- **`apps/server/src/channels/telegram.ts`** — Telegram bot adapter (grammY, webhook-based) with `x-telegram-bot-api-secret-token` verification. Forum topic support via `message_thread_id`.
 - **`apps/server/src/channels/discord.ts`** — Discord bot adapter (discord.js, Gateway WebSocket). Slash commands: `/edda link|unlink|status`. Uses channel cache and single REST call for streaming edits.
 - **`apps/server/src/channels/slack.ts`** — Slack bot adapter (@slack/bolt, Socket Mode). Slash command: `/edda link|unlink|status`. Ephemeral responses for errors/status.
 - **`apps/server/src/channels/deliver.ts`** — Platform-agnostic delivery router. `deliverToChannel(channel, message)` dispatches to the appropriate registered adapter.
 - **`apps/server/src/channels/handle-message.ts`** — Shared inbound handler: resolves channel→agent, builds thread, streams response.
-- **`apps/server/src/channels/stream-to-adapter.ts`** — Streaming delivery with debounced message edits and fallback to `send()`.
+- **`apps/server/src/agent/stream-to-adapter.ts`** — Streaming delivery with debounced message edits and fallback to `send()`.
 - **Announcement flow** — When a scheduled agent run completes, the cron runner queries `getChannelsByAgent(agentId, { receiveAnnouncements: true })` and delivers the last assistant message to each linked channel.
 
 ### MCP OAuth
