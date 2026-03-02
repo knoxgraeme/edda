@@ -7,16 +7,12 @@ WORKDIR /app
 
 # ── Stage 2: Dependencies (cached layer) ─────────────
 FROM base AS deps
-COPY pnpm-lock.yaml ./
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm fetch --frozen-lockfile
-COPY package.json pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/db/package.json packages/db/
 COPY packages/cli/package.json packages/cli/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --offline
+RUN pnpm install --frozen-lockfile
 
 # ── Stage 3: Build ────────────────────────────────────
 FROM deps AS build
@@ -43,8 +39,7 @@ COPY --from=deps /app/apps/server/package.json apps/server/
 COPY --from=deps /app/packages/db/package.json packages/db/
 COPY --from=deps /app/packages/cli/package.json packages/cli/
 COPY --from=deps /app/apps/web/package.json apps/web/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --prod --offline
+RUN pnpm install --frozen-lockfile --prod
 
 # Server compiled output + skills
 COPY --from=build --chown=edda:nodejs /app/apps/server/dist apps/server/dist
