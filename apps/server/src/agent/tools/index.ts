@@ -81,6 +81,16 @@ import { cancelReminderTool } from "./cancel-reminder.js";
 
 // Skill management tools
 import { installSkillTool } from "./install-skill.js";
+import { listSkillsTool } from "./list-skills.js";
+
+// Schedule management tools
+import { createScheduleTool } from "./create-schedule.js";
+import { listSchedulesTool } from "./list-schedules.js";
+import { updateScheduleTool } from "./update-schedule.js";
+import { deleteScheduleTool } from "./delete-schedule.js";
+
+// Agent memory seeding
+import { seedAgentsMdTool } from "./seed-agents-md.js";
 
 // Community tools (lazy-loaded from @langchain/community)
 import { loadWikipediaTool } from "./wikipedia.js";
@@ -180,4 +190,14 @@ export const allTools = [
 
   // Skill management tools
   installSkillTool,
+  listSkillsTool,
+
+  // Schedule management tools
+  createScheduleTool,
+  listSchedulesTool,
+  updateScheduleTool,
+  deleteScheduleTool,
+
+  // Agent memory seeding
+  seedAgentsMdTool,
 ];
