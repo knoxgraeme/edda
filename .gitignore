@@ -25,6 +25,9 @@ plans/
 *.swp
 *.swo
 
+# Scripts (local provisioning)
+scripts/
+
 # OS
 .DS_Store
 Thumbs.db
