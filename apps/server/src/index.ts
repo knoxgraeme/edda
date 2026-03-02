@@ -30,11 +30,16 @@ async function main() {
   const settings = await refreshSettings();
   log.info({ provider: settings.llm_provider, model: settings.default_model }, "Settings loaded");
 
-  // 2. Seed system skills
+  // 2. Start health server early so orchestrators see us as alive
+  const port = parseInt(process.env.PORT ?? "8000", 10);
+  await startHealthServer(port);
+  log.info({ port, url: `http://localhost:${port}/api/health` }, "Health server started");
+
+  // 3. Seed system skills
   await seedSkills();
   log.info("Skills seeded");
 
-  // 3. Create agent — default_agent from settings (any agent can be the default)
+  // 4. Create agent — default_agent from settings (any agent can be the default)
   const agentRow = await getAgentByName(settings.default_agent);
   if (!agentRow) {
     throw new Error(
@@ -56,7 +61,7 @@ async function main() {
   });
   log.info({ agent: agentRow.name }, "Agent ready");
 
-  // 4. Bootstrap AGENTS.md if empty (first boot only)
+  // 5. Bootstrap AGENTS.md if empty (first boot only)
   const latestMd = await getLatestAgentsMd();
   if (!latestMd?.content?.trim()) {
     log.info("AGENTS.md empty — running initial context refresh");
@@ -85,17 +90,12 @@ async function main() {
     }
   }
 
-  // 5. Start cron runner
+  // 6. Start cron runner
   const cronRunner = await createCronRunner();
   await cronRunner.start();
   log.info("Cron runner started");
 
-  // 6. Health endpoint
-  const port = parseInt(process.env.PORT ?? "8000", 10);
-  await startHealthServer(port);
-  log.info({ port, url: `http://localhost:${port}/api/health` }, "Health server started");
-
-  // 7. Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
+  // 7. Channel adapters — Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
   let telegram: TelegramAdapter | null = null;
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
@@ -120,7 +120,7 @@ async function main() {
     }
   }
 
-  // 8. Discord bot (optional — only if DISCORD_BOT_TOKEN is set)
+  // 8. Channel adapters — Discord bot (optional — only if DISCORD_BOT_TOKEN is set)
   let discord: DiscordAdapter | null = null;
   const discordToken = process.env.DISCORD_BOT_TOKEN;
   if (discordToken) {
@@ -128,7 +128,7 @@ async function main() {
     await discord.init();
   }
 
-  // 9. Slack bot (optional — only if both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are set)
+  // 9. Channel adapters — Slack bot (optional — only if both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are set)
   let slack: SlackAdapter | null = null;
   const slackBotToken = process.env.SLACK_BOT_TOKEN;
   const slackAppToken = process.env.SLACK_APP_TOKEN;
