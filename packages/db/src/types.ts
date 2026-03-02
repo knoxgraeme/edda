@@ -442,6 +442,7 @@ export interface AgentSchedule {
   thread_lifetime: ThreadLifetime | null;
   notify: string[];
   notify_expires_after: string | null;
+  skip_when_empty_type: string | null;
   enabled: boolean;
   created_at: string;
 }

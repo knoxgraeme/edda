@@ -117,7 +117,7 @@ export function mockDbModule() {
     getAgentsMdContent: vi.fn().mockResolvedValue(""),
 
     // items.ts (additional)
-    countSessionNotesSince: vi.fn().mockResolvedValue(0),
+    countItemsOfTypeSince: vi.fn().mockResolvedValue(0),
 
     // notifications.ts
     createNotification: vi.fn(),

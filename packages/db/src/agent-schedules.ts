@@ -8,7 +8,7 @@
 import { getPool } from "./connection.js";
 import type { AgentSchedule, ThreadLifetime } from "./types.js";
 
-const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after::text, enabled, created_at::text`;
+const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after::text, skip_when_empty_type, enabled, created_at::text`;
 
 /**
  * Normalize pg interval::text (e.g. "72:00:00") to human form (e.g. "72 hours").
@@ -36,7 +36,7 @@ export interface EnabledSchedule extends AgentSchedule {
 export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime, s.notify, s.notify_expires_after::text, s.enabled, s.created_at::text, a.name AS agent_name
+    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime, s.notify, s.notify_expires_after::text, s.skip_when_empty_type, s.enabled, s.created_at::text, a.name AS agent_name
      FROM agent_schedules s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.enabled = true AND a.enabled = true
@@ -74,6 +74,7 @@ export async function createSchedule(input: {
   thread_lifetime?: ThreadLifetime;
   notify?: string[];
   notify_expires_after?: string | null;
+  skip_when_empty_type?: string | null;
 }): Promise<AgentSchedule> {
   const pool = getPool();
   // notify_expires_after: undefined = use DB default (72 hours), null = no expiry
@@ -105,7 +106,7 @@ export async function createSchedule(input: {
 export async function updateSchedule(
   id: string,
   updates: Partial<
-    Pick<AgentSchedule, "cron" | "prompt" | "thread_lifetime" | "notify" | "notify_expires_after" | "enabled">
+    Pick<AgentSchedule, "cron" | "prompt" | "thread_lifetime" | "notify" | "notify_expires_after" | "skip_when_empty_type" | "enabled">
   >,
 ): Promise<AgentSchedule> {
   const pool = getPool();
@@ -115,6 +116,7 @@ export async function updateSchedule(
     "thread_lifetime",
     "notify",
     "notify_expires_after",
+    "skip_when_empty_type",
     "enabled",
   ] as const;
   const entries = Object.entries(updates).filter(

@@ -23,7 +23,7 @@ import {
   advanceReminderByInterval,
   completeReminder,
   resetStuckSendingReminders,
-  countSessionNotesSince,
+  countItemsOfTypeSince,
 } from "@edda/db";
 import type { Notification } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
@@ -276,19 +276,19 @@ export class LocalCronRunner implements CronRunner {
       return;
     }
 
-    // Skip optimization: self_reflect schedules are skipped when no new session notes exist
-    if (freshSchedule.name === "self_reflect") {
+    // Skip optimization: schedules with skip_when_empty_type are skipped when no new items of that type exist
+    if (freshSchedule.skip_when_empty_type) {
       try {
-        const count = await countSessionNotesSince(freshSchedule.id);
+        const count = await countItemsOfTypeSince(freshSchedule.id, freshSchedule.skip_when_empty_type);
         if (count === 0) {
           getLogger().info(
-            { agent: agentNameHint, schedule: freshSchedule.name },
-            "Skipping self_reflect — no new session notes since last run",
+            { agent: agentNameHint, schedule: freshSchedule.name, itemType: freshSchedule.skip_when_empty_type },
+            "Skipping schedule — no new items since last run",
           );
           return;
         }
       } catch (err) {
-        getLogger().warn({ err }, "self_reflect pre-check failed, proceeding anyway");
+        getLogger().warn({ err, schedule: freshSchedule.name }, "skip_when_empty pre-check failed, proceeding anyway");
       }
     }
 

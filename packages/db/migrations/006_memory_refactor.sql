@@ -3,6 +3,10 @@
 -- Memory system refactor: per-agent memory config, entity approval,
 -- session_note type, agent consolidation, and schedule updates.
 
+-- 0. Schedule skip optimization column
+ALTER TABLE agent_schedules
+  ADD COLUMN IF NOT EXISTS skip_when_empty_type TEXT DEFAULT NULL;
+
 -- 1. Agent memory columns
 ALTER TABLE agents
   ADD COLUMN IF NOT EXISTS memory_capture BOOLEAN NOT NULL DEFAULT true,
@@ -59,12 +63,12 @@ UPDATE agent_schedules SET name = 'weekly_report',
   WHERE name = 'weekly_reflect' AND agent_id = (SELECT id FROM agents WHERE name = 'digest');
 
 -- Add self_reflect schedule on edda (ephemeral thread override)
-INSERT INTO agent_schedules (agent_id, name, cron, prompt, thread_lifetime, enabled)
+INSERT INTO agent_schedules (agent_id, name, cron, prompt, thread_lifetime, skip_when_empty_type, enabled)
 VALUES (
   (SELECT id FROM agents WHERE name = 'edda'),
   'self_reflect', '0 3 * * 0',
   'Run self-reflection on your recent conversations. Search session notes since your last reflection, identify recurring corrections, preferences, and quality signals, then update your operating notes accordingly.',
-  'ephemeral', true
+  'ephemeral', 'session_note', true
 )
 ON CONFLICT (agent_id, name) DO NOTHING;
 
