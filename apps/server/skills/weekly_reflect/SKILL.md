@@ -25,7 +25,7 @@ allowed-tools:
   - get_thread_messages
   - mark_thread_processed
   - list_threads
-  - get_context_diff
+  - get_agents_md
   - save_agents_md
   - update_agent
   - list_agents
@@ -109,7 +109,7 @@ quality signals from session summaries are the highest-value input.
     - Negative signals: user repeated request, corrected output, abandoned thread
     - Look for what differentiates good interactions from bad ones
 
-13. **Read current AGENTS.md** via `get_context_diff`
+13. **Read current AGENTS.md** via `get_agents_md`
 
 14. **Make surgical updates** to AGENTS.md sections:
     - **Communication**: Add/refine communication style observations

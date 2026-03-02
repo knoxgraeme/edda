@@ -104,8 +104,6 @@ export const createAgentTool = tool(
     try {
       await saveAgentsMdVersion({
         content: seedContent,
-        template: "",
-        inputHash: "",
         agentName: name,
       });
     } catch (err) {

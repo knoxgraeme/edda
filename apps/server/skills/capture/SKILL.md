@@ -70,8 +70,7 @@ link_item_entity. Just focus on creating items quickly and confirming.
 ## Type Reference
 
 Item types with classification hints, extraction hints, and metadata schemas are
-included in the AGENTS.md section of the system prompt. This is curated by the
-context_refresh skill from the item_types table. Consult the system prompt for
+included in the system context section of your prompt. Consult the system prompt for
 available types — new types may have been added since your training.
 
 ## Tool Sequence

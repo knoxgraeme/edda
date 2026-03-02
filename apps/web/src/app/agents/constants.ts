@@ -3,7 +3,6 @@ export const AGENT_NAME_RE = /^[a-z][a-z0-9_]*$/;
 export const AVAILABLE_SKILLS = [
   { name: "admin", description: "Agent and MCP management", toolCount: 4 },
   { name: "capture", description: "Classify and store items", toolCount: 3 },
-  { name: "context_refresh", description: "Maintain AGENTS.md context", toolCount: 2 },
   { name: "daily_digest", description: "Morning briefing", toolCount: 3 },
   { name: "manage", description: "Edit, complete, archive items", toolCount: 4 },
   { name: "memory_extraction", description: "Extract knowledge from conversations", toolCount: 5 },

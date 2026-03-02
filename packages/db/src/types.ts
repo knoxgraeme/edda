@@ -90,8 +90,10 @@ export interface Settings {
 export interface AgentsMdVersion {
   id: number;
   content: string;
-  template: string;
-  input_hash: string | null;
+  /** @deprecated Vestigial — no longer written by save_agents_md. */
+  template?: string;
+  /** @deprecated Vestigial — no longer written by save_agents_md. */
+  input_hash?: string | null;
   agent_name: string;
   created_at: string;
 }

@@ -61,7 +61,7 @@ import { updateAgentTool } from "./update-agent.js";
 import { deleteAgentTool } from "./delete-agent.js";
 
 // Agent self-awareness tools
-import { getContextDiffTool } from "./get-context-diff.js";
+import { getAgentsMdTool } from "./get-agents-md.js";
 import { saveAgentsMdTool } from "./save-agents-md.js";
 import { listMyRunsTool } from "./list-my-runs.js";
 
@@ -159,7 +159,7 @@ export const allTools = [
   deleteAgentTool,
 
   // Agent self-awareness tools
-  getContextDiffTool,
+  getAgentsMdTool,
   saveAgentsMdTool,
   listMyRunsTool,
 

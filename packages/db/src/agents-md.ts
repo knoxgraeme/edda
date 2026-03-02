@@ -27,17 +27,15 @@ export async function getLatestAgentsMd(
 /** Save a new AGENTS.md version. */
 export async function saveAgentsMdVersion(input: {
   content: string;
-  template: string;
-  inputHash: string;
   agentName?: string;
 }): Promise<AgentsMdVersion> {
   const pool = getPool();
   const agentName = input.agentName ?? "edda";
   const { rows } = await pool.query(
     `INSERT INTO agents_md_versions (content, template, input_hash, agent_name)
-     VALUES ($1, $2, $3, $4)
+     VALUES ($1, '', NULL, $2)
      RETURNING id, content, template, input_hash, agent_name, created_at`,
-    [input.content, input.template, input.inputHash, agentName],
+    [input.content, agentName],
   );
   return rows[0] as AgentsMdVersion;
 }

@@ -346,7 +346,6 @@ export async function buildPrompt(
   // save_agents_md, so the ~500-token guidelines would waste context.
   const hasMemoryTools =
     agent.skills?.includes("self_improvement") ||
-    agent.skills?.includes("context_refresh") ||
     agent.tools?.includes("save_agents_md");
 
   const memorySection = agentContext
