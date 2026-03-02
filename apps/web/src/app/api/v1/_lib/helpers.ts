@@ -6,11 +6,7 @@ export function jsonList<T>(data: T[]) {
 }
 
 /** Parse ?limit= with defaults and bounds */
-export function parseLimit(
-  url: string,
-  max = 200,
-  defaultLimit = 50,
-): number {
+export function parseLimit(url: string, max = 200, defaultLimit = 50): number {
   const raw = parseInt(new URL(url).searchParams.get("limit") ?? String(defaultLimit), 10);
   if (isNaN(raw) || raw < 1) return defaultLimit;
   return Math.min(raw, max);
@@ -48,4 +44,21 @@ export function getServerUrl(): string {
   const raw = (process.env.SERVER_URL ?? "http://localhost:8000").trim();
   if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
   return `http://${raw}`;
+}
+
+/**
+ * Notify the backend server to invalidate its MCP client and agent caches.
+ * Fire-and-forget — failures are logged but do not block the caller.
+ */
+export function notifyMcpInvalidate(): void {
+  const serverBase = getServerUrl();
+  const secret = process.env.INTERNAL_API_SECRET;
+  fetch(`${serverBase}/internal/mcp-invalidate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+    },
+    signal: AbortSignal.timeout(5_000),
+  }).catch((err) => console.warn("[MCP] Failed to notify server of invalidation:", err));
 }

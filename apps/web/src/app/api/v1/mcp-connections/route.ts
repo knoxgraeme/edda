@@ -1,7 +1,7 @@
 import { getMcpConnections, createMcpConnection, updateMcpConnection } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { jsonList, parseBody, badRequest } from "../_lib/helpers";
+import { jsonList, parseBody, badRequest, notifyMcpInvalidate } from "../_lib/helpers";
 import { validateMcpConfig } from "../_lib/mcp-config-schema";
 import { probeMcpTools } from "@/lib/mcp-probe";
 
@@ -35,11 +35,12 @@ export async function POST(request: Request) {
   // Fire-and-forget: probe in background, cache results when available
   probeMcpTools(connection)
     .then((tools) =>
-      tools.length > 0
-        ? updateMcpConnection(connection.id, { discovered_tools: tools })
-        : null,
+      tools.length > 0 ? updateMcpConnection(connection.id, { discovered_tools: tools }) : null,
     )
     .catch((err) => console.warn(`[MCP] Probe failed for "${connection.name}": ${err}`));
+
+  // Notify server to reload MCP tools and rebuild agents
+  notifyMcpInvalidate();
 
   return NextResponse.json(connection, { status: 201 });
 }

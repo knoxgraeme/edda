@@ -7,6 +7,7 @@ import { z } from "zod";
 import { updateMcpConnection } from "@edda/db";
 import type { McpConnection } from "@edda/db";
 import { invalidateMCPClient } from "../../mcp/client.js";
+import { invalidateAllAgents } from "../agent-cache.js";
 
 export const updateMcpConnectionSchema = z.object({
   id: z.string().describe("MCP connection ID"),
@@ -26,6 +27,7 @@ export const updateMcpConnectionTool = tool(
     }
 
     await invalidateMCPClient();
+    invalidateAllAgents();
 
     return JSON.stringify({ status: "updated", connection });
   },

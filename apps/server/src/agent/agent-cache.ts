@@ -90,3 +90,16 @@ export function invalidateAgent(name: string): void {
   getLogger().debug({ agent: name }, "Agent cache invalidated");
 }
 
+/**
+ * Invalidate ALL cached agents so every next request triggers a fresh build.
+ * Call when a global change (e.g. MCP connection add/remove) affects the
+ * tool pool shared by all agents.
+ */
+export function invalidateAllAgents(): void {
+  const count = agentCache.size;
+  agentCache.clear();
+  buildLocks.clear();
+  if (count > 0) {
+    getLogger().debug({ count }, "All agent caches invalidated");
+  }
+}
