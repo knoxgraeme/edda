@@ -23,9 +23,15 @@ import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { getLogger, withTraceId } from "../logger.js";
 import { invalidateMCPClient, ssrfSafeFetch } from "../mcp/client.js";
 import { MCPOAuthProvider } from "../mcp/oauth-provider.js";
-import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthState, decrypt } from "@edda/db";
+import {
+  getMcpConnectionById,
+  updateMcpConnection,
+  upsertOAuthState,
+  getOAuthState,
+  decrypt,
+} from "@edda/db";
 import { resolveThreadId } from "../agent/build-agent.js";
-import { getOrBuildAgent } from "../agent/agent-cache.js";
+import { getOrBuildAgent, invalidateAllAgents } from "../agent/agent-cache.js";
 import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverRunResults } from "../utils/notify.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
@@ -145,7 +151,9 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
           const title = userContent.length > 80 ? userContent.slice(0, 77) + "..." : userContent;
           return setThreadTitle(thread_id, title);
         })
-        .catch((err) => getLogger().error({ err, threadId: thread_id }, "Failed to set thread title"));
+        .catch((err) =>
+          getLogger().error({ err, threadId: thread_id }, "Failed to set thread title"),
+        );
 
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -198,7 +206,10 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
             name: chunk.name,
           };
 
-          const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
+          const data = JSON.stringify([
+            "messages",
+            [plain, { langgraph_node: event.metadata?.langgraph_node }],
+          ]);
           res.write(`data: ${data}\n\n`);
         } else if (event.event === "on_tool_end") {
           const output = event.data?.output;
@@ -207,12 +218,16 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
           const plain = {
             id: output.id ?? event.run_id,
             type: "tool",
-            content: typeof output.content === "string" ? output.content : JSON.stringify(output.content),
+            content:
+              typeof output.content === "string" ? output.content : JSON.stringify(output.content),
             tool_call_id: output.tool_call_id,
             name: output.name,
           };
 
-          const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
+          const data = JSON.stringify([
+            "messages",
+            [plain, { langgraph_node: event.metadata?.langgraph_node }],
+          ]);
           res.write(`data: ${data}\n\n`);
         }
       }
@@ -307,9 +322,7 @@ async function handleThreadDetail(threadId: string, res: ServerResponse) {
     const rawMessages = tuple.checkpoint?.channel_values?.messages ?? [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const messages = (rawMessages as any[]).map((m: any) => {
-      const msgType = String(
-        typeof m._getType === "function" ? m._getType() : (m.type ?? "ai"),
-      );
+      const msgType = String(typeof m._getType === "function" ? m._getType() : (m.type ?? "ai"));
       let type: string;
       if (msgType === "human" || msgType === "HumanMessage") type = "human";
       else if (msgType === "tool" || msgType === "ToolMessage") type = "tool";
@@ -399,7 +412,11 @@ async function handleMcpOAuthComplete(req: IncomingMessage, res: ServerResponse)
     // Exchange authorization code for tokens
     const baseUrl = process.env.EDDA_BASE_URL ?? "http://localhost:3000";
     const provider = new MCPOAuthProvider(body.connection_id, baseUrl);
-    await auth(provider, { serverUrl: new URL(serverUrl), authorizationCode: body.code, fetchFn: ssrfSafeFetch });
+    await auth(provider, {
+      serverUrl: new URL(serverUrl),
+      authorizationCode: body.code,
+      fetchFn: ssrfSafeFetch,
+    });
 
     // Update connection status
     await updateMcpConnection(body.connection_id, {
@@ -408,6 +425,7 @@ async function handleMcpOAuthComplete(req: IncomingMessage, res: ServerResponse)
 
     // Invalidate MCP client so next loadMCPTools() picks up the auth
     await invalidateMCPClient();
+    invalidateAllAgents();
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
@@ -510,11 +528,9 @@ async function handleAgentRun(agentName: string, req: IncomingMessage, res: Serv
   const modelName = agentDef.model || settings.default_model;
 
   // Force ephemeral thread — manual runs always get a fresh thread
-  const threadId = resolveThreadId(
-    { ...agentDef, thread_lifetime: "ephemeral" },
-    undefined,
-    { timezone: settings.user_timezone },
-  );
+  const threadId = resolveThreadId({ ...agentDef, thread_lifetime: "ephemeral" }, undefined, {
+    timezone: settings.user_timezone,
+  });
 
   const run = await createTaskRun({
     agent_id: agentDef.id,
@@ -611,6 +627,11 @@ export async function startHealthServer(port: number): Promise<void> {
       await handleSearchItems(req, res);
     } else if (urlPath === "/internal/mcp-oauth/complete" && req.method === "POST") {
       await handleMcpOAuthComplete(req, res);
+    } else if (urlPath === "/internal/mcp-invalidate" && req.method === "POST") {
+      await invalidateMCPClient();
+      invalidateAllAgents();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
     } else {
       res.writeHead(404);
       res.end();

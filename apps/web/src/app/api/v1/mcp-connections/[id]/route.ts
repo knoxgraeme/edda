@@ -1,11 +1,7 @@
-import {
-  updateMcpConnection,
-  deleteMcpConnection,
-  getMcpConnectionById,
-} from "@edda/db";
+import { updateMcpConnection, deleteMcpConnection, getMcpConnectionById } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseBody, notFound, badRequest, isUUID } from "../../_lib/helpers";
+import { parseBody, notFound, badRequest, isUUID, notifyMcpInvalidate } from "../../_lib/helpers";
 import { validateMcpConfig } from "../../_lib/mcp-config-schema";
 import { probeMcpTools } from "@/lib/mcp-probe";
 
@@ -18,10 +14,7 @@ const UpdateMcpConnectionSchema = z
   })
   .strict();
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUUID(id)) return badRequest("Invalid connection ID");
   const body = await parseBody(request);
@@ -53,15 +46,19 @@ export async function PATCH(
       .catch((err) => console.warn(`[MCP] Re-probe failed for "${connection.name}": ${err}`));
   }
 
+  // Notify server to reload MCP tools and rebuild agents
+  notifyMcpInvalidate();
+
   return NextResponse.json(connection);
 }
 
-export async function DELETE(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUUID(id)) return badRequest("Invalid connection ID");
   await deleteMcpConnection(id);
+
+  // Notify server to reload MCP tools and rebuild agents
+  notifyMcpInvalidate();
+
   return NextResponse.json({ deleted: true });
 }

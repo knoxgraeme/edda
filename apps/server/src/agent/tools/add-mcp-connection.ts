@@ -10,6 +10,7 @@ import { z } from "zod";
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { createMcpConnection, updateMcpConnection } from "@edda/db";
 import { invalidateMCPClient, ssrfSafeFetch } from "../../mcp/client.js";
+import { invalidateAllAgents } from "../agent-cache.js";
 import { MCPOAuthProvider } from "../../mcp/oauth-provider.js";
 import { getLogger } from "../../logger.js";
 
@@ -49,8 +50,20 @@ export const addMcpConnectionTool = tool(
       try {
         const probeRes = await ssrfSafeFetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-          body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1, params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "edda", version: "1.0.0" } } }),
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "initialize",
+            id: 1,
+            params: {
+              protocolVersion: "2025-03-26",
+              capabilities: {},
+              clientInfo: { name: "edda", version: "1.0.0" },
+            },
+          }),
           signal: AbortSignal.timeout(10_000),
         });
         probeStatus = probeRes.status;
@@ -117,6 +130,7 @@ export const addMcpConnectionTool = tool(
     }
 
     await invalidateMCPClient();
+    invalidateAllAgents();
 
     return JSON.stringify({
       id: connection.id,

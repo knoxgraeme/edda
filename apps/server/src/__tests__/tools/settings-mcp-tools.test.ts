@@ -36,6 +36,10 @@ vi.mock("@edda/db", () => ({
   deleteMcpConnection: vi.fn(),
 }));
 
+vi.mock("../../agent/agent-cache.js", () => ({
+  invalidateAllAgents: vi.fn(),
+}));
+
 import {
   getSettingsSync,
   updateSettings,
@@ -121,9 +125,7 @@ describe("addMcpConnectionTool", () => {
 
 describe("listMcpConnectionsTool", () => {
   it("calls getMcpConnections", async () => {
-    vi.mocked(getMcpConnections).mockResolvedValueOnce([
-      { id: "mcp-1", name: "Test" },
-    ] as never);
+    vi.mocked(getMcpConnections).mockResolvedValueOnce([{ id: "mcp-1", name: "Test" }] as never);
 
     const result = await listMcpConnectionsTool.invoke({});
     const parsed = JSON.parse(result);
