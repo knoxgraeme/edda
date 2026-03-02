@@ -9,6 +9,7 @@
  * NULL in either agent field means "inherit from settings".
  */
 
+import { ChatOpenRouter } from "@langchain/openrouter";
 import { getSettingsSync, LLM_PROVIDERS } from "@edda/db";
 import type { LlmProvider } from "@edda/db";
 
@@ -24,6 +25,13 @@ const PROVIDER_MAP: Record<LlmProvider, string> = {
   ollama: "ollama",
   mistral: "mistralai",
   bedrock: "bedrock",
+  xai: "xai",
+  deepseek: "deepseek",
+  cerebras: "cerebras",
+  fireworks: "fireworks",
+  together: "together",
+  azure_openai: "azure_openai",
+  openrouter: "openrouter", // handled specially in build-agent.ts
 };
 
 /**
@@ -43,4 +51,22 @@ export function getModelString(
   }
   const langchainProvider = PROVIDER_MAP[provider];
   return `${langchainProvider}:${model}`;
+}
+
+/**
+ * Resolve a model string into a model instance or pass-through string.
+ *
+ * OpenRouter is not registered in LangChain's `initChatModel`, so it requires
+ * direct instantiation of `ChatOpenRouter`. All other providers return the
+ * `provider:model` string for initChatModel to resolve.
+ */
+export function resolveModel(
+  agentProvider?: LlmProvider | null,
+  agentModel?: string | null,
+): ChatOpenRouter | string {
+  const modelString = getModelString(agentProvider, agentModel);
+  if (modelString.startsWith("openrouter:")) {
+    return new ChatOpenRouter({ model: modelString.split(":").slice(1).join(":") });
+  }
+  return modelString;
 }
