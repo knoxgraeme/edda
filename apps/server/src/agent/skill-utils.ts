@@ -50,7 +50,7 @@ export async function writeSkillsToStore(skills: Skill[], store: BaseStore): Pro
   for (const s of skills) {
     if (s.content) {
       writes.push(
-        store.put(["filesystem"], `/skills/${s.name}/SKILL.md`, {
+        store.put(["filesystem"], `/${s.name}/SKILL.md`, {
           content: s.content.split("\n"),
           created_at: now,
           modified_at: now,
@@ -59,7 +59,7 @@ export async function writeSkillsToStore(skills: Skill[], store: BaseStore): Pro
     }
     for (const [relPath, content] of Object.entries(s.files)) {
       writes.push(
-        store.put(["filesystem"], `/skills/${s.name}/${relPath}`, {
+        store.put(["filesystem"], `/${s.name}/${relPath}`, {
           content: content.split("\n"),
           created_at: now,
           modified_at: now,
