@@ -56,6 +56,8 @@ const SETTINGS_UPDATE_COLUMNS = [
   "task_max_concurrency",
   "default_agent",
   "sandbox_provider",
+  "approval_new_entity",
+  "memory_extraction_model",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {

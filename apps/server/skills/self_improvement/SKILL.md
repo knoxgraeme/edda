@@ -9,7 +9,7 @@ allowed-tools:
   - update_agent
   - list_agents
   - save_agents_md
-  - get_context_diff
+  - get_agents_md
 ---
 
 # self_improvement

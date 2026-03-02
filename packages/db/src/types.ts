@@ -60,6 +60,10 @@ export interface Settings {
   approval_new_type: ApprovalMode;
   approval_archive_stale: ApprovalMode;
   approval_merge_entity: ApprovalMode;
+  approval_new_entity: ApprovalMode;
+
+  // Memory
+  memory_extraction_model: string | null;
 
   // Personality
   system_prompt_override: string | null;
@@ -90,8 +94,6 @@ export interface Settings {
 export interface AgentsMdVersion {
   id: number;
   content: string;
-  template: string;
-  input_hash: string | null;
   agent_name: string;
   created_at: string;
 }
@@ -375,8 +377,6 @@ export interface UpsertSkillInput {
 // ──────────────────────────────────────────────
 
 export type ThreadLifetime = "ephemeral" | "daily" | "persistent";
-/** @deprecated Use ThreadLifetime instead */
-export type AgentContextMode = ThreadLifetime;
 export type AgentTrigger = "schedule" | "on_demand";
 export type ThreadScope = "shared" | "per_channel";
 export type ChannelPlatform = "telegram" | "slack" | "discord";
@@ -397,6 +397,8 @@ export interface Agent {
   model_provider: LlmProvider | null;
   model: string | null;
   enabled: boolean;
+  memory_capture: boolean;
+  memory_self_reflect: boolean;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -434,6 +436,7 @@ export interface AgentSchedule {
   thread_lifetime: ThreadLifetime | null;
   notify: string[];
   notify_expires_after: string | null;
+  skip_when_empty_type: string | null;
   enabled: boolean;
   created_at: string;
 }

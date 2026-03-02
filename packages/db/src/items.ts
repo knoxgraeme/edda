@@ -377,3 +377,22 @@ export async function getItemsByType(
   );
   return rows as Item[];
 }
+
+/**
+ * Count items of a given type created since the last completed run of a schedule.
+ * Used by the cron runner to skip schedules with `skip_when_empty_type` set.
+ */
+export async function countItemsOfTypeSince(scheduleId: string, itemType: string): Promise<number> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM items
+     WHERE type = $2
+     AND created_at > COALESCE(
+       (SELECT MAX(completed_at) FROM task_runs
+        WHERE schedule_id = $1 AND status = 'completed'),
+       '1970-01-01'
+     )`,
+    [scheduleId, itemType],
+  );
+  return rows[0]?.count ?? 0;
+}

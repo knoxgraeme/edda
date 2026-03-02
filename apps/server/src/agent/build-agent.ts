@@ -346,7 +346,6 @@ export async function buildPrompt(
   // save_agents_md, so the ~500-token guidelines would waste context.
   const hasMemoryTools =
     agent.skills?.includes("self_improvement") ||
-    agent.skills?.includes("context_refresh") ||
     agent.tools?.includes("save_agents_md");
 
   const memorySection = agentContext
@@ -371,7 +370,7 @@ export async function buildPrompt(
 - Skills: task-specific instructions loaded on demand from /skills/${delegationLine}`;
 
   const rules = `\n\n## Rules
-- Approval required: new types (${settings.approval_new_type}), archive stale (${settings.approval_archive_stale}), entity merges (${settings.approval_merge_entity})
+- Approval required: new types (${settings.approval_new_type}), archive stale (${settings.approval_archive_stale}), entity merges (${settings.approval_merge_entity}), new entities (${settings.approval_new_entity})
 - Always search before creating duplicate items
 - AGENTS.md token budget: ${settings.agents_md_token_budget}
 - Use recall/search_items for specific facts — AGENTS.md is for operating patterns, not data`;
@@ -379,7 +378,7 @@ export async function buildPrompt(
   const context = `\n\n## Context
 - Today: ${currentDate}, ${currentTime}
 - Timezone: ${settings.user_timezone}
-${settings.user_display_name ? `- User: ${settings.user_display_name}` : ""}`;
+${settings.user_display_name ? `- User: ${settings.user_display_name}\n` : ""}- Memory capture: ${agent.memory_capture ? "enabled" : "disabled"}`;
 
   const itemTypesSection = `\n\n## Available Item Types
 ${formatItemTypes(itemTypes)}`;
