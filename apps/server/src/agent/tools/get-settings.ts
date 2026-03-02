@@ -27,6 +27,7 @@ const AGENT_VISIBLE_KEYS: (keyof Settings)[] = [
   "agents_md_max_versions",
   "agents_md_max_entities",
   "sandbox_provider",
+  "task_run_retention_days",
 ];
 
 export const getSettingsSchema = z.object({});

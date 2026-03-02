@@ -85,7 +85,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 Next.js App Router with React 19.
 
 - **`src/app/`** — Route pages: `/` (chat), `/agents`, `/dashboard`, `/entities`, `/inbox`, `/settings`, `/skills`, `/login`
-- **`src/app/api/v1/`** — REST API routes (agents, channels, confirmations, dashboard, entities, item-types, items, mcp-connections, mcp-oauth, notifications, reminders, schedules, settings, skills, task-runs, threads, timeline)
+- **`src/app/api/v1/`** — REST API routes (agents, channels, confirmations, dashboard, entities, item-types, items, mcp-connections, mcp-oauth, metrics, notifications, reminders, schedules, settings, skills, task-runs, threads, timeline)
 - **`src/middleware.ts`** — Next.js middleware; enforces optional password auth via `EDDA_PASSWORD`
 - **`src/lib/auth.ts`** — Session token helpers (HMAC-based cookie auth)
 - **`src/providers/`** — `ChatProvider` and `ClientProvider` context providers
@@ -100,7 +100,7 @@ Single source of truth for data model and queries.
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
 - **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getByName)
 - **`src/agent-schedules.ts`** — Per-agent cron schedule CRUD
-- **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
+- **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent) + aggregation queries (`getAgentMetrics`, `getSystemMetrics`)
 - **`src/notifications.ts`** — Notification lifecycle: create, dismiss, claim due reminders, advance/complete recurring reminders, cleanup expired
 - **`src/channels.ts`** — Agent-channel link CRUD (agent_channels table)
 - **`src/telegram-users.ts`** — Telegram user pairing and lookup (legacy; see `paired-users.ts`)

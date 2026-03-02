@@ -21,6 +21,7 @@ allowed-tools:
   - get_notifications
   - list_channels
   - manage_channel
+  - get_metrics
 ---
 
 # admin
@@ -138,6 +139,15 @@ Bad: "Be careful with emails." (not actionable)
 - manage_channel: Link, unlink, or update an agent's external channel configuration.
 - Controls receive_messages and receive_announcements flags.
 
+## Metrics
+
+### View Metrics
+"how are my agents performing?", "show system health", "any failures recently?"
+- get_metrics: Get system health metrics and per-agent execution stats.
+- Returns running/completed/failed counts, average duration, and token usage.
+- `days` param controls the lookback window for per-agent stats (1-90, default 7).
+- System metrics always cover the last 24 hours.
+
 ## Settings
 
 ### View Settings
@@ -148,7 +158,8 @@ Bad: "Be careful with emails." (not actionable)
 "change my timezone", "set approval mode to auto", "enable sandbox execution"
 - update_settings: Modify agent-safe settings.
 - Only user-facing keys can be modified: user_display_name, user_timezone,
-  web_search settings, approval modes, AGENTS.md budgets, sandbox_provider.
+  web_search settings, approval modes, AGENTS.md budgets, sandbox_provider,
+  task_run_retention_days.
 - Infrastructure keys (LLM provider, model, etc.) cannot be modified by agents.
 
 ## Sandbox Execution

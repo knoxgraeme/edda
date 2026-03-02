@@ -35,6 +35,7 @@ export const updateSettingsSchema = z.object({
         .enum(["none", "node-vfs"])
         .optional()
         .describe("Sandbox execution provider: 'none' (disabled) or 'node-vfs' (in-memory VFS)"),
+      task_run_retention_days: z.number().int().min(1).max(3650).optional(),
     })
     .describe("Settings to update"),
 });

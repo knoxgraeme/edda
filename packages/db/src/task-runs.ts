@@ -36,6 +36,35 @@ export async function createTaskRun(input: {
   return rows[0] as TaskRun;
 }
 
+export async function createAndStartTaskRun(input: {
+  agent_id?: string | null;
+  agent_name: string;
+  trigger: TaskRunTrigger;
+  thread_id?: string;
+  schedule_id?: string;
+  input_summary?: string;
+  model?: string;
+}): Promise<TaskRun> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `INSERT INTO task_runs
+       (agent_id, agent_name, trigger, thread_id, schedule_id, input_summary, model,
+        status, started_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', now())
+     RETURNING ${TASK_RUN_COLS}`,
+    [
+      input.agent_id ?? null,
+      input.agent_name,
+      input.trigger,
+      input.thread_id ?? null,
+      input.schedule_id ?? null,
+      input.input_summary ?? null,
+      input.model ?? null,
+    ],
+  );
+  return rows[0] as TaskRun;
+}
+
 export async function startTaskRun(id: string): Promise<void> {
   const pool = getPool();
   const { rowCount } = await pool.query(
@@ -134,4 +163,93 @@ export async function getRunningTaskCount(): Promise<number> {
     `SELECT COUNT(*)::int AS count FROM task_runs WHERE status = 'running'`,
   );
   return rows[0].count;
+}
+
+export interface AgentMetricsRow {
+  agent_name: string;
+  total: number;
+  completed: number;
+  failed: number;
+  avg_duration_ms: number | null;
+  total_tokens: number | null;
+}
+
+export async function getAgentMetrics(days = 7): Promise<AgentMetricsRow[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT agent_name,
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+            ROUND(AVG(duration_ms) FILTER (WHERE status = 'completed'))::int AS avg_duration_ms,
+            SUM(tokens_used)::int AS total_tokens
+     FROM task_runs
+     WHERE created_at >= now() - make_interval(days => $1)
+     GROUP BY agent_name
+     ORDER BY total DESC`,
+    [days],
+  );
+  return rows as AgentMetricsRow[];
+}
+
+export interface SystemMetrics {
+  running_count: number;
+  completed_24h: number;
+  failed_24h: number;
+  avg_duration_24h_ms: number | null;
+  total_tokens_24h: number | null;
+}
+
+export async function deleteOldTaskRuns(retentionDays: number): Promise<number> {
+  const pool = getPool();
+  const BATCH = 500;
+  let total = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { rowCount } = await pool.query(
+      `DELETE FROM task_runs
+       WHERE id IN (
+         SELECT id FROM task_runs
+         WHERE status IN ('completed', 'failed', 'cancelled')
+           AND created_at < now() - make_interval(days => $1)
+         ORDER BY created_at
+         LIMIT $2
+         FOR UPDATE SKIP LOCKED
+       )`,
+      [retentionDays, BATCH],
+    );
+    const deleted = rowCount ?? 0;
+    total += deleted;
+    if (deleted < BATCH) break;
+  }
+
+  return total;
+}
+
+export async function resetStuckRunningTaskRuns(thresholdMinutes = 10): Promise<number> {
+  const pool = getPool();
+  const { rowCount } = await pool.query(
+    `UPDATE task_runs
+     SET status = 'failed', completed_at = now(), error = 'stuck_timeout'
+     WHERE status = 'running'
+       AND started_at < now() - make_interval(mins => $1)`,
+    [thresholdMinutes],
+  );
+  return rowCount ?? 0;
+}
+
+export async function getSystemMetrics(): Promise<SystemMetrics> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM task_runs WHERE status = 'running') AS running_count,
+       COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_24h,
+       COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_24h,
+       ROUND(AVG(duration_ms) FILTER (WHERE status = 'completed'))::int AS avg_duration_24h_ms,
+       SUM(tokens_used)::int AS total_tokens_24h
+     FROM task_runs
+     WHERE created_at >= now() - interval '24 hours'`,
+  );
+  return rows[0] as SystemMetrics;
 }

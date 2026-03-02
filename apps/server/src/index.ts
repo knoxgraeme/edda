@@ -160,6 +160,20 @@ async function main() {
       if (slack) await slack.shutdown();
       await cronRunner.stop();
       await closeMCPClients();
+
+      // Flush pending LangSmith traces before exit (5s timeout to avoid hanging shutdown)
+      if (process.env.LANGSMITH_TRACING === "true") {
+        try {
+          const { awaitAllCallbacks } = await import("@langchain/core/callbacks/promises");
+          await Promise.race([
+            awaitAllCallbacks(),
+            new Promise((resolve) => setTimeout(resolve, 5000)),
+          ]);
+          log.info("LangSmith callbacks flushed");
+        } catch (flushErr) {
+          log.warn({ err: flushErr }, "Failed to flush LangSmith callbacks");
+        }
+      }
     } catch (err) {
       log.error({ err }, "Shutdown cleanup failed");
     } finally {

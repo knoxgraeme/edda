@@ -11,10 +11,14 @@ import {
   setThreadTitle,
   searchItems,
   getAgentByName,
+  createAndStartTaskRun,
   createTaskRun,
+  completeTaskRun,
+  failTaskRun,
   getSettingsSync,
   refreshSettings,
 } from "@edda/db";
+import type { TaskRun } from "@edda/db";
 import { HumanMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { getSharedCheckpointer } from "../checkpointer.js";
@@ -27,6 +31,7 @@ import { getMcpConnectionById, updateMcpConnection, upsertOAuthState, getOAuthSt
 import { resolveThreadId } from "../agent/build-agent.js";
 import { getOrBuildAgent } from "../agent/agent-cache.js";
 import { executeAgentRun } from "../agent/run-execution.js";
+import { sanitizeError } from "../utils/sanitize-error.js";
 import { deliverRunResults } from "../utils/notify.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import { getAdapter } from "../channels/deliver.js";
@@ -92,7 +97,12 @@ async function readBody(req: IncomingMessage): Promise<string> {
 
 function handleHealth(res: ServerResponse) {
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
+  res.end(
+    JSON.stringify({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    }),
+  );
 }
 
 async function handleReady(res: ServerResponse) {
@@ -110,6 +120,9 @@ async function handleReady(res: ServerResponse) {
 
 async function handleStream(req: IncomingMessage, res: ServerResponse) {
   return withTraceId({ module: "stream" }, async () => {
+    let run: TaskRun | undefined;
+    let streamStartTime: number | undefined;
+
     try {
       const raw = await readBody(req);
       const parsed = StreamRequestSchema.safeParse(JSON.parse(raw));
@@ -147,6 +160,16 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
         })
         .catch((err) => getLogger().error({ err, threadId: thread_id }, "Failed to set thread title"));
 
+      // Create + start task_run for this streaming chat
+      run = await createAndStartTaskRun({
+        agent_id: state.agentRow.id,
+        agent_name,
+        trigger: "user",
+        thread_id,
+        input_summary: userContent.slice(0, 200),
+      });
+      streamStartTime = Date.now();
+
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -165,8 +188,13 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
             retrieval_context: state.retrievalContext,
           },
           version: "v2",
+          runName: `${state.agentName}/chat`,
+          metadata: { agent_name: state.agentName, trigger: "user", thread_id },
+          tags: [state.agentName, "chat"],
         },
       );
+
+      let streamTokens = 0;
 
       for await (const event of stream) {
         if (event.event === "on_chat_model_stream") {
@@ -200,6 +228,9 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
 
           const data = JSON.stringify(["messages", [plain, { langgraph_node: event.metadata?.langgraph_node }]]);
           res.write(`data: ${data}\n\n`);
+        } else if (event.event === "on_chat_model_end") {
+          const tokens = event.data?.output?.usage_metadata?.total_tokens;
+          if (typeof tokens === "number") streamTokens += tokens;
         } else if (event.event === "on_tool_end") {
           const output = event.data?.output;
           if (!output) continue;
@@ -219,8 +250,23 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
 
       res.write("data: [DONE]\n\n");
       res.end();
+
+      // Complete the task_run
+      await completeTaskRun(run.id, {
+        duration_ms: Date.now() - streamStartTime,
+        tokens_used: streamTokens > 0 ? streamTokens : undefined,
+      });
     } catch (err) {
       getLogger().error({ err }, "Stream error");
+
+      // Fail the task_run if it was created
+      if (run) {
+        const runId = run.id;
+        failTaskRun(runId, sanitizeError(err)).catch((dbErr) =>
+          getLogger().error({ runId, err: dbErr }, "Failed to record stream task_run failure"),
+        );
+      }
+
       const errStr = String(err);
       const userMessage = errStr.includes("overloaded")
         ? "The AI service is temporarily overloaded. Please try again in a moment."
@@ -521,6 +567,7 @@ async function handleAgentRun(agentName: string, req: IncomingMessage, res: Serv
     agent_name: agentDef.name,
     trigger: "user",
     thread_id: threadId,
+    input_summary: body.prompt.slice(0, 200),
     model: modelName,
   });
 

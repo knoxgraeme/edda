@@ -14,6 +14,7 @@ import {
   getScheduleById,
   getAgentByName,
   createTaskRun,
+  deleteOldTaskRuns,
   refreshSettings,
   getUnreadNotifications,
   markNotificationsRead,
@@ -23,6 +24,7 @@ import {
   advanceReminderByInterval,
   completeReminder,
   resetStuckSendingReminders,
+  resetStuckRunningTaskRuns,
 } from "@edda/db";
 import type { Notification } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
@@ -86,12 +88,18 @@ export class LocalCronRunner implements CronRunner {
 
     this._syncInterval = setInterval(() => this.syncSchedules(), SCHEDULE_SYNC_INTERVAL_MS);
 
-    // Reminder poller: recover stuck rows, then poll every minute
+    // Recover stuck rows on startup, then poll every minute
     try {
       const reset = await resetStuckSendingReminders();
       if (reset > 0) log.info({ count: reset }, "Reset stuck sending reminders");
     } catch (err) {
       log.warn({ err }, "Failed to reset stuck reminders");
+    }
+    try {
+      const reset = await resetStuckRunningTaskRuns();
+      if (reset > 0) log.info({ count: reset }, "Reset stuck running task runs");
+    } catch (err) {
+      log.warn({ err }, "Failed to reset stuck running task runs");
     }
     this._reminderInterval = setInterval(() => this.pollReminders(), REMINDER_POLL_INTERVAL_MS);
 
@@ -183,6 +191,21 @@ export class LocalCronRunner implements CronRunner {
         if (reset > 0) log.info({ count: reset }, "Reset stuck sending reminders during sync");
       } catch (err) {
         log.warn({ err }, "Failed to reset stuck reminders during sync");
+      }
+
+      try {
+        const reset = await resetStuckRunningTaskRuns();
+        if (reset > 0) log.info({ count: reset }, "Reset stuck running task runs during sync");
+      } catch (err) {
+        log.warn({ err }, "Failed to reset stuck running task runs during sync");
+      }
+
+      try {
+        const settings = await refreshSettings();
+        const deleted = await deleteOldTaskRuns(settings.task_run_retention_days);
+        if (deleted > 0) log.info({ count: deleted, retentionDays: settings.task_run_retention_days }, "Cleaned up old task runs");
+      } catch (err) {
+        log.warn({ err }, "Failed to clean old task runs");
       }
 
       this.syncFailures = 0;
@@ -291,6 +314,7 @@ export class LocalCronRunner implements CronRunner {
       trigger: "cron",
       thread_id: threadId,
       schedule_id: freshSchedule.id,
+      input_summary: freshSchedule.prompt.slice(0, 200),
       model: modelName,
     });
 

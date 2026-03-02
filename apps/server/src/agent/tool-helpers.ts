@@ -23,6 +23,26 @@ export const RetrievalContextSchema = z.object({
   type_boost: z.number().optional(),
 });
 
+/** Sum total_tokens from usage_metadata across all AI messages. */
+export function extractTotalTokens(result: {
+  messages?: Array<{
+    role?: string;
+    _getType?: () => string;
+    usage_metadata?: { total_tokens?: number };
+  }>;
+}): number | undefined {
+  const messages = result?.messages ?? [];
+  let total = 0;
+  let found = false;
+  for (const m of messages) {
+    if ((m.role === "assistant" || m._getType?.() === "ai") && m.usage_metadata?.total_tokens) {
+      total += m.usage_metadata.total_tokens;
+      found = true;
+    }
+  }
+  return found ? total : undefined;
+}
+
 /** Extract the last assistant/AI message from an agent result. */
 export function extractLastAssistantMessage(result: {
   messages?: Array<{ role?: string; content?: unknown; _getType?: () => string }>;

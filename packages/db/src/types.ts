@@ -78,6 +78,9 @@ export interface Settings {
   // Sandbox
   sandbox_provider: SandboxProvider;
 
+  // Retention
+  task_run_retention_days: number;
+
   // Meta
   created_at: string;
   updated_at: string;

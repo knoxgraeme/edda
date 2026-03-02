@@ -25,8 +25,11 @@ const envSchema = z.object({
   WOLFRAM_APP_ID: z.string().min(1).optional(),
 
   // LangSmith (optional)
+  LANGSMITH_TRACING: z.enum(["true", "false"]).optional(),
   LANGSMITH_API_KEY: z.string().optional(),
   LANGSMITH_PROJECT: z.string().optional(),
+  LANGCHAIN_CALLBACKS_BACKGROUND: z.enum(["true", "false"]).optional(),
+  LANGSMITH_TRACING_SAMPLING_RATE: z.coerce.number().min(0).max(1).optional(),
 
   // Auth
   EDDA_PASSWORD: z.string().optional(),
@@ -65,6 +68,13 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['TELEGRAM_WEBHOOK_SECRET'],
       message: 'TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set',
+    });
+  }
+  if (env.LANGSMITH_TRACING === "true" && !env.LANGSMITH_API_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["LANGSMITH_API_KEY"],
+      message: "LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true",
     });
   }
 });

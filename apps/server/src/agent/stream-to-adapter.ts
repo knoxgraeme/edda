@@ -41,7 +41,7 @@ export async function streamToAdapter(opts: {
   adapter: ChannelAdapter;
   externalId: string;
   timeoutMs?: number;
-}): Promise<string | undefined> {
+}): Promise<{ text: string | undefined; tokens: number } | undefined> {
   const { agent, input, config, adapter, externalId } = opts;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const log = getLogger();
@@ -49,8 +49,9 @@ export async function streamToAdapter(opts: {
   let canStream = Boolean(adapter.sendInitial && adapter.editMessage);
   const maxLen = adapter.maxMessageLength ?? 4096;
 
-  // Accumulates the full response text
+  // Accumulates the full response text and token count
   let fullText = "";
+  let totalTokens = 0;
 
   // Streaming state (only used when adapter supports progressive updates)
   let handle: MessageHandle | null = null;
@@ -128,12 +129,28 @@ export async function streamToAdapter(opts: {
   const abortController = new AbortController();
 
   const streamPromise = (async () => {
+    const agentName = (config.configurable as Record<string, unknown>)?.agent_name as
+      | string
+      | undefined;
     const stream = agent.streamEvents(
       { messages: [new HumanMessage(input)] },
-      { ...config, signal: abortController.signal, version: "v2" },
+      {
+        ...config,
+        signal: abortController.signal,
+        version: "v2",
+        runName: agentName ? `${agentName}/channel` : undefined,
+        metadata: { ...(config.metadata ?? {}), agent_name: agentName, trigger: "user" },
+        tags: agentName ? [agentName, "channel"] : ["channel"],
+      },
     );
 
     for await (const event of stream) {
+      if (event.event === "on_chat_model_end") {
+        const tokens = event.data?.output?.usage_metadata?.total_tokens;
+        if (typeof tokens === "number") totalTokens += tokens;
+        continue;
+      }
+
       if (event.event !== "on_chat_model_stream") continue;
 
       const chunk = event.data?.chunk;
@@ -198,7 +215,7 @@ export async function streamToAdapter(opts: {
 
   if (!fullText) {
     log.warn({ platform: adapter.platform, externalId }, "Agent produced no text response");
-    return undefined;
+    return { text: undefined, tokens: totalTokens };
   }
 
   // Finalize: ensure the complete text is delivered
@@ -217,5 +234,5 @@ export async function streamToAdapter(opts: {
     await adapter.send(externalId, fullText);
   }
 
-  return fullText;
+  return { text: fullText, tokens: totalTokens };
 }

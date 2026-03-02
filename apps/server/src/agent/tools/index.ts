@@ -78,6 +78,10 @@ import { createReminderTool } from "./create-reminder.js";
 import { listRemindersTool } from "./list-reminders.js";
 import { cancelReminderTool } from "./cancel-reminder.js";
 
+// Metrics tools
+import { getMetricsTool } from "./get-metrics.js";
+export { getMetricsSchema } from "./get-metrics.js";
+
 // Skill management tools
 import { installSkillTool } from "./install-skill.js";
 
@@ -175,6 +179,9 @@ export const allTools = [
   createReminderTool,
   listRemindersTool,
   cancelReminderTool,
+
+  // Metrics tools
+  getMetricsTool,
 
   // Skill management tools
   installSkillTool,

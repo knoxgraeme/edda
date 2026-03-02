@@ -11,8 +11,12 @@ import {
   getAgentById,
   getAgentByName,
   getSettings,
+  createAndStartTaskRun,
+  completeTaskRun,
+  failTaskRun,
 } from "@edda/db";
 import type { Agent } from "@edda/db";
+import { sanitizeError } from "../utils/sanitize-error.js";
 import { resolveThreadId } from "../agent/build-agent.js";
 import { getOrBuildAgent } from "../agent/agent-cache.js";
 import { streamToAdapter } from "../agent/stream-to-adapter.js";
@@ -74,10 +78,19 @@ export async function handleInboundMessage(opts: {
     { timezone: user_timezone },
   );
 
-  // 3. Stream agent response with tracing + error handling
+  // 3. Stream agent response with tracing + error handling + task_run tracking
   await withTraceId({ module: adapter.platform, agent: agentDef.name }, async () => {
+    const run = await createAndStartTaskRun({
+      agent_id: agentDef.id,
+      agent_name: agentDef.name,
+      trigger: "user",
+      thread_id: threadId,
+      input_summary: parsed.text.slice(0, 200),
+    });
+    const startTime = Date.now();
+
     try {
-      await streamToAdapter({
+      const result = await streamToAdapter({
         agent: state.agent,
         input: parsed.text,
         config: {
@@ -90,8 +103,17 @@ export async function handleInboundMessage(opts: {
         adapter,
         externalId: parsed.externalId,
       });
+
+      await completeTaskRun(run.id, {
+        output_summary: result?.text?.slice(0, 500),
+        duration_ms: Date.now() - startTime,
+        tokens_used: result?.tokens ?? undefined,
+      });
     } catch (err) {
       log.error({ err, agent: agentDef.name, platform: adapter.platform }, "Channel agent streaming failed");
+      await failTaskRun(run.id, sanitizeError(err)).catch((dbErr) =>
+        log.error({ runId: run.id, err: dbErr }, "Failed to record channel task_run failure"),
+      );
       try {
         await adapter.send(parsed.externalId, "Sorry, something went wrong.");
       } catch (sendErr) {

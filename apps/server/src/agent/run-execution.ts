@@ -5,7 +5,7 @@
 import { startTaskRun, completeTaskRun, failTaskRun } from "@edda/db";
 import type { Agent } from "@edda/db";
 import { getOrBuildAgent } from "./agent-cache.js";
-import { extractLastAssistantMessage } from "./tool-helpers.js";
+import { extractLastAssistantMessage, extractTotalTokens } from "./tool-helpers.js";
 import { sanitizeError } from "../utils/sanitize-error.js";
 import { withTimeout } from "../utils/with-timeout.js";
 import { getLogger, withTraceId } from "../logger.js";
@@ -17,6 +17,7 @@ interface AgentResult {
     role?: string;
     content?: unknown;
     _getType?: () => string;
+    usage_metadata?: { total_tokens?: number };
   }>;
 }
 
@@ -46,6 +47,9 @@ export async function executeAgentRun(opts: {
               agent_name: agentDef.name,
               retrieval_context: state.retrievalContext,
             },
+            runName: `${agentDef.name}/${trigger}`,
+            metadata: { agent_name: agentDef.name, trigger, run_id: runId, thread_id: threadId },
+            tags: [agentDef.name, trigger],
           },
         ),
         AGENT_TIMEOUT_MS,
@@ -56,6 +60,7 @@ export async function executeAgentRun(opts: {
       const lastMessage = extractLastAssistantMessage(result);
       await completeTaskRun(runId, {
         output_summary: lastMessage?.slice(0, 500),
+        tokens_used: extractTotalTokens(result),
         duration_ms: duration,
       });
       getLogger().info({ agent: agentDef.name, runId, durationMs: duration }, "Agent run completed");

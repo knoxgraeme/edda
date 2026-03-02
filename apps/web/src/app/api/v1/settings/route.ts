@@ -32,6 +32,7 @@ const UpdateSettingsSchema = z
     embedding_model: z.string().max(100).optional(),
     default_agent: z.string().min(1).max(200).optional(),
     sandbox_provider: z.enum(SANDBOX_PROVIDERS as [string, ...string[]]).optional(),
+    task_run_retention_days: z.number().int().min(1).max(3650).optional(),
   })
   .strip();
 

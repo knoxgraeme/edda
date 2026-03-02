@@ -56,6 +56,7 @@ const SETTINGS_UPDATE_COLUMNS = [
   "task_max_concurrency",
   "default_agent",
   "sandbox_provider",
+  "task_run_retention_days",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {
