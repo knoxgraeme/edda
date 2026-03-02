@@ -23,17 +23,18 @@ async function main() {
   const log = logger.child({ module: "startup" });
   log.info("Edda starting");
 
-  // 0. Patch Anthropic tool schema serialization — ensures all tools have type: "object"
-  patchAnthropicToolSchemas();
-
-  // 1. Load settings (must happen before anything else)
-  const settings = await refreshSettings();
-  log.info({ provider: settings.llm_provider, model: settings.default_model }, "Settings loaded");
-
-  // 2. Start health server early so orchestrators see us as alive
+  // 0. Start health server FIRST — bind port before any DB/network calls
+  //    so orchestrators (Railway, Fly) see us as alive immediately.
   const port = parseInt(process.env.PORT ?? "8000", 10);
   await startHealthServer(port);
   log.info({ port, url: `http://localhost:${port}/api/health` }, "Health server started");
+
+  // 1. Patch Anthropic tool schema serialization — ensures all tools have type: "object"
+  patchAnthropicToolSchemas();
+
+  // 2. Load settings
+  const settings = await refreshSettings();
+  log.info({ provider: settings.llm_provider, model: settings.default_model }, "Settings loaded");
 
   // 3. Seed system skills
   await seedSkills();
