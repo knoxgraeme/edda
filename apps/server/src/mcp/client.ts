@@ -255,11 +255,16 @@ function toMCPServerConfig(conn: McpConnection): Connection {
       const authToken = config.auth_env_var
         ? process.env[config.auth_env_var as string]
         : undefined;
-      return {
+      const sseConfig: Connection = {
         transport: "sse" as const,
         url,
         ...(authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : {}),
       };
+      if (conn.auth_type === "oauth") {
+        const baseUrl = process.env.EDDA_BASE_URL ?? "http://localhost:3000";
+        sseConfig.authProvider = new MCPOAuthProvider(conn.id, baseUrl);
+      }
+      return sseConfig;
     }
     case "streamable-http": {
       if (typeof config.url !== "string") {

@@ -44,7 +44,7 @@ export const addMcpConnectionTool = tool(
     });
 
     // For streamable-http without a static bearer token, probe for OAuth
-    if (transport === "streamable-http" && !auth_env_var) {
+    if ((transport === "streamable-http" || transport === "sse") && !auth_env_var) {
       let probeStatus: number | null = null;
       try {
         const probeRes = await ssrfSafeFetch(url, {
