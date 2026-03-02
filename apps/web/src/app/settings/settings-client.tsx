@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { saveSettingsAction, logoutAction } from "../actions";
+import { LLM_PROVIDER_OPTIONS } from "@/lib/providers";
 
 type SettingsForm = Omit<Settings, "id" | "created_at" | "updated_at">;
 
@@ -182,20 +183,9 @@ export function SettingsClient({
                 value={form.llm_provider}
                 onChange={(e) => update("llm_provider", e.target.value as Settings["llm_provider"])}
               >
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-                <option value="google">Google</option>
-                <option value="groq">Groq</option>
-                <option value="ollama">Ollama</option>
-                <option value="mistral">Mistral</option>
-                <option value="bedrock">Bedrock</option>
-                <option value="xai">xAI (Grok)</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="cerebras">Cerebras</option>
-                <option value="fireworks">Fireworks AI</option>
-                <option value="together">Together AI</option>
-                <option value="azure_openai">Azure OpenAI</option>
-                <option value="openrouter">OpenRouter</option>
+                {LLM_PROVIDER_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
               </Select>
             </FieldGroup>
             <FieldGroup label="Model" htmlFor="default_model">

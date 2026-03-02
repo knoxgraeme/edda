@@ -27,6 +27,7 @@ import {
   type AgentTrigger,
   type LlmProvider,
   type ChannelPlatform,
+  LLM_PROVIDERS,
 } from "@edda/db";
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
@@ -53,7 +54,7 @@ const UpdateSettingsSchema = z
       .optional()
       .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
     llm_provider: z
-      .enum(["anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock"])
+      .enum([...LLM_PROVIDERS])
       .optional(),
     default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(["voyage", "openai", "google"]).optional(),
@@ -199,16 +200,7 @@ const AGENT_NAME_MAX_LEN = 100;
 
 const VALID_THREAD_LIFETIMES = new Set<ThreadLifetime>(["ephemeral", "daily", "persistent"]);
 
-// Valid LLM providers — keep in sync with LlmProvider type in @edda/db
-const LLM_PROVIDERS = new Set<LlmProvider>([
-  "anthropic",
-  "openai",
-  "google",
-  "groq",
-  "ollama",
-  "mistral",
-  "bedrock",
-]);
+const VALID_LLM_PROVIDERS = new Set<LlmProvider>(LLM_PROVIDERS);
 const VALID_TRIGGERS = new Set<AgentTrigger>(["schedule", "on_demand"]);
 
 // Default agent cannot be deleted — checked dynamically via settings
@@ -260,7 +252,7 @@ function validateAgentUpdates(updates: Record<string, unknown>): void {
   // model_provider and model are independently nullable by design — setting one
   // without the other is allowed (the server falls back to global defaults).
   if (updates.model_provider !== undefined && updates.model_provider !== null) {
-    if (typeof updates.model_provider !== "string" || !LLM_PROVIDERS.has(updates.model_provider as LlmProvider)) {
+    if (typeof updates.model_provider !== "string" || !VALID_LLM_PROVIDERS.has(updates.model_provider as LlmProvider)) {
       throw new Error("Invalid model_provider");
     }
   }
@@ -303,7 +295,7 @@ export async function createAgentAction(data: {
   if (data.trigger && !VALID_TRIGGERS.has(data.trigger)) {
     throw new Error("Invalid trigger");
   }
-  if (data.model_provider != null && !LLM_PROVIDERS.has(data.model_provider as LlmProvider)) {
+  if (data.model_provider != null && !VALID_LLM_PROVIDERS.has(data.model_provider as LlmProvider)) {
     throw new Error("Invalid model_provider");
   }
   if (data.model != null && (typeof data.model !== "string" || data.model.length > 100)) {

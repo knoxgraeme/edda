@@ -55,9 +55,7 @@ import { ChatProvider, useChatContext } from "@/providers/ChatProvider";
 import { ChatInterface } from "@/app/components/ChatInterface";
 import { ThreadList } from "@/app/components/ThreadList";
 
-const VALID_LLM_PROVIDERS = new Set<LlmProvider>([
-  "anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock",
-]);
+import { LLM_PROVIDER_OPTIONS, VALID_LLM_PROVIDERS } from "@/lib/providers";
 
 function toProvider(value: string): LlmProvider | null {
   if (!value) return null;
@@ -597,13 +595,9 @@ function OverviewTab({
                     className="w-[180px]"
                   >
                     <option value="">Default (from Settings)</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="google">Google</option>
-                    <option value="groq">Groq</option>
-                    <option value="ollama">Ollama</option>
-                    <option value="mistral">Mistral</option>
-                    <option value="bedrock">AWS Bedrock</option>
+                    {LLM_PROVIDER_OPTIONS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
                   </Select>
                   <Input
                     value={model}

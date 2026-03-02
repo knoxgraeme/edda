@@ -1,12 +1,9 @@
-import { getSettings, updateSettings, getAgentByName } from "@edda/db";
-import type { LlmProvider, EmbeddingProvider, SandboxProvider, Settings } from "@edda/db";
+import { getSettings, updateSettings, getAgentByName, LLM_PROVIDERS } from "@edda/db";
+import type { EmbeddingProvider, SandboxProvider, Settings } from "@edda/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { parseBody, badRequest } from "../_lib/helpers";
 
-const LLM_PROVIDERS: LlmProvider[] = [
-  "anthropic", "openai", "google", "groq", "ollama", "mistral", "bedrock",
-];
 const EMBEDDING_PROVIDERS: EmbeddingProvider[] = ["voyage", "openai", "google"];
 const SANDBOX_PROVIDERS: SandboxProvider[] = ["none", "node-vfs"];
 const isValidIanaTimezone = (value: string): boolean => {
@@ -26,7 +23,7 @@ const UpdateSettingsSchema = z
       .max(100)
       .optional()
       .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
-    llm_provider: z.enum(LLM_PROVIDERS as [string, ...string[]]).optional(),
+    llm_provider: z.enum([...LLM_PROVIDERS]).optional(),
     default_model: z.string().max(100).optional(),
     embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),
     embedding_model: z.string().max(100).optional(),
