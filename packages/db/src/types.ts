@@ -61,6 +61,9 @@ export interface Settings {
   approval_archive_stale: ApprovalMode;
   approval_merge_entity: ApprovalMode;
 
+  // Memory
+  memory_extraction_model: string | null;
+
   // Personality
   system_prompt_override: string | null;
 
@@ -399,6 +402,8 @@ export interface Agent {
   model_provider: LlmProvider | null;
   model: string | null;
   enabled: boolean;
+  memory_capture: boolean;
+  memory_self_reflect: boolean;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;

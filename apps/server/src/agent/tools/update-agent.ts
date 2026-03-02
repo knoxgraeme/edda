@@ -28,6 +28,14 @@ export const updateAgentSchema = z.object({
     .nullable()
     .optional()
     .describe("Model name override (null to use default from settings)"),
+  memory_capture: z
+    .boolean()
+    .optional()
+    .describe("Extract implicit knowledge from conversations"),
+  memory_self_reflect: z
+    .boolean()
+    .optional()
+    .describe("Review past sessions and update operating notes on schedule"),
   metadata: z
     .record(z.unknown())
     .optional()

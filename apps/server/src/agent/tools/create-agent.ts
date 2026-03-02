@@ -41,6 +41,16 @@ export const createAgentSchema = z.object({
     .nullable()
     .optional()
     .describe("Model name override (null to use default from settings)"),
+  memory_capture: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Extract implicit knowledge from conversations (default: true)"),
+  memory_self_reflect: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("Review past sessions and update operating notes on schedule (default: true)"),
   metadata: z
     .record(z.unknown())
     .optional()
@@ -61,6 +71,8 @@ export const createAgentTool = tool(
     thread_lifetime,
     model_provider,
     model,
+    memory_capture,
+    memory_self_reflect,
     metadata,
   }) => {
     const existing = await getAgents();
@@ -83,6 +95,8 @@ export const createAgentTool = tool(
       trigger,
       model_provider,
       model,
+      memory_capture,
+      memory_self_reflect,
       metadata,
     });
 
