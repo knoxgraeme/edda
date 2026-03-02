@@ -25,12 +25,9 @@ import {
   getSettings,
   getAgentsMdContent,
   getAgentsByNames,
-  getItemTypes,
   getSkillsByNames,
-  getAllLists,
 } from "@edda/db";
-import type { ListWithCount } from "@edda/db";
-import type { ItemType, Skill } from "@edda/db";
+import type { Skill } from "@edda/db";
 import { getModelString } from "../llm.js";
 import { getCheckpointer } from "../checkpointer.js";
 import { getStore } from "../store.js";
@@ -175,7 +172,6 @@ async function resolveSubagents(
   available: StructuredTool[],
   store: BaseStore,
   settings: Settings,
-  prefetched: { itemTypes: ItemType[]; lists: ListWithCount[] },
 ): Promise<SubagentSpec[]> {
   if (names.length === 0) return [];
 
@@ -195,7 +191,7 @@ async function resolveSubagents(
     Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
     ...enabled.map(async (row) => {
       const model = getModelString(row.model_provider, row.model);
-      const systemPrompt = await buildPrompt(row, settings, prefetched);
+      const systemPrompt = await buildPrompt(row, settings);
 
       const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
       for (const t of row.tools) declared.add(t);
@@ -222,102 +218,23 @@ async function resolveSubagents(
 // Prompt builder — unified for all agents
 // ---------------------------------------------------------------------------
 
-function formatItemTypes(types: ItemType[]): string {
-  return types
-    .filter((t) => !t.agent_internal)
-    .map((t) => `- ${t.icon} **${t.name}**: ${t.classification_hint}`)
-    .join("\n");
-}
-
-
-// ---------------------------------------------------------------------------
-// Memory guidelines — static content injected into every prompt
-// ---------------------------------------------------------------------------
-
-const MEMORY_GUIDELINES = `<memory_guidelines>
-Your memory contains your operating notes about this user — communication
-preferences, behavioral patterns, quality standards, and corrections.
-Update it via save_agents_md.
-
-**Learning from interactions:**
-- One of your MAIN PRIORITIES is to learn from interactions with the user.
-  Learnings can be implicit or explicit.
-- When you need to remember something, updating memory must be your FIRST,
-  IMMEDIATE action — before responding, before calling other tools.
-- When the user says something is better/worse, capture WHY and encode it
-  as a pattern. Look for the underlying principle, not just the specific mistake.
-- Each correction is a chance to improve permanently — don't just fix the
-  immediate issue, update your operating notes.
-- The user might not explicitly ask you to remember something. If they provide
-  information useful for future interactions, update immediately.
-
-**When to update memory:**
-- User explicitly asks you to remember something
-- User describes how you should behave or what they prefer
-- User gives feedback on your work — capture what was wrong and how to improve
-- You discover patterns or preferences (communication style, format preferences, workflows)
-- User corrects you — save the correction AND the underlying principle
-
-**When to NOT update memory:**
-- Transient information ("I'm running late", "I'm on my phone")
-- One-time task requests ("find me a recipe", "what's the weather?")
-- Simple questions, small talk, acknowledgments
-- Factual information about the user (preferences, facts, entities) — these
-  belong as items in the database, not in memory. Use create_item instead.
-- Never store API keys, passwords, or credentials
-
-**Memory vs Items — what goes where:**
-- **Memory (AGENTS.md)**: How to serve this user — communication style, quality
-  standards, corrections, behavioral patterns. Operating notes that shape every
-  interaction.
-- **Items (create_item)**: What the user knows/wants/has — facts, preferences,
-  tasks, recommendations, entities. Granular knowledge searchable via
-  search_items.
-- **Lists (create_list + create_item)**: Grouped items the user wants to track
-  together — reading lists, grocery lists, project tasks. Use lists when the
-  user describes a collection of related things.
-
-**Examples:**
-User: "I prefer bullet points over paragraphs"
-→ Update memory (communication style that shapes all future responses)
-
-User: "I love Thai food, especially pad see ew"
-→ Create item (preference/learned_fact — searchable for future recommendations)
-
-User: "Here are the movies I want to watch: Inception, Interstellar, Arrival"
-→ Create list "Movies to Watch" + create items for each movie
-
-User: "That summary was way too long, keep it to 3 bullets max"
-→ Update memory (quality standard + correction: "Summaries: 3 bullets max")
-
-User: "Remember that Tom's birthday is March 15"
-→ Create item (fact about an entity — searchable, linked to Tom)
-
-User: "Actually don't auto-archive things, always ask me first"
-→ Update memory (correction: explicit boundary about agent behavior)
-</memory_guidelines>`;
-
 /**
  * Build the system prompt for any agent.
  *
  * Three layers:
  * 1. Agent prompt — agent.system_prompt (task description, agent-editable)
- * 2. Memory — AGENTS.md content + guidelines (agent-editable via save_agents_md)
- * 3. System context — capabilities, rules, reference data (deterministic, firm)
+ * 2. Memory — AGENTS.md content (agent-editable via save_agents_md)
+ * 3. System context — capabilities, rules, context (deterministic, firm)
  *
- * Skill content is NOT injected — deepagents handles skill discovery via
- * the /skills/ store mount and progressive disclosure.
+ * Dynamic data (item types, lists, approval settings) is available via tools
+ * and skills — not baked into the system prompt. Memory guidelines live in
+ * the self_improvement and capture skills.
  */
 export async function buildPrompt(
   agent: Agent,
   settings: Settings,
-  prefetched?: { itemTypes?: ItemType[]; lists?: ListWithCount[] },
 ): Promise<string> {
-  const [agentContext, itemTypes, lists] = await Promise.all([
-    getAgentsMdContent(agent.name),
-    prefetched?.itemTypes ?? getItemTypes(),
-    prefetched?.lists ?? getAllLists({ status: 'active' }),
-  ]);
+  const agentContext = await getAgentsMdContent(agent.name);
 
   const now = new Date();
   const currentDate = now.toLocaleDateString("en-US", {
@@ -340,19 +257,10 @@ export async function buildPrompt(
     return `You are ${agent.name}, an Edda agent.`;
   })();
 
-  // ── Layer 2: Memory (AGENTS.md + guidelines) ──
-  // Only include MEMORY_GUIDELINES when the agent can actually update memory.
-  // Cron-only agents (maintenance, memory) never interact with users and lack
-  // save_agents_md, so the ~500-token guidelines would waste context.
-  const hasMemoryTools =
-    agent.skills?.includes("self_improvement") ||
-    agent.tools?.includes("save_agents_md");
-
+  // ── Layer 2: Memory (AGENTS.md content) ──
   const memorySection = agentContext
-    ? `\n\n## Memory\n\n<agent_memory>\n${agentContext}\n</agent_memory>${hasMemoryTools ? `\n\n${MEMORY_GUIDELINES}` : ""}`
-    : hasMemoryTools
-      ? `\n\n## Memory\n\n<agent_memory>\n(No operating notes yet — will learn from interactions)\n</agent_memory>\n\n${MEMORY_GUIDELINES}`
-      : "";
+    ? `\n\n## Memory\n\n<agent_memory>\n${agentContext}\n</agent_memory>`
+    : "";
 
   // ── Layer 3: System context (deterministic, firm) ──
 
@@ -370,7 +278,6 @@ export async function buildPrompt(
 - Skills: task-specific instructions loaded on demand from /skills/${delegationLine}`;
 
   const rules = `\n\n## Rules
-- Approval required: new types (${settings.approval_new_type}), archive stale (${settings.approval_archive_stale}), entity merges (${settings.approval_merge_entity}), new entities (${settings.approval_new_entity})
 - Always search before creating duplicate items
 - AGENTS.md token budget: ${settings.agents_md_token_budget}
 - Use recall/search_items for specific facts — AGENTS.md is for operating patterns, not data`;
@@ -380,29 +287,7 @@ export async function buildPrompt(
 - Timezone: ${settings.user_timezone}
 ${settings.user_display_name ? `- User: ${settings.user_display_name}\n` : ""}- Memory capture: ${agent.memory_capture ? "enabled" : "disabled"}`;
 
-  const itemTypesSection = `\n\n## Available Item Types
-${formatItemTypes(itemTypes)}`;
-
-  const commonMetadata = `\n\n## Common Metadata Fields
-Any item can carry these metadata fields regardless of type:
-- **recommended_by**: Who recommended or suggested this
-- **url**: Associated URL or link
-- **category**: Classification (movie, book, restaurant, tool, podcast)
-- **priority**: low | medium | high
-- **location**: Associated place
-- **rating**: 1–5 rating
-- **source**: Where this came from (podcast name, article, conversation)
-
-Use these consistently across all item types. For example, a note on a "Movies to Watch"
-list might have metadata: {recommended_by: "Tom", category: "movie", source: "dinner conversation"}.`;
-
-  const listsSection = lists.length > 0
-    ? `\n\n## Active Lists\n${lists.map(l =>
-        `- ${l.icon} **${l.name}** (id: ${l.id})${l.summary ? ` — ${l.summary}` : ''} (${l.item_count} items)`
-      ).join("\n")}`
-    : '';
-
-  return `${agentPrompt}${memorySection}${capabilities}${rules}${context}${itemTypesSection}${commonMetadata}${listsSection}`;
+  return `${agentPrompt}${memorySection}${capabilities}${rules}${context}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -458,8 +343,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     store,
     mcpTools,
     communityTools,
-    itemTypes,
-    lists,
     skills,
   ] = await Promise.all([
     getSearchTool(),
@@ -467,8 +350,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     getStore(),
     loadMCPTools(),
     loadCommunityTools(),
-    getItemTypes(),
-    getAllLists({ status: 'active' }),
     agent.skills.length > 0 ? getSkillsByNames(agent.skills) : ([] as Skill[]),
   ]);
 
@@ -521,17 +402,14 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 5. Subagents (any agent can have them)
   const subagents =
     agent.subagents.length > 0
-      ? await resolveSubagents(agent.subagents, allAvailable, store, settings, {
-          itemTypes,
-          lists,
-        })
+      ? await resolveSubagents(agent.subagents, allAvailable, store, settings)
       : [];
 
   // 6. Write this agent's scoped SKILL.md files into the store
   await writeSkillsToStore(skills, store);
 
   // 7. System prompt — three-layer builder (agent prompt + memory + system context)
-  const systemPrompt = await buildPrompt(agent, settings, { itemTypes, lists });
+  const systemPrompt = await buildPrompt(agent, settings);
 
   // 8. Backend — closes over store for SkillsMiddleware compatibility
   const backend = await buildBackend(agent, store, { sandbox });

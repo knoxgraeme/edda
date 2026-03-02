@@ -10,6 +10,7 @@ allowed-tools:
   - list_entity_items
   - get_entity_profile
   - list_entities
+  - list_item_types
   - get_daily_summary
   - get_timeline
   - get_list_contents
@@ -71,14 +72,14 @@ link_item_entity. Just focus on creating items quickly and confirming.
 
 ## Type Reference
 
-Item types with classification hints, extraction hints, and metadata schemas are
-included in the system context section of your prompt. Consult the system prompt for
-available types — new types may have been added since your training.
+Call `list_item_types` to see all available types with their classification hints.
+New types may have been added since your training — always check before defaulting
+to "note".
 
 ## Tool Sequence
 
 Typical capture flow:
-1. Classify type (consult type list in system prompt)
+1. Classify type (call `list_item_types` if unsure)
 2. Single item: call create_item(type, content, summary, metadata, day)
    Multiple items: call batch_create_items([{type, content, summary, metadata, day}, ...])
 3. Respond with brief confirmation: icon + summary + any parsed dates
@@ -156,6 +157,8 @@ during conversation — things the user reveals without explicitly asking to sto
 
 ### Rules
 
+- Operating patterns (how to serve the user — communication style, quality standards,
+  corrections) belong in AGENTS.md via the `self_improvement` skill, not as items
 - Extract **implicit** knowledge only — things revealed naturally, not things the user
   explicitly asks to store (those go through the normal capture flow above)
 - Keep extraction lightweight — 1-2 tool calls per turn max

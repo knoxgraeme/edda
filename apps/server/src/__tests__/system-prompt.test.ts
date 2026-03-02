@@ -3,8 +3,8 @@
  *
  * Tests buildPrompt() from build-agent.ts which assembles:
  * Layer 1: Agent prompt (task description)
- * Layer 2: Memory (AGENTS.md + guidelines)
- * Layer 3: System context (capabilities, rules, reference data)
+ * Layer 2: Memory (AGENTS.md content)
+ * Layer 3: System context (capabilities, rules, context)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -12,11 +12,9 @@ import { DEFAULT_TEST_SETTINGS } from "./helpers.js";
 import type { Agent, Settings } from "@edda/db";
 
 // Use vi.hoisted() so these mocks are available inside vi.mock() factories
-const { mockGetAgentsMdContent, mockGetItemTypes, mockGetAllLists } = vi.hoisted(() => {
+const { mockGetAgentsMdContent } = vi.hoisted(() => {
   return {
     mockGetAgentsMdContent: vi.fn().mockResolvedValue(""),
-    mockGetItemTypes: vi.fn().mockResolvedValue([]),
-    mockGetAllLists: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -25,8 +23,6 @@ vi.mock("@edda/db", async (importOriginal) => {
   return {
     ...actual,
     getAgentsMdContent: mockGetAgentsMdContent,
-    getItemTypes: mockGetItemTypes,
-    getAllLists: mockGetAllLists,
   };
 });
 
@@ -62,29 +58,6 @@ const settings: Settings = { ...DEFAULT_TEST_SETTINGS, default_agent: "edda" };
 describe("buildPrompt", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetItemTypes.mockResolvedValue([
-      {
-        name: "note",
-        icon: "\u{1F4DD}",
-        classification_hint: "General notes",
-        fields: {},
-        agent_internal: false,
-        confirmed: true,
-        created_at: "2026-01-01",
-        updated_at: "2026-01-01",
-      },
-      {
-        name: "task",
-        icon: "\u2705",
-        classification_hint: "Action items",
-        fields: {},
-        agent_internal: false,
-        confirmed: true,
-        created_at: "2026-01-01",
-        updated_at: "2026-01-01",
-      },
-    ]);
     mockGetAgentsMdContent.mockResolvedValue("");
   });
 
@@ -112,48 +85,15 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("</agent_memory>");
   });
 
-  it("shows placeholder when AGENTS.md is empty but agent has memory tools", async () => {
+  it("skips memory section when AGENTS.md is empty", async () => {
     mockGetAgentsMdContent.mockResolvedValue("");
     const agent = makeAgent({ skills: ["self_improvement"] });
     const prompt = await buildPrompt(agent, settings);
-    expect(prompt).toContain("<agent_memory>");
-    expect(prompt).toContain("No operating notes yet");
-    expect(prompt).toContain("</agent_memory>");
+    expect(prompt).not.toContain("## Memory");
+    expect(prompt).not.toContain("<agent_memory>");
   });
 
-  it("includes memory guidelines when agent has self_improvement skill", async () => {
-    const agent = makeAgent({ skills: ["self_improvement"] });
-    const prompt = await buildPrompt(agent, settings);
-    expect(prompt).toContain("<memory_guidelines>");
-    expect(prompt).toContain("save_agents_md");
-    expect(prompt).toContain("Memory vs Items");
-    expect(prompt).toContain("</memory_guidelines>");
-  });
-
-  it("includes memory guidelines when agent has save_agents_md tool", async () => {
-    const agent = makeAgent({ tools: ["save_agents_md"] });
-    const prompt = await buildPrompt(agent, settings);
-    expect(prompt).toContain("<memory_guidelines>");
-  });
-
-  it("excludes memory guidelines when agent has no memory tools", async () => {
-    const agent = makeAgent({ skills: ["daily_digest"], tools: ["search_items"] });
-    const prompt = await buildPrompt(agent, settings);
-    expect(prompt).not.toContain("<memory_guidelines>");
-    expect(prompt).not.toContain("</memory_guidelines>");
-  });
-
-  it("includes agent_memory tags without guidelines for agent with content but no memory tools", async () => {
-    mockGetAgentsMdContent.mockResolvedValue("User prefers concise output.");
-    const agent = makeAgent({ skills: ["daily_digest"], tools: [] });
-    const prompt = await buildPrompt(agent, settings);
-    expect(prompt).toContain("<agent_memory>");
-    expect(prompt).toContain("User prefers concise output.");
-    expect(prompt).toContain("</agent_memory>");
-    expect(prompt).not.toContain("<memory_guidelines>");
-  });
-
-  it("skips entire memory section for agent with no content and no memory tools", async () => {
+  it("skips entire memory section for agent with no content", async () => {
     mockGetAgentsMdContent.mockResolvedValue("");
     const agent = makeAgent({ skills: ["daily_digest"], tools: [] });
     const prompt = await buildPrompt(agent, settings);
@@ -170,11 +110,16 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Skills:");
   });
 
-  it("includes rules with approval settings", async () => {
+  it("includes rules with dedup and token budget", async () => {
     const prompt = await buildPrompt(makeAgent(), settings);
     expect(prompt).toContain("## Rules");
-    expect(prompt).toContain(settings.approval_new_type);
-    expect(prompt).toContain(settings.approval_archive_stale);
+    expect(prompt).toContain("search before creating duplicate");
+    expect(prompt).toContain("token budget");
+  });
+
+  it("does not include approval settings in rules", async () => {
+    const prompt = await buildPrompt(makeAgent(), settings);
+    expect(prompt).not.toContain("Approval required");
   });
 
   it("includes context with timezone and date", async () => {
@@ -183,26 +128,27 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Timezone: America/New_York");
   });
 
-  it("includes item type names from DB", async () => {
+  it("does not include item types in system prompt", async () => {
     const prompt = await buildPrompt(makeAgent(), settings);
-    expect(prompt).toContain("## Available Item Types");
-    expect(prompt).toContain("**note**");
-    expect(prompt).toContain("**task**");
-    expect(prompt).toContain("General notes");
-    expect(prompt).toContain("Action items");
+    expect(prompt).not.toContain("Available Item Types");
   });
 
-  it("includes item types for all agents regardless of tools", async () => {
-    const agent = makeAgent({ tools: ["search_items", "create_item"] });
+  it("does not include common metadata in system prompt", async () => {
+    const prompt = await buildPrompt(makeAgent(), settings);
+    expect(prompt).not.toContain("Common Metadata Fields");
+    expect(prompt).not.toContain("recommended_by");
+  });
+
+  it("does not include active lists in system prompt", async () => {
+    const prompt = await buildPrompt(makeAgent(), settings);
+    expect(prompt).not.toContain("Active Lists");
+  });
+
+  it("does not include memory guidelines in system prompt", async () => {
+    const agent = makeAgent({ skills: ["self_improvement"] });
     const prompt = await buildPrompt(agent, settings);
-    expect(prompt).toContain("Available Item Types");
-    expect(prompt).toContain("**note**");
-  });
-
-  it("includes common metadata fields", async () => {
-    const prompt = await buildPrompt(makeAgent(), settings);
-    expect(prompt).toContain("## Common Metadata Fields");
-    expect(prompt).toContain("recommended_by");
+    expect(prompt).not.toContain("<memory_guidelines>");
+    expect(prompt).not.toContain("</memory_guidelines>");
   });
 
   it("does not include external integrations section", async () => {
