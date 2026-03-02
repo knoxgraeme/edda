@@ -60,6 +60,7 @@ export interface Settings {
   approval_new_type: ApprovalMode;
   approval_archive_stale: ApprovalMode;
   approval_merge_entity: ApprovalMode;
+  approval_new_entity: ApprovalMode;
 
   // Memory
   memory_extraction_model: string | null;

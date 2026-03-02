@@ -370,7 +370,7 @@ export async function buildPrompt(
 - Skills: task-specific instructions loaded on demand from /skills/${delegationLine}`;
 
   const rules = `\n\n## Rules
-- Approval required: new types (${settings.approval_new_type}), archive stale (${settings.approval_archive_stale}), entity merges (${settings.approval_merge_entity})
+- Approval required: new types (${settings.approval_new_type}), archive stale (${settings.approval_archive_stale}), entity merges (${settings.approval_merge_entity}), new entities (${settings.approval_new_entity})
 - Always search before creating duplicate items
 - AGENTS.md token budget: ${settings.agents_md_token_budget}
 - Use recall/search_items for specific facts — AGENTS.md is for operating patterns, not data`;
