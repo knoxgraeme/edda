@@ -23,6 +23,7 @@ import {
   advanceReminderByInterval,
   completeReminder,
   resetStuckSendingReminders,
+  countSessionNotesSince,
 } from "@edda/db";
 import type { Notification } from "@edda/db";
 import type { EnabledSchedule } from "@edda/db";
@@ -273,6 +274,22 @@ export class LocalCronRunner implements CronRunner {
     if (!freshDef || !freshDef.enabled) {
       getLogger().info({ agent: agentNameHint }, "Skipping agent — not found or disabled");
       return;
+    }
+
+    // Skip optimization: self_reflect schedules are skipped when no new session notes exist
+    if (freshSchedule.name === "self_reflect") {
+      try {
+        const count = await countSessionNotesSince(freshSchedule.id);
+        if (count === 0) {
+          getLogger().info(
+            { agent: agentNameHint, schedule: freshSchedule.name },
+            "Skipping self_reflect — no new session notes since last run",
+          );
+          return;
+        }
+      } catch (err) {
+        getLogger().warn({ err }, "self_reflect pre-check failed, proceeding anyway");
+      }
     }
 
     const settings = await refreshSettings();

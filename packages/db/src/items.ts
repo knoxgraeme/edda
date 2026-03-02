@@ -377,3 +377,22 @@ export async function getItemsByType(
   );
   return rows as Item[];
 }
+
+/**
+ * Count session_note items created since the last completed run of a schedule.
+ * Used by the cron runner to skip self_reflect when no new notes exist.
+ */
+export async function countSessionNotesSince(scheduleId: string): Promise<number> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM items
+     WHERE type = 'session_note'
+     AND created_at > COALESCE(
+       (SELECT MAX(completed_at) FROM task_runs
+        WHERE schedule_id = $1 AND status = 'completed'),
+       '1970-01-01'
+     )`,
+    [scheduleId],
+  );
+  return rows[0]?.count ?? 0;
+}

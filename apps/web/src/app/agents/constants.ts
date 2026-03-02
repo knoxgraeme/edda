@@ -6,9 +6,11 @@ export const AVAILABLE_SKILLS = [
   { name: "daily_digest", description: "Morning briefing", toolCount: 3 },
   { name: "manage", description: "Edit, complete, archive items", toolCount: 4 },
   { name: "memory_extraction", description: "Extract knowledge from conversations", toolCount: 5 },
+  { name: "memory_maintenance", description: "Dedup, archive stale, resolve contradictions", toolCount: 5 },
   { name: "recall", description: "Search and retrieve information", toolCount: 3 },
+  { name: "self_reflect", description: "Cross-session self-improvement from session notes", toolCount: 3 },
   { name: "type_evolution", description: "Evolve item type system", toolCount: 3 },
-  { name: "weekly_reflect", description: "Weekly patterns and maintenance", toolCount: 3 },
+  { name: "weekly_report", description: "Weekly activity analysis and reporting", toolCount: 3 },
 ];
 
 /** Validates a standard 5-field cron expression (minute hour day month weekday). */
