@@ -5,7 +5,13 @@
  * initializes cron runner, and serves the health endpoint.
  */
 
-import { refreshSettings, getLatestAgentsMd, getAgentByName } from "@edda/db";
+import {
+  refreshSettings,
+  getLatestAgentsMd,
+  getAgentByName,
+  runMigrations,
+  seedSettings,
+} from "@edda/db";
 import { seedSkills } from "./agent/seed-skills.js";
 import { buildAgent, resolveThreadId } from "./agent/build-agent.js";
 import { resolveRetrievalContext } from "./agent/tool-helpers.js";
@@ -29,18 +35,23 @@ async function main() {
   await startHealthServer(port);
   log.info({ port, url: `http://localhost:${port}/api/health` }, "Health server started");
 
-  // 1. Patch Anthropic tool schema serialization — ensures all tools have type: "object"
+  // 1. Run migrations + seed (previously chained in startCommand before server)
+  await runMigrations();
+  await seedSettings();
+  log.info("Database migrations and seed complete");
+
+  // 2. Patch Anthropic tool schema serialization — ensures all tools have type: "object"
   patchAnthropicToolSchemas();
 
-  // 2. Load settings
+  // 3. Load settings
   const settings = await refreshSettings();
   log.info({ provider: settings.llm_provider, model: settings.default_model }, "Settings loaded");
 
-  // 3. Seed system skills
+  // 4. Seed system skills
   await seedSkills();
   log.info("Skills seeded");
 
-  // 4. Create agent — default_agent from settings (any agent can be the default)
+  // 5. Create agent — default_agent from settings (any agent can be the default)
   const agentRow = await getAgentByName(settings.default_agent);
   if (!agentRow) {
     throw new Error(
@@ -62,7 +73,7 @@ async function main() {
   });
   log.info({ agent: agentRow.name }, "Agent ready");
 
-  // 5. Bootstrap AGENTS.md if empty (first boot only)
+  // 6. Bootstrap AGENTS.md if empty (first boot only)
   const latestMd = await getLatestAgentsMd();
   if (!latestMd?.content?.trim()) {
     log.info("AGENTS.md empty — running initial context refresh");
@@ -91,12 +102,12 @@ async function main() {
     }
   }
 
-  // 6. Start cron runner
+  // 7. Start cron runner
   const cronRunner = await createCronRunner();
   await cronRunner.start();
   log.info("Cron runner started");
 
-  // 7. Channel adapters — Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
+  // 8. Channel adapters — Telegram bot (optional — only if TELEGRAM_BOT_TOKEN is set)
   let telegram: TelegramAdapter | null = null;
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
@@ -121,7 +132,7 @@ async function main() {
     }
   }
 
-  // 8. Channel adapters — Discord bot (optional — only if DISCORD_BOT_TOKEN is set)
+  // 9. Channel adapters — Discord bot (optional — only if DISCORD_BOT_TOKEN is set)
   let discord: DiscordAdapter | null = null;
   const discordToken = process.env.DISCORD_BOT_TOKEN;
   if (discordToken) {
@@ -129,7 +140,7 @@ async function main() {
     await discord.init();
   }
 
-  // 9. Channel adapters — Slack bot (optional — only if both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are set)
+  // 10. Channel adapters — Slack bot (optional — only if both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are set)
   let slack: SlackAdapter | null = null;
   const slackBotToken = process.env.SLACK_BOT_TOKEN;
   const slackAppToken = process.env.SLACK_APP_TOKEN;
@@ -140,7 +151,7 @@ async function main() {
     log.warn("Both SLACK_BOT_TOKEN and SLACK_APP_TOKEN are required for Slack — skipping");
   }
 
-  // 10. Shutdown handler
+  // 11. Shutdown handler
   const shutdown = async (signal: string) => {
     log.info({ signal }, "Shutting down");
     try {
