@@ -352,6 +352,7 @@ export interface Skill {
   name: string;
   description: string;
   content: string;
+  files: Record<string, string>;
   version: number;
   is_system: boolean;
   confirmed: boolean;
@@ -364,6 +365,7 @@ export interface UpsertSkillInput {
   name: string;
   description: string;
   content: string;
+  files?: Record<string, string>;
   is_system?: boolean;
   created_by?: string;
 }

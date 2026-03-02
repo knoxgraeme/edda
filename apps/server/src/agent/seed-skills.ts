@@ -6,35 +6,75 @@
  * version when content actually changes.
  */
 
-import { readdir, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { upsertSkill } from "@edda/db";
 import { getStore } from "../store.js";
+import { parseFrontmatter, writeSkillsToStore } from "./skill-utils.js";
 import { getLogger } from "../logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = join(__dirname, "../../skills");
 
-function parseFrontmatter(raw: string): { name: string; description: string } {
-  const parts = raw.split("---");
-  if (parts.length < 3) {
-    throw new Error("SKILL.md missing YAML frontmatter");
-  }
-  const yaml = parts[1];
-  const nameMatch = yaml.match(/^name:\s*(.+)$/m);
-  const descMatch = yaml.match(/description:\s*>\s*\n([\s\S]*?)(?=\n\w|\n---)/);
-  const descInline = yaml.match(/^description:\s*(?!>)(.+)$/m);
 
-  const name = nameMatch?.[1]?.trim() ?? "";
-  let description = "";
-  if (descMatch) {
-    description = descMatch[1].replace(/\n\s*/g, " ").trim();
-  } else if (descInline) {
-    description = descInline[1].trim();
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".bmp", ".svg",
+  ".woff", ".woff2", ".ttf", ".eot",
+  ".zip", ".tar", ".gz", ".bz2",
+  ".pdf", ".doc", ".docx",
+  ".mp3", ".mp4", ".wav", ".avi",
+  ".exe", ".dll", ".so", ".dylib",
+]);
+
+const MAX_FILE_SIZE = 256 * 1024; // 256KB per file
+const MAX_TOTAL_SIZE = 1024 * 1024; // 1MB aggregate per skill
+
+/**
+ * Recursively read all non-SKILL.md, non-binary, non-dotfile entries
+ * in a skill directory and return them as { "relative/path": "content" }
+ * with keys sorted for deterministic JSONB serialization.
+ */
+async function walkDir(
+  base: string,
+  current: string = base,
+  state: { totalSize: number } = { totalSize: 0 },
+): Promise<Record<string, string>> {
+  const files: Record<string, string> = {};
+  const entries = await readdir(current, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    if (entry.isSymbolicLink()) continue;
+    const full = join(current, entry.name);
+
+    if (entry.isDirectory()) {
+      Object.assign(files, await walkDir(base, full, state));
+    } else if (entry.isFile()) {
+      if (entry.name === "SKILL.md") continue;
+      const ext = extname(entry.name).toLowerCase();
+      if (ext && BINARY_EXTENSIONS.has(ext)) continue;
+      const info = await stat(full);
+      if (info.size > MAX_FILE_SIZE) continue;
+      if (state.totalSize + info.size > MAX_TOTAL_SIZE) {
+        getLogger().warn({ skill: base }, "Skipping remaining files — aggregate size limit reached");
+        break;
+      }
+      state.totalSize += info.size;
+      const relPath = relative(base, full);
+      files[relPath] = await readFile(full, "utf-8");
+    }
   }
 
-  return { name, description };
+  // Sort keys at the top level for deterministic JSONB output
+  if (current === base) {
+    const sorted: Record<string, string> = {};
+    for (const key of Object.keys(files).sort()) {
+      sorted[key] = files[key];
+    }
+    return sorted;
+  }
+  return files;
 }
 
 export async function seedSkills(): Promise<void> {
@@ -44,7 +84,8 @@ export async function seedSkills(): Promise<void> {
 
   const results = await Promise.allSettled(
     dirs.map(async (dir) => {
-      const skillPath = join(SKILLS_DIR, dir.name, "SKILL.md");
+      const skillDir = join(SKILLS_DIR, dir.name);
+      const skillPath = join(skillDir, "SKILL.md");
       let raw: string;
       try {
         raw = await readFile(skillPath, "utf-8");
@@ -58,15 +99,19 @@ export async function seedSkills(): Promise<void> {
         return;
       }
 
-      await upsertSkill({ name, description, content: raw, is_system: true, created_by: "seed" });
+      const files = await walkDir(skillDir);
+
+      const skill = await upsertSkill({
+        name,
+        description,
+        content: raw,
+        files,
+        is_system: true,
+        created_by: "seed",
+      });
 
       // Sync to PostgresStore for agent reads via SkillsMiddleware
-      const now = new Date().toISOString();
-      await store.put(["filesystem"], `/skills/${dir.name}/SKILL.md`, {
-        content: raw.split("\n"),
-        created_at: now,
-        modified_at: now,
-      });
+      await writeSkillsToStore([skill], store);
     }),
   );
 

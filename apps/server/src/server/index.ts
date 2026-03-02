@@ -90,16 +90,21 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString();
 }
 
-async function handleHealth(res: ServerResponse) {
+function handleHealth(res: ServerResponse) {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
+}
+
+async function handleReady(res: ServerResponse) {
   try {
     const pool = getPool();
     await pool.query("SELECT 1");
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
   } catch (err) {
-    getLogger().error({ err }, "Health check failed");
+    getLogger().error({ err }, "Readiness check failed");
     res.writeHead(503, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "error", error: "Health check failed" }));
+    res.end(JSON.stringify({ status: "error", error: "Database unavailable" }));
   }
 }
 
@@ -571,7 +576,11 @@ export async function startHealthServer(port: number): Promise<void> {
 
     // Unauthenticated endpoints (own auth or public)
     if (urlPath === "/api/health" && req.method === "GET") {
-      await handleHealth(res);
+      handleHealth(res);
+      return;
+    }
+    if (urlPath === "/api/ready" && req.method === "GET") {
+      await handleReady(res);
       return;
     }
     // Dynamic channel webhook route — adapters handle their own auth

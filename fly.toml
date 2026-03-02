@@ -1,0 +1,62 @@
+# Override app name with: flyctl deploy --app <your-app-name>
+app = "edda"
+primary_region = "iad"
+
+# Migrations run BEFORE any process starts (Fly release command)
+[deploy]
+  release_command = "node packages/db/dist/migrate.js && node packages/db/dist/seed-settings.js"
+
+[processes]
+  server = "node apps/server/dist/index.js"
+  web = "PORT=3000 HOSTNAME=0.0.0.0 node apps/web/server.js"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8000"
+
+# Web — public-facing (user UI)
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+  processes = ["web"]
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+# Server — agent backend + webhook receiver
+[[services]]
+  internal_port = 8000
+  protocol = "tcp"
+  processes = ["server"]
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [[services.ports]]
+    port = 8443
+    handlers = ["tls", "http"]
+  [[services.http_checks]]
+    interval = 30000
+    grace_period = "30s"
+    method = "GET"
+    path = "/api/health"
+    protocol = "http"
+    timeout = 5000
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+  processes = ["web"]
+
+[[vm]]
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 1
+  processes = ["server"]
