@@ -28,7 +28,7 @@ import {
   getSkillsByNames,
 } from "@edda/db";
 import type { Skill } from "@edda/db";
-import { getModelString } from "../llm.js";
+import { getModelString, resolveModel } from "../llm.js";
 import { getCheckpointer } from "../checkpointer.js";
 import { getStore } from "../store.js";
 import { getSearchTool } from "../search.js";
@@ -190,7 +190,8 @@ async function resolveSubagents(
   const [, ...specs] = await Promise.all([
     Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
     ...enabled.map(async (row) => {
-      const model = getModelString(row.model_provider, row.model);
+      const modelString = getModelString(row.model_provider, row.model);
+      const model = resolveModel(row.model_provider, row.model);
       const systemPrompt = await buildPrompt(row, settings);
 
       const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
@@ -198,7 +199,7 @@ async function resolveSubagents(
       declared.add("list_my_runs");
       const scoped = scopeTools(available, declared);
       ensureObjectSchemas(scoped);
-      const subTools = isGeminiModel(model) ? scoped.map(normalizeToolForGemini) : scoped;
+      const subTools = isGeminiModel(modelString) ? scoped.map(normalizeToolForGemini) : scoped;
 
       return {
         name: row.name,
@@ -333,8 +334,9 @@ export function resolveThreadId(
 export async function buildAgent(agent: Agent): Promise<any> {
   const settings = await getSettings();
 
-  // 1. Model — provider:model string for deepagents/initChatModel
-  const model = getModelString(agent.model_provider, agent.model);
+  // 1. Model — provider:model string (or ChatOpenRouter instance for openrouter)
+  const modelString = getModelString(agent.model_provider, agent.model);
+  const model = resolveModel(agent.model_provider, agent.model);
 
   // 2. Gather ALL available tools + prompt data + skills in one parallel batch
   const [
@@ -372,7 +374,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
 
   // 3c. Gemini schema normalization — convert Zod schemas to pre-normalized
   // JSON Schema to avoid unsupported features (const, anyOf, array type).
-  if (isGeminiModel(model)) {
+  if (isGeminiModel(modelString)) {
     tools = tools.map(normalizeToolForGemini);
     getLogger().debug({ agent: agent.name }, "Normalized tool schemas for Gemini compatibility");
   }

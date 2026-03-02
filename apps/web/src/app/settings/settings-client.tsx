@@ -189,6 +189,13 @@ export function SettingsClient({
                 <option value="ollama">Ollama</option>
                 <option value="mistral">Mistral</option>
                 <option value="bedrock">Bedrock</option>
+                <option value="xai">xAI (Grok)</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="cerebras">Cerebras</option>
+                <option value="fireworks">Fireworks AI</option>
+                <option value="together">Together AI</option>
+                <option value="azure_openai">Azure OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
               </Select>
             </FieldGroup>
             <FieldGroup label="Model" htmlFor="default_model">

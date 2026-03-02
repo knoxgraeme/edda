@@ -40,6 +40,13 @@ const LLM_PROVIDERS = [
   { value: "ollama", label: "Ollama (local)" },
   { value: "mistral", label: "Mistral" },
   { value: "bedrock", label: "AWS Bedrock" },
+  { value: "xai", label: "xAI (Grok)" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "cerebras", label: "Cerebras" },
+  { value: "fireworks", label: "Fireworks AI" },
+  { value: "together", label: "Together AI" },
+  { value: "azure_openai", label: "Azure OpenAI" },
+  { value: "openrouter", label: "OpenRouter (100+ models)" },
 ];
 
 const DEFAULT_MODELS: Record<string, string> = {
@@ -50,6 +57,13 @@ const DEFAULT_MODELS: Record<string, string> = {
   ollama: "llama3.2",
   mistral: "mistral-large-latest",
   bedrock: "anthropic.claude-sonnet-4-20250514-v1:0",
+  xai: "grok-3",
+  deepseek: "deepseek-chat",
+  cerebras: "llama-3.3-70b",
+  fireworks: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+  together: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+  azure_openai: "gpt-4o",
+  openrouter: "anthropic/claude-sonnet-4",
 };
 
 const EMBEDDING_PROVIDERS = [
@@ -256,6 +270,13 @@ function buildEnvFile(a: WizardAnswers): string {
     google: "GOOGLE_API_KEY",
     groq: "GROQ_API_KEY",
     mistral: "MISTRAL_API_KEY",
+    xai: "XAI_API_KEY",
+    deepseek: "DEEPSEEK_API_KEY",
+    cerebras: "CEREBRAS_API_KEY",
+    fireworks: "FIREWORKS_API_KEY",
+    together: "TOGETHER_AI_API_KEY",
+    azure_openai: "AZURE_OPENAI_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
   };
 
   if (a.llmApiKey && keyMap[a.llmProvider]) {

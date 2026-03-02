@@ -17,6 +17,13 @@ export const LLM_PROVIDERS = [
   "ollama",
   "mistral",
   "bedrock",
+  "xai",
+  "deepseek",
+  "cerebras",
+  "fireworks",
+  "together",
+  "azure_openai",
+  "openrouter",
 ] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 export type EmbeddingProvider = "voyage" | "openai" | "google";
