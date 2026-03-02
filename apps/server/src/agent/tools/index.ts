@@ -32,6 +32,7 @@ import { listEntitiesTool } from "./list-entities.js";
 
 // Type tools
 import { createItemTypeTool } from "./create-item-type.js";
+import { listItemTypesTool } from "./list-item-types.js";
 
 // Thread tools
 import { listUnprocessedThreadsTool } from "./list-unprocessed-threads.js";
@@ -130,6 +131,7 @@ export const allTools = [
 
   // Type tools
   createItemTypeTool,
+  listItemTypesTool,
 
   // Thread tools
   listUnprocessedThreadsTool,

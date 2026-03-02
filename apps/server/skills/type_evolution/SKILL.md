@@ -10,6 +10,7 @@ allowed-tools:
   - list_entity_items
   - get_entity_profile
   - list_entities
+  - list_item_types
   - get_daily_summary
   - get_timeline
   - get_list_contents
@@ -23,9 +24,10 @@ allowed-tools:
 Cron: configured via agent_schedules (default "0 10 1 * *")
 
 ## Analysis
-1. Fetch items where type='note' from the last 30 days.
-2. Cluster by embedding similarity.
-3. For clusters >= 5 items:
+1. Call `list_item_types` to get current types.
+2. Fetch items where type='note' from the last 30 days.
+3. Cluster by embedding similarity.
+4. For clusters >= 5 items:
    a. Check if an existing type could absorb them → propose reclassify.
    b. If no → draft a new type definition.
 

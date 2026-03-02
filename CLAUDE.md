@@ -160,8 +160,8 @@ Per-agent memory config: `memory_capture` (inline extraction during conversation
 The assembled system prompt has three layers with distinct ownership:
 
 1. **Agent prompt** (Layer 1) — The agent's task description (`agent.system_prompt` DB field). Agent-editable via `update_agent` tool, guided by `self_improvement` skill. Structured as Task/Output/Boundaries.
-2. **Memory** (Layer 2) — AGENTS.md procedural memory wrapped in `<agent_memory>` tags, plus static `<memory_guidelines>`. Agent-editable via `save_agents_md` tool. Contains: Communication, Patterns, Standards, Corrections.
-3. **System context** (Layer 3) — Deterministic, code-built sections: Capabilities, Rules, Context (date/tz/user), Item Types, Common Metadata, Active Lists. Not agent-editable.
+2. **Memory** (Layer 2) — AGENTS.md procedural memory wrapped in `<agent_memory>` tags. Agent-editable via `save_agents_md` tool. Contains: Communication, Patterns, Standards, Corrections. Memory guidelines live in the `self_improvement` skill (not the system prompt).
+3. **System context** (Layer 3) — Deterministic, slim sections: Capabilities, Rules (dedup + token budget), Context (date/tz/user/memory capture). Dynamic data (item types, lists, approval settings) is available via tools and skills, not baked into the prompt.
 
 Built by `buildPrompt()` in `src/agent/build-agent.ts`.
 

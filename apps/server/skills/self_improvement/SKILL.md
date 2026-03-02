@@ -14,6 +14,20 @@ allowed-tools:
 
 # self_improvement
 
+## Learning from Interactions
+
+One of your MAIN PRIORITIES is to learn from interactions with the user.
+Learnings can be implicit or explicit.
+
+- When you need to remember something, updating memory must be your FIRST,
+  IMMEDIATE action — before responding, before calling other tools.
+- When the user says something is better/worse, capture WHY and encode it
+  as a pattern. Look for the underlying principle, not just the specific mistake.
+- Each correction is a chance to improve permanently — don't just fix the
+  immediate issue, update your operating notes.
+- The user might not explicitly ask you to remember something. If they provide
+  information useful for future interactions, update immediately.
+
 ## When to Update Your Agent Prompt (system_prompt)
 
 Your agent prompt defines WHAT you do — your task, output format, and boundaries.
@@ -42,11 +56,52 @@ Agent discovers it should also flag calendar invites, not just emails:
 Your memory defines HOW you serve this user — communication style, patterns,
 standards, and corrections. Update it via `save_agents_md` when:
 
-- User corrects you or gives feedback
-- User states a preference (explicit or implicit)
-- You notice a pattern in how the user works
+- User explicitly asks you to remember something
+- User describes how you should behave or what they prefer
+- User gives feedback on your work — capture what was wrong and how to improve
+- You discover patterns or preferences (communication style, format preferences, workflows)
+- User corrects you — save the correction AND the underlying principle
 
-If your prompt includes `<memory_guidelines>`, follow those for routing details (memory vs items vs lists).
+### When NOT to Update Memory
+
+- Transient information ("I'm running late", "I'm on my phone")
+- One-time task requests ("find me a recipe", "what's the weather?")
+- Simple questions, small talk, acknowledgments
+- Factual information about the user (preferences, facts, entities) — these
+  belong as items in the database, not in memory. Use create_item instead.
+- Never store API keys, passwords, or credentials
+
+## Memory vs Items vs Lists — What Goes Where
+
+- **Memory (AGENTS.md)**: How to serve this user — communication style, quality
+  standards, corrections, behavioral patterns. Operating notes that shape every
+  interaction.
+- **Items (create_item)**: What the user knows/wants/has — facts, preferences,
+  tasks, recommendations, entities. Granular knowledge searchable via
+  search_items.
+- **Lists (create_list + create_item)**: Grouped items the user wants to track
+  together — reading lists, grocery lists, project tasks. Use lists when the
+  user describes a collection of related things.
+
+### Examples
+
+User: "I prefer bullet points over paragraphs"
+→ Update memory (communication style that shapes all future responses)
+
+User: "I love Thai food, especially pad see ew"
+→ Create item (preference/learned_fact — searchable for future recommendations)
+
+User: "Here are the movies I want to watch: Inception, Interstellar, Arrival"
+→ Create list "Movies to Watch" + create items for each movie
+
+User: "That summary was way too long, keep it to 3 bullets max"
+→ Update memory (quality standard + correction: "Summaries: 3 bullets max")
+
+User: "Remember that Tom's birthday is March 15"
+→ Create item (fact about an entity — searchable, linked to Tom)
+
+User: "Actually don't auto-archive things, always ask me first"
+→ Update memory (correction: explicit boundary about agent behavior)
 
 ## Agent Prompt vs Memory — Which to Update?
 
