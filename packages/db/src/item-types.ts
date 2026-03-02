@@ -18,7 +18,7 @@ const PROTECTED_TYPES = [
   "learned_fact",
   "pattern",
   "notification",
-  "session_summary",
+  "session_note",
   "daily_digest",
   "insight",
 ];

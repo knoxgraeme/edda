@@ -94,10 +94,6 @@ export interface Settings {
 export interface AgentsMdVersion {
   id: number;
   content: string;
-  /** @deprecated Vestigial — no longer written by save_agents_md. */
-  template?: string;
-  /** @deprecated Vestigial — no longer written by save_agents_md. */
-  input_hash?: string | null;
   agent_name: string;
   created_at: string;
 }
@@ -381,8 +377,6 @@ export interface UpsertSkillInput {
 // ──────────────────────────────────────────────
 
 export type ThreadLifetime = "ephemeral" | "daily" | "persistent";
-/** @deprecated Use ThreadLifetime instead */
-export type AgentContextMode = ThreadLifetime;
 export type AgentTrigger = "schedule" | "on_demand";
 export type ThreadScope = "shared" | "per_channel";
 export type ChannelPlatform = "telegram" | "slack" | "discord";

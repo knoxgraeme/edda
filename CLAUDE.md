@@ -60,7 +60,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/agent/build-agent.ts`** — Unified agent factory: `buildAgent(agent)` builds any agent from an `Agent` DB row with skill-based tool scoping, prompt building, and backend assembly
 - **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure), `/store/` (own namespace), cross-agent store mounts (`metadata.stores`)
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
-- **`src/agent/agents-md-template.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data. `buildTemplateDiff()` computes line-level diffs between template versions.
+- **`src/agent/tools/get-agents-md.ts`** — Returns current AGENTS.md content and token budget for the calling agent.
 - **`src/mcp/client.ts`** — MCP client manager (multi-server, SSRF-safe fetch, OAuth support)
 - **`src/mcp/oauth-provider.ts`** — MCP OAuth provider (PKCE, token storage)
 - **`src/logger.ts`** — Structured logging via Pino with AsyncLocalStorage trace context. `getLogger()` returns the contextual logger; `withTraceId(bindings, fn)` scopes a traceId to an async call tree. Uses `pino-pretty` in development. Sensitive data (DB URLs, API keys) is auto-redacted in error serializers.
@@ -69,7 +69,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 - **`src/search.ts`** — Search tool factory
 - **`src/store.ts`** — LangGraph store backend factory
 - **`src/checkpointer.ts`** — State checkpointing backend (postgres, sqlite, or memory)
-- **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `context_refresh`, `daily_digest`, `manage`, `memory_extraction`, `recall`, `reminders`, `self_improvement`, `type_evolution`, `weekly_reflect`
+- **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `daily_digest`, `manage`, `memory_maintenance`, `recall`, `reminders`, `self_improvement`, `self_reflect`, `type_evolution`, `weekly_report`
 - **`src/cron.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
 - **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `discord.ts` (Gateway WebSocket via discord.js), `slack.ts` (Socket Mode via @slack/bolt), `deliver.ts` (routes messages to platform adapters), `handle-message.ts` (platform-agnostic inbound handler), `adapter.ts` (ChannelAdapter interface), `utils.ts` (shared helpers like `splitMessage`)
 - **`src/agent/stream-to-adapter.ts`** — Streaming delivery with debounced edits and adapter fallback behavior
@@ -140,7 +140,7 @@ Notable DB settings (in `settings` table):
 Edda uses a unified multi-agent architecture. All agents are built by `buildAgent(agent)` — there is no separate orchestrator factory. A `default_agent` setting (default: `edda`) determines which agent serves as the conversational interface. Any agent can be the default.
 
 - **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], thread_lifetime, trigger, model_settings_key, enabled flag, metadata.
-- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional thread_lifetime override, enabled flag, `notify` (target array for delivery on completion/failure), `notify_expires_after` (interval for notification expiry). One agent can have multiple schedules.
+- **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional thread_lifetime override, enabled flag, `notify` (target array for delivery on completion/failure), `notify_expires_after` (interval for notification expiry), `skip_when_empty_type` (skip run if no new items of this type since last completion). One agent can have multiple schedules.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Thread lifetimes**: `ephemeral` (new thread every run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
@@ -149,11 +149,11 @@ Edda uses a unified multi-agent architecture. All agents are built by `buildAgen
 **Built-in system agents**:
 | Agent | Skills | Thread Lifetime | Schedules |
 |---|---|---|---|
-| digest | daily_digest, weekly_reflect | daily | daily_digest (7am), weekly_reflect (Sun 6pm) |
-| maintenance | context_refresh, type_evolution | ephemeral | context_refresh (5am), type_evolution (6am) |
-| memory | memory_extraction | ephemeral | memory_catchup (10pm) |
+| edda | capture, recall, manage, admin, self_improvement, self_reflect, reminders | persistent | self_reflect (Sun 3am, ephemeral) |
+| digest | daily_digest, weekly_report | daily | daily_digest (7am), weekly_report (Sun 6pm) |
+| maintenance | type_evolution, memory_maintenance | ephemeral | type_evolution (6am), memory_maintenance (Sun 4am) |
 
-Note: `weekly_reflect` includes three parts: activity analysis, memory maintenance, and self-improvement (reviews session summaries → updates AGENTS.md). New user-created agents automatically get the `self_improvement` skill and a seeded AGENTS.md.
+Per-agent memory config: `memory_capture` (inline extraction during conversation) and `memory_self_reflect` (scheduled self-improvement). New user-created agents automatically get the `self_improvement` skill, a seeded AGENTS.md, and default `self_reflect` schedule.
 
 ### System Prompt Architecture (Three Layers)
 
@@ -169,12 +169,10 @@ Built by `buildPrompt()` in `src/agent/build-agent.ts`.
 
 AGENTS.md is the agent's operating notes about how to serve a specific user — communication preferences, behavioral patterns, quality standards, and corrections. Stored in `agents_md_versions` DB table (not on disk), scoped per agent.
 
-- **`src/agent/agents-md-template.ts`** — `buildDeterministicTemplate()` builds a change signal from DB data (preferences, facts, patterns, entities). `buildTemplateDiff()` computes line-level diffs between template versions. The template is an input signal for what's new in the DB, not a document structure that AGENTS.md mirrors.
-- **`src/agent/tools/get-context-diff.ts`** — Builds template fresh, diffs against stored version, returns diff or "no_changes". Used by `context_refresh` skill.
-- **`src/agent/tools/save-agents-md.ts`** — Writes curated AGENTS.md content to DB with current template hash. Used by `context_refresh` (scheduled) and `self_improvement` (real-time).
-- **Change detection**: SHA-256 hash of the deterministic template; `get_context_diff` compares current hash against stored hash
+- **`src/agent/tools/get-agents-md.ts`** — Returns current AGENTS.md content and token budget for the calling agent.
+- **`src/agent/tools/save-agents-md.ts`** — Writes curated AGENTS.md content to DB. Used by `self_reflect` (scheduled) and `self_improvement` (real-time).
 - **Seeding**: `create_agent` tool auto-seeds an empty AGENTS.md with section scaffolding (Communication, Patterns, Standards, Corrections)
-- **Self-improvement loop**: Real-time corrections via `self_improvement` skill → weekly trend analysis via `weekly_reflect` Part 3 (reviews `session_summary` items)
+- **Self-improvement loop**: Real-time corrections via `self_improvement` skill → scheduled cross-session analysis via `self_reflect` (reviews `session_note` items → updates AGENTS.md)
 
 ### Memory System
 
@@ -186,10 +184,10 @@ Memory uses three complementary mechanisms:
 | **History** | Past conversations and runs | Checkpointer + `task_runs` |
 | **Operating notes** | How the agent should behave | AGENTS.md + agent prompt |
 
-- **`memory_extraction` skill** — Extracts implicit knowledge (preferences, facts, patterns), entities, and session summaries from conversations. Supports incremental processing of long-lived threads via message-count watermarks. Used by both post-conversation hook and nightly `memory_catchup` cron.
-- **`session_summary` item type** — Per-extraction-pass retrospective capturing corrections, preferences observed, and quality signals. Feeds the weekly self-improvement analysis.
+- **`capture` skill (implicit capture)** — When `memory_capture = true`, the agent extracts implicit knowledge (preferences, facts, patterns) and entities inline during conversation. No separate extraction agent needed.
+- **`session_note` item type** — Agent observations about conversations (corrections, quality signals, user feedback). Created during conversation, consumed by `self_reflect` for cross-session improvement.
+- **`self_reflect` skill** — Scheduled per-agent self-improvement. Searches session notes since last run, identifies recurring patterns, updates AGENTS.md. Skipped (zero LLM cost) when no new session notes exist via `skip_when_empty_type` on the schedule.
 - **`get_entity_profile` tool** — Dynamically assembles a complete entity profile from `entities` + linked `items`; always fresh, no cron needed
-- **`memory` agent** — Runs nightly (`memory_catchup` schedule); iterates unprocessed threads and invokes `memory_extraction` for each
 - **Dedup**: Semantic similarity thresholds — reinforce ≥0.95, supersede 0.85–0.95, create new otherwise
 
 ### Notification System

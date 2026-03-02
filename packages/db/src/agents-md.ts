@@ -15,7 +15,7 @@ export async function getLatestAgentsMd(
 ): Promise<AgentsMdVersion | null> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT id, content, template, input_hash, agent_name, created_at
+    `SELECT id, content, agent_name, created_at
      FROM agents_md_versions
      WHERE agent_name = $1
      ORDER BY id DESC LIMIT 1`,
@@ -32,9 +32,9 @@ export async function saveAgentsMdVersion(input: {
   const pool = getPool();
   const agentName = input.agentName ?? "edda";
   const { rows } = await pool.query(
-    `INSERT INTO agents_md_versions (content, template, input_hash, agent_name)
-     VALUES ($1, '', NULL, $2)
-     RETURNING id, content, template, input_hash, agent_name, created_at`,
+    `INSERT INTO agents_md_versions (content, agent_name)
+     VALUES ($1, $2)
+     RETURNING id, content, agent_name, created_at`,
     [input.content, agentName],
   );
   return rows[0] as AgentsMdVersion;
