@@ -34,6 +34,10 @@ export const DEFAULT_TEST_SETTINGS: Settings = {
   user_display_name: null,
   user_timezone: "America/New_York",
   default_agent: "edda",
+  approval_new_entity: "auto",
+  memory_extraction_model: null,
+  sandbox_provider: "none",
+  task_max_concurrency: 3,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -111,6 +115,12 @@ export function mockDbModule() {
     saveAgentsMdVersion: vi.fn(),
     pruneAgentsMdVersions: vi.fn(),
     getAgentsMdContent: vi.fn().mockResolvedValue(""),
+
+    // items.ts (additional)
+    countSessionNotesSince: vi.fn().mockResolvedValue(0),
+
+    // notifications.ts
+    createNotification: vi.fn(),
 
     // threads.ts
     upsertThread: vi.fn(),

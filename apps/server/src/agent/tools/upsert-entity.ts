@@ -9,6 +9,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { upsertEntity, getSettingsSync, createNotification } from "@edda/db";
 import { embed } from "../../embed.js";
+import { getLogger } from "../../logger.js";
 
 export const upsertEntitySchema = z.object({
   name: z.string().describe("Entity name"),
@@ -31,13 +32,7 @@ export const upsertEntitySchema = z.object({
 export const upsertEntityTool = tool(
   async ({ name, type, aliases, description, confirmed, pending_action }) => {
     const settings = getSettingsSync();
-
-    // Apply entity approval setting for new entities
-    let resolvedConfirmed = confirmed;
-    if (settings.approval_new_entity === "confirm" && confirmed !== false) {
-      // We'll set confirmed=false; after upsert, check if it was a new entity
-      resolvedConfirmed = false;
-    }
+    const isApprovalMode = settings.approval_new_entity === "confirm";
 
     const embedding = await embed(`${type}: ${name}. ${description || ""}`);
     const entity = await upsertEntity({
@@ -46,21 +41,33 @@ export const upsertEntityTool = tool(
       aliases,
       description,
       embedding,
-      confirmed: resolvedConfirmed,
+      confirmed: confirmed ?? (isApprovalMode ? undefined : true),
       pending_action,
     });
 
     // If approval mode is 'confirm' and this is a new entity (mention_count = 1),
-    // create an inbox notification for review
-    if (settings.approval_new_entity === "confirm" && entity.mention_count === 1) {
-      await createNotification({
-        source_type: "system",
-        source_id: `entity:${entity.id}`,
-        target_type: "inbox",
-        summary: `New entity pending review: ${name} (${type})`,
-        detail: { entity_id: entity.id, entity_name: name, entity_type: type },
-        priority: "normal",
-      });
+    // set confirmed=false and create an inbox notification for review
+    if (isApprovalMode && entity.mention_count === 1) {
+      if (entity.confirmed !== false) {
+        await upsertEntity({
+          name,
+          type,
+          embedding,
+          confirmed: false,
+        });
+      }
+      try {
+        await createNotification({
+          source_type: "system",
+          source_id: `entity:${entity.id}`,
+          target_type: "inbox",
+          summary: `New entity pending review: ${name} (${type})`,
+          detail: { entity_id: entity.id, entity_name: name, entity_type: type },
+          priority: "normal",
+        });
+      } catch (err) {
+        getLogger().error({ err, entityId: entity.id, entityName: name }, "Failed to create entity approval notification");
+      }
     }
 
     return JSON.stringify({ entity_id: entity.id, status: "upserted" });

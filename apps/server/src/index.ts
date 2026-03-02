@@ -74,31 +74,29 @@ async function main() {
   log.info({ agent: agentRow.name }, "Agent ready");
 
   // 6. Bootstrap AGENTS.md if empty (first boot only)
-  const latestMd = await getLatestAgentsMd();
+  const latestMd = await getLatestAgentsMd(agentRow.name);
   if (!latestMd?.content?.trim()) {
-    log.info("AGENTS.md empty — running initial context refresh");
+    log.info("AGENTS.md empty — running initial self-reflect to seed operating notes");
     try {
-      const maintenanceDef = await getAgentByName("maintenance");
-      if (maintenanceDef) {
-        const crAgent = await buildAgent(maintenanceDef);
-        const threadId = resolveThreadId(maintenanceDef, undefined, {
-          timezone: settings.user_timezone,
-        });
-        await crAgent.invoke(
-          {
-            messages: [
-              {
-                role: "user",
-                content:
-                  "This is the first boot. Check for context changes and create the initial AGENTS.md document.",
-              },
-            ],
-          },
-          { configurable: { thread_id: threadId, agent_name: "maintenance" } },
-        );
-      }
+      const threadId = resolveThreadId(
+        { ...agentRow, thread_lifetime: "ephemeral" },
+        undefined,
+        { timezone: settings.user_timezone },
+      );
+      await agent.invoke(
+        {
+          messages: [
+            {
+              role: "user",
+              content:
+                "This is the first boot. Create an initial AGENTS.md with empty section scaffolding (Communication, Patterns, Standards, Corrections).",
+            },
+          ],
+        },
+        { configurable: { thread_id: threadId, agent_name: agentRow.name } },
+      );
     } catch (err: unknown) {
-      log.warn({ err }, "Initial context refresh failed (will retry on cron)");
+      log.warn({ err }, "Initial AGENTS.md bootstrap failed (will populate on first self_reflect)");
     }
   }
 

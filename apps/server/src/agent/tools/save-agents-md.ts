@@ -31,7 +31,7 @@ export const saveAgentsMdTool = tool(
     try {
       await pruneAgentsMdVersions(settings.agents_md_max_versions);
     } catch (err) {
-      getLogger().error({ err }, "save_agents_md pruning old versions failed (save succeeded)");
+      getLogger().error({ err, agentName }, "save_agents_md pruning old versions failed (save succeeded)");
     }
 
     invalidateAgent(agentName);

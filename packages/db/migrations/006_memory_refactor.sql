@@ -38,17 +38,21 @@ UPDATE agents SET skills = array_append(skills, 'memory_maintenance')
 UPDATE agents SET skills = array_remove(skills, 'weekly_reflect') WHERE name = 'digest';
 UPDATE agents SET skills = array_append(skills, 'weekly_report')
   WHERE name = 'digest' AND NOT ('weekly_report' = ANY(skills));
--- Add self_reflect to edda, remove memory_extraction
-UPDATE agents SET skills = array_cat(
-  array_remove(skills, 'memory_extraction'),
-  ARRAY['self_reflect']
-) WHERE name = 'edda' AND NOT ('self_reflect' = ANY(skills));
+-- Remove memory_extraction from edda (always safe to re-run)
+UPDATE agents SET skills = array_remove(skills, 'memory_extraction') WHERE name = 'edda';
+-- Add self_reflect to edda
+UPDATE agents SET skills = array_append(skills, 'self_reflect')
+  WHERE name = 'edda' AND NOT ('self_reflect' = ANY(skills));
 
 -- 7. Schedule changes
--- Remove context_refresh schedule
-DELETE FROM agent_schedules WHERE name = 'context_refresh';
--- Remove memory_catchup schedule
-DELETE FROM agent_schedules WHERE name = 'memory_catchup';
+-- Remove context_refresh schedule (scoped to maintenance agent)
+DELETE FROM agent_schedules
+  WHERE name = 'context_refresh'
+  AND agent_id = (SELECT id FROM agents WHERE name = 'maintenance');
+-- Remove memory_catchup schedule (scoped to memory agent)
+DELETE FROM agent_schedules
+  WHERE name = 'memory_catchup'
+  AND agent_id = (SELECT id FROM agents WHERE name = 'memory');
 -- Rename weekly_reflect to weekly_report on digest
 UPDATE agent_schedules SET name = 'weekly_report',
   prompt = 'Generate the weekly activity report: items by type, completion rates, most active entities, stale items, dropped threads.'
