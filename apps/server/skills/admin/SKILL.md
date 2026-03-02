@@ -12,6 +12,10 @@ allowed-tools:
   - delete_agent
   - run_agent
   - get_task_run
+  - create_schedule
+  - list_schedules
+  - update_schedule
+  - delete_schedule
   - add_mcp_connection
   - list_mcp_connections
   - update_mcp_connection
@@ -29,51 +33,8 @@ allowed-tools:
 
 ### Create Agent
 "create an agent that...", "set up a new cron to..."
-- create_agent: Create a new agent with name, description, skills, schedule, etc.
-- Max 30 agents enforced. Rejects schedules faster than every 5 minutes.
-- Name must be snake_case.
-- The `self_improvement` skill is automatically added to new agents.
-- An empty AGENTS.md (procedural memory) is automatically seeded on creation.
-
-#### Writing System Prompts
-
-When creating an agent, always write a structured `system_prompt` that gives
-the agent clear instructions. Use this template:
-
-```
-You are {agent_name}, an Edda agent.
-
-## Task
-1. {first step — what the agent does}
-2. {second step}
-3. {third step}
-
-## Output
-- {where results go — /store/, items, notifications, etc.}
-- {format expectations}
-
-## Boundaries
-- {what it should NOT do}
-- {edge cases to handle carefully}
-```
-
-**Rules for writing system prompts:**
-- Be specific about the task — numbered steps, not vague descriptions
-- Include output expectations — where does the result go?
-- Set boundaries — what should the agent NOT do?
-- Don't include memory/communication preferences — those go in AGENTS.md
-- Don't repeat rules that are in the system context (approval settings, etc.)
-
-**Examples:**
-
-Good: "1. Check inbox for unread emails. 2. Summarize each in 1-2 sentences.
-3. Flag action-required emails as tasks."
-
-Bad: "You are a helpful email assistant." (too vague — no steps, no output, no boundaries)
-
-Good: "## Boundaries\n- Never unsubscribe from senders in Key People\n- Ask before deleting any email"
-
-Bad: "Be careful with emails." (not actionable)
+- For full guided agent creation (prompt authoring, skill selection, schedule setup, memory seeding), use the `agent_creation` skill.
+- For quick creation: `create_agent` with name, description, and skills.
 
 ### View Agents
 "show me all agents", "what agents are running?"
@@ -99,6 +60,21 @@ Bad: "Be careful with emails." (not actionable)
 "did the digest run succeed?", "what happened with the last agent run?"
 - get_task_run: Check status and results of recent agent runs.
 - Can look up specific run by ID or list recent runs by agent.
+
+## Schedules
+
+### List Schedules
+"what schedules does digest have?", "show me all cron jobs"
+- list_schedules: List all schedules for an agent by name.
+
+### Modify Schedule
+"change the daily digest to run at 8am", "disable the weekly report schedule"
+- update_schedule: Update cron, prompt, thread_lifetime, notify targets, or enabled flag.
+- Requires the schedule_id (get from list_schedules).
+
+### Delete Schedule
+"remove that schedule"
+- delete_schedule: Permanently delete a schedule.
 
 ## MCP Connections
 

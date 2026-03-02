@@ -6,6 +6,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { createAgent, getAgents, saveAgentsMdVersion } from "@edda/db";
 import { getLogger } from "../../logger.js";
+import { EMPTY_AGENTS_MD_SEED } from "./agents-md-seed.js";
 
 export const createAgentSchema = z.object({
   name: z
@@ -51,6 +52,18 @@ export const createAgentSchema = z.object({
     .optional()
     .default(true)
     .describe("Review past sessions and update operating notes on schedule (default: true)"),
+  tools: z
+    .array(z.string())
+    .max(50)
+    .optional()
+    .default([])
+    .describe("Individual tool names to grant (in addition to skill-scoped tools)"),
+  subagents: z
+    .array(z.string())
+    .max(10)
+    .optional()
+    .default([])
+    .describe("Agent names this agent can delegate to"),
   metadata: z
     .record(z.unknown())
     .optional()
@@ -73,6 +86,8 @@ export const createAgentTool = tool(
     model,
     memory_capture,
     memory_self_reflect,
+    tools,
+    subagents,
     metadata,
   }) => {
     const existing = await getAgents();
@@ -93,6 +108,8 @@ export const createAgentTool = tool(
       skills: resolvedSkills,
       thread_lifetime,
       trigger,
+      tools,
+      subagents,
       model_provider,
       model,
       memory_capture,
@@ -101,23 +118,9 @@ export const createAgentTool = tool(
     });
 
     // Seed an empty AGENTS.md (procedural memory) for the new agent
-    const seedContent = [
-      "## Communication",
-      "(Learning — will update as I observe your preferences)",
-      "",
-      "## Patterns",
-      "(No patterns observed yet)",
-      "",
-      "## Standards",
-      "(No specific standards established yet)",
-      "",
-      "## Corrections",
-      "(No corrections yet)",
-    ].join("\n");
-
     try {
       await saveAgentsMdVersion({
-        content: seedContent,
+        content: EMPTY_AGENTS_MD_SEED,
         agentName: name,
       });
     } catch (err) {
