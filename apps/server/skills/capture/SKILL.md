@@ -2,8 +2,8 @@
 name: capture
 description: >
   Universal intake skill. Classifies user input into the most specific item type,
-  extracts metadata, and stores everything anchored to today. Use this skill
-  whenever the user is giving you something to remember, track, or save.
+  extracts metadata, and stores everything anchored to today. Also handles implicit
+  knowledge extraction and session notes when memory capture is enabled.
 allowed-tools:
   - search_items
   - get_item_by_id
@@ -17,6 +17,8 @@ allowed-tools:
   - batch_create_items
   - create_list
   - update_list
+  - upsert_entity
+  - link_item_entity
 ---
 
 # capture
@@ -137,3 +139,62 @@ Input: "met with Sarah, she's pushing back on the Q2 timeline. We agreed to cut 
 - Confirm with a brief icon + summary.
 - NEVER explain internal data model details to the user.
 - "📋 Created list: Movies to Watch" — not a paragraph about types and schemas.
+
+---
+
+## Implicit Capture (when memory capture is enabled)
+
+When your system context shows `Memory capture: enabled`, extract **implicit** knowledge
+during conversation — things the user reveals without explicitly asking to store them.
+
+### What to Extract
+
+- **Preferences**: "I usually work from home on Fridays" → create_item(type="preference")
+- **Facts**: "My dog's name is Max" → create_item(type="learned_fact")
+- **Patterns**: "I always review PRs before standup" → create_item(type="pattern")
+- **Entities**: Person, project, company, tool mentioned → upsert_entity + link_item_entity
+
+### Rules
+
+- Extract **implicit** knowledge only — things revealed naturally, not things the user
+  explicitly asks to store (those go through the normal capture flow above)
+- Keep extraction lightweight — 1-2 tool calls per turn max
+- **Dedup first**: search for existing items before creating. Only create if no similar
+  item exists (similarity < 0.85)
+- Entity approval: when `approval_new_entity = confirm` in settings, new entities are
+  created with `confirmed: false` and a notification is sent for review
+- Do NOT narrate or explain the extraction to the user — it should be invisible
+
+---
+
+## Session Notes (agent-initiated observations)
+
+During conversation, create `session_note` items when something notable happens.
+These are consumed later by the `self_reflect` skill.
+
+### When to Create a Session Note
+
+- **Back-and-forth correction**: User had to repeat or clarify something
+- **Something went wrong**: Confusion, misunderstanding, bad output
+- **Something went well**: User explicitly praised, moved on quickly
+- **Ambiguous preference signal**: Not clear enough for an immediate AGENTS.md update
+
+### Session Note Format
+
+```
+create_item({
+  type: "session_note",
+  content: "Had to go back and forth 3x on summary format. User wanted shorter bullets, I kept reverting to paragraphs.",
+  metadata: { corrections: ["summary format"], quality_signals: ["negative"] }
+})
+```
+
+### User Feedback
+
+When the user provides explicit feedback (e.g. "your summaries are too long"), record it
+**verbatim** as a `session_note` with `source: "user_feedback"` in metadata. No
+interpretation, no immediate action — just record for later reflection.
+
+**Distinction from `self_improvement`:**
+- `self_improvement` = immediate action on clear signals ("stop doing that" → update AGENTS.md now)
+- Session notes = observation for later reflection ("that was awkward" → create session_note)

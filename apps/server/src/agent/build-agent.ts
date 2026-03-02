@@ -378,7 +378,7 @@ export async function buildPrompt(
   const context = `\n\n## Context
 - Today: ${currentDate}, ${currentTime}
 - Timezone: ${settings.user_timezone}
-${settings.user_display_name ? `- User: ${settings.user_display_name}` : ""}`;
+${settings.user_display_name ? `- User: ${settings.user_display_name}\n` : ""}- Memory capture: ${agent.memory_capture ? "enabled" : "disabled"}`;
 
   const itemTypesSection = `\n\n## Available Item Types
 ${formatItemTypes(itemTypes)}`;
