@@ -78,6 +78,9 @@ import { createReminderTool } from "./create-reminder.js";
 import { listRemindersTool } from "./list-reminders.js";
 import { cancelReminderTool } from "./cancel-reminder.js";
 
+// Skill management tools
+import { installSkillTool } from "./install-skill.js";
+
 // Community tools (lazy-loaded from @langchain/community)
 import { loadWikipediaTool } from "./wikipedia.js";
 import { loadDuckDuckGoTool } from "./duckduckgo.js";
@@ -172,4 +175,7 @@ export const allTools = [
   createReminderTool,
   listRemindersTool,
   cancelReminderTool,
+
+  // Skill management tools
+  installSkillTool,
 ];

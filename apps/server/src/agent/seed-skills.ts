@@ -11,32 +11,12 @@ import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { upsertSkill } from "@edda/db";
 import { getStore } from "../store.js";
-import { writeSkillsToStore } from "./build-agent.js";
+import { parseFrontmatter, writeSkillsToStore } from "./skill-utils.js";
 import { getLogger } from "../logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = join(__dirname, "../../skills");
 
-function parseFrontmatter(raw: string): { name: string; description: string } {
-  const parts = raw.split("---");
-  if (parts.length < 3) {
-    throw new Error("SKILL.md missing YAML frontmatter");
-  }
-  const yaml = parts[1];
-  const nameMatch = yaml.match(/^name:\s*(.+)$/m);
-  const descMatch = yaml.match(/description:\s*>\s*\n([\s\S]*?)(?=\n\w|\n---)/);
-  const descInline = yaml.match(/^description:\s*(?!>)(.+)$/m);
-
-  const name = nameMatch?.[1]?.trim() ?? "";
-  let description = "";
-  if (descMatch) {
-    description = descMatch[1].replace(/\n\s*/g, " ").trim();
-  } else if (descInline) {
-    description = descInline[1].trim();
-  }
-
-  return { name, description };
-}
 
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".bmp", ".svg",

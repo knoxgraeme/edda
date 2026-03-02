@@ -151,44 +151,7 @@ function assertNoDuplicateTools(tools: StructuredTool[]): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Skills → Store bridge
-// ---------------------------------------------------------------------------
-
-/**
- * Write pre-fetched skills into the PostgresStore for deepagents
- * progressive disclosure. Skills are fetched once in buildAgent() and
- * shared with both collectFromSkills() (tool scoping) and this function.
- */
-export async function writeSkillsToStore(skills: Skill[], store: BaseStore): Promise<void> {
-  if (skills.length === 0) return;
-
-  const now = new Date().toISOString();
-  const writes: Promise<void>[] = [];
-
-  for (const s of skills) {
-    if (s.content) {
-      writes.push(
-        store.put(["filesystem"], `/skills/${s.name}/SKILL.md`, {
-          content: s.content.split("\n"),
-          created_at: now,
-          modified_at: now,
-        }),
-      );
-    }
-    for (const [relPath, content] of Object.entries(s.files)) {
-      writes.push(
-        store.put(["filesystem"], `/skills/${s.name}/${relPath}`, {
-          content: content.split("\n"),
-          created_at: now,
-          modified_at: now,
-        }),
-      );
-    }
-  }
-
-  await Promise.all(writes);
-}
+import { writeSkillsToStore } from "./skill-utils.js";
 
 // ---------------------------------------------------------------------------
 // Subagent resolution
