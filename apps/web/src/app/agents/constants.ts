@@ -5,7 +5,6 @@ export const AVAILABLE_SKILLS = [
   { name: "capture", description: "Classify and store items", toolCount: 3 },
   { name: "daily_digest", description: "Morning briefing", toolCount: 3 },
   { name: "manage", description: "Edit, complete, archive items", toolCount: 4 },
-  { name: "memory_extraction", description: "Extract knowledge from conversations", toolCount: 5 },
   { name: "memory_maintenance", description: "Dedup, archive stale, resolve contradictions", toolCount: 5 },
   { name: "recall", description: "Search and retrieve information", toolCount: 3 },
   { name: "self_reflect", description: "Cross-session self-improvement from session notes", toolCount: 3 },
