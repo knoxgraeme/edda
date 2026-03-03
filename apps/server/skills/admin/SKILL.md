@@ -80,7 +80,8 @@ allowed-tools:
 
 ### Add Connection
 "connect to my MCP server at..."
-- add_mcp_connection: Register a new MCP server connection via SSE transport.
+- add_mcp_connection: Register a new MCP server connection.
+- **Always provide a `name`** — a short, descriptive label (e.g. "ahrefs", "notion", "slack"). Never omit the name field.
 - Auth tokens stored in env vars, never passed directly.
 
 ### View Connections
