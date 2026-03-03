@@ -14,7 +14,15 @@ export const createItemTypeSchema = z.object({
     .describe(
       "When to use this type and what metadata to extract. Follow the pattern: behavioral trigger + signal phrases + boundary with similar types.",
     ),
-  metadata_schema: z.record(z.unknown()).optional().describe("JSON schema for metadata fields"),
+  metadata_schema: z.preprocess(
+    (val) => {
+      if (typeof val === "string") {
+        try { return JSON.parse(val); } catch { return val; }
+      }
+      return val;
+    },
+    z.record(z.unknown()).optional(),
+  ).describe("JSON schema for metadata fields"),
   icon: z.string().optional().describe("Emoji icon for the type"),
 });
 

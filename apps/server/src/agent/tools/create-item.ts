@@ -14,7 +14,15 @@ export const createItemSchema = z.object({
   content: z.string().optional().describe("The main content text"),
   body: z.string().optional().describe("Alias for content"),
   summary: z.string().optional().describe("A short summary of the content"),
-  metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
+  metadata: z.preprocess(
+    (val) => {
+      if (typeof val === "string") {
+        try { return JSON.parse(val); } catch { return val; }
+      }
+      return val;
+    },
+    z.record(z.unknown()).optional(),
+  ).describe("Arbitrary metadata for the item"),
   day: z.string().optional().describe("Date for the item (YYYY-MM-DD). Defaults to today."),
   status: z
     .enum(["active", "done", "archived", "snoozed"])

@@ -15,7 +15,15 @@ export const updateItemSchema = z.object({
     .optional()
     .describe("New status for the item"),
   content: z.string().optional().describe("Updated content text"),
-  metadata: z.record(z.unknown()).optional().describe("Metadata fields to merge/replace"),
+  metadata: z.preprocess(
+    (val) => {
+      if (typeof val === "string") {
+        try { return JSON.parse(val); } catch { return val; }
+      }
+      return val;
+    },
+    z.record(z.unknown()).optional(),
+  ).describe("Metadata fields to merge/replace"),
   parent_id: z
     .string()
     .uuid()

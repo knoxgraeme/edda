@@ -14,7 +14,15 @@ const batchItemSchema = z.object({
   summary: z.string().optional().describe("Short summary of the item"),
   type: z.string().describe("Item type (must exist in item_types)"),
   day: z.string().optional().describe("YYYY-MM-DD, defaults to today"),
-  metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
+  metadata: z.preprocess(
+    (val) => {
+      if (typeof val === "string") {
+        try { return JSON.parse(val); } catch { return val; }
+      }
+      return val;
+    },
+    z.record(z.unknown()).optional(),
+  ).describe("Arbitrary metadata for the item"),
   parent_id: z.string().optional().describe("Parent item ID (for hierarchical items, not lists)"),
   list_id: z.string().uuid().optional().describe("List UUID"),
   list_name: z.string().optional().describe("List name (resolved automatically)"),
