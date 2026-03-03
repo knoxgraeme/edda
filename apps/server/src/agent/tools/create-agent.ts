@@ -22,7 +22,7 @@ export const createAgentSchema = z.object({
     .max(10)
     .optional()
     .default([])
-    .describe("Skill names to use (e.g. ['daily_digest'])"),
+    .describe("Skill names to use (e.g. ['daily-digest'])"),
   trigger: z
     .enum(["schedule", "on_demand"])
     .default("on_demand")
@@ -95,10 +95,10 @@ export const createAgentTool = tool(
       throw new Error("Maximum number of agents (30) reached. Delete unused agents first.");
     }
 
-    // Auto-add self_improvement skill so the agent can refine itself
+    // Auto-add self-improvement skill so the agent can refine itself
     const resolvedSkills = skills ?? [];
-    if (!resolvedSkills.includes("self_improvement")) {
-      resolvedSkills.push("self_improvement");
+    if (!resolvedSkills.includes("self-improvement")) {
+      resolvedSkills.push("self-improvement");
     }
 
     const agent = await createAgent({

@@ -1,5 +1,5 @@
 ---
-name: self_improvement
+name: self-improvement
 description: >
   Refine your own task instructions and operating notes. Use when you identify
   clearer ways to describe your workflow, output format, or boundaries.
@@ -12,7 +12,7 @@ allowed-tools:
   - get_agents_md
 ---
 
-# self_improvement
+# self-improvement
 
 ## Learning from Interactions
 

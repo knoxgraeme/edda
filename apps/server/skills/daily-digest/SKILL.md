@@ -1,5 +1,5 @@
 ---
-name: daily_digest
+name: daily-digest
 description: >
   Auto-generated morning briefing. Runs as a cron job. Summarizes yesterday,
   surfaces today's due items, flags stale open items. Creates a daily_digest item.
@@ -16,7 +16,7 @@ allowed-tools:
   - batch_create_items
 ---
 
-# daily_digest
+# daily-digest
 
 ## Trigger
 Cron: configured via agent_schedules (default "0 7 * * *")

@@ -158,7 +158,7 @@ during conversation — things the user reveals without explicitly asking to sto
 ### Rules
 
 - Operating patterns (how to serve the user — communication style, quality standards,
-  corrections) belong in AGENTS.md via the `self_improvement` skill, not as items
+  corrections) belong in AGENTS.md via the `self-improvement` skill, not as items
 - Extract **implicit** knowledge only — things revealed naturally, not things the user
   explicitly asks to store (those go through the normal capture flow above)
 - Keep extraction lightweight — 1-2 tool calls per turn max
@@ -173,7 +173,7 @@ during conversation — things the user reveals without explicitly asking to sto
 ## Session Notes (agent-initiated observations)
 
 During conversation, create `session_note` items when something notable happens.
-These are consumed later by the `self_reflect` skill.
+These are consumed later by the `self-reflect` skill.
 
 ### When to Create a Session Note
 
@@ -198,6 +198,6 @@ When the user provides explicit feedback (e.g. "your summaries are too long"), r
 **verbatim** as a `session_note` with `source: "user_feedback"` in metadata. No
 interpretation, no immediate action — just record for later reflection.
 
-**Distinction from `self_improvement`:**
-- `self_improvement` = immediate action on clear signals ("stop doing that" → update AGENTS.md now)
+**Distinction from `self-improvement`:**
+- `self-improvement` = immediate action on clear signals ("stop doing that" → update AGENTS.md now)
 - Session notes = observation for later reflection ("that was awkward" → create session_note)

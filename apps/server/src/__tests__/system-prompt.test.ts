@@ -87,7 +87,7 @@ describe("buildPrompt", () => {
 
   it("skips memory section when AGENTS.md is empty", async () => {
     mockGetAgentsMdContent.mockResolvedValue("");
-    const agent = makeAgent({ skills: ["self_improvement"] });
+    const agent = makeAgent({ skills: ["self-improvement"] });
     const prompt = await buildPrompt(agent, settings);
     expect(prompt).not.toContain("## Memory");
     expect(prompt).not.toContain("<agent_memory>");
@@ -95,7 +95,7 @@ describe("buildPrompt", () => {
 
   it("skips entire memory section for agent with no content", async () => {
     mockGetAgentsMdContent.mockResolvedValue("");
-    const agent = makeAgent({ skills: ["daily_digest"], tools: [] });
+    const agent = makeAgent({ skills: ["daily-digest"], tools: [] });
     const prompt = await buildPrompt(agent, settings);
     expect(prompt).not.toContain("## Memory");
     expect(prompt).not.toContain("<agent_memory>");
@@ -145,7 +145,7 @@ describe("buildPrompt", () => {
   });
 
   it("does not include memory guidelines in system prompt", async () => {
-    const agent = makeAgent({ skills: ["self_improvement"] });
+    const agent = makeAgent({ skills: ["self-improvement"] });
     const prompt = await buildPrompt(agent, settings);
     expect(prompt).not.toContain("<memory_guidelines>");
     expect(prompt).not.toContain("</memory_guidelines>");
@@ -160,7 +160,7 @@ describe("buildPrompt", () => {
 
   it("orders layers: agent prompt → memory → system context", async () => {
     mockGetAgentsMdContent.mockResolvedValue("User likes coffee.");
-    const agent = makeAgent({ system_prompt: "You are test_bot.", skills: ["self_improvement"] });
+    const agent = makeAgent({ system_prompt: "You are test_bot.", skills: ["self-improvement"] });
     const prompt = await buildPrompt(agent, settings);
 
     const agentPromptIdx = prompt.indexOf("You are test_bot.");

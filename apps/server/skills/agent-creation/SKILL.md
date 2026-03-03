@@ -1,5 +1,5 @@
 ---
-name: agent_creation
+name: agent-creation
 description: >
   Guided agent creation workflow. Walks through context gathering, system prompt
   authoring, skill selection and creation, schedule configuration, and memory
@@ -19,7 +19,7 @@ allowed-tools:
   - get_settings
 ---
 
-# agent_creation
+# agent-creation
 
 Guided workflow for creating agents. Two user-facing confirmation gates; everything else is internal.
 
@@ -48,7 +48,7 @@ Decision tree — do NOT surface to user:
 
 1. **Simple task with existing skills** → `system_prompt` + assign skills
 2. **Complex workflow needing custom logic** → author custom skill via `install_skill`
-3. **Pure prompt-driven agent** → `system_prompt` only, no skills beyond `self_improvement`
+3. **Pure prompt-driven agent** → `system_prompt` only, no skills beyond `self-improvement`
 
 Use `list_skills` to discover available skills. Check if any existing skill covers the need before authoring a new one.
 
@@ -69,9 +69,9 @@ Rules:
 ### Assigning existing skills
 Select from `list_skills` output. Common assignments:
 - `capture` + `recall` for conversational agents
-- `daily_digest` for scheduled summary agents
+- `daily-digest` for scheduled summary agents
 - `reminders` for agents that manage time-based tasks
-- `self_improvement` is auto-added (no need to specify)
+- `self-improvement` is auto-added (no need to specify)
 
 ### Creating custom skills
 When no existing skill fits, author a new SKILL.md and install via `install_skill`.
@@ -125,7 +125,7 @@ Report back:
 ## Common Patterns
 
 ### Scheduled digest agent
-- Skills: `daily_digest` or custom
+- Skills: `daily-digest` or custom
 - Thread lifetime: `daily`
 - Schedule: morning cron
 - Notify: `inbox` + `announce:<agent_name>`

@@ -1,5 +1,5 @@
 ---
-name: skill_management
+name: skill-management
 description: >
   Discover, install, and manage agent skills from the skillfish registry.
   Uses the skillfish CLI for search/download and persists skills to the database.
@@ -12,7 +12,7 @@ allowed-commands:
   - npx
 ---
 
-# skill_management
+# skill-management
 
 ## Workflow
 

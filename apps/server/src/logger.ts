@@ -7,7 +7,7 @@
  *   // In an entry point (HTTP handler, cron job, webhook):
  *   await withTraceId({ module: "cron", agent: "digest" }, async () => {
  *     const log = getLogger();
- *     log.info({ schedule: "daily_digest" }, "Executing schedule");
+ *     log.info({ schedule: "daily-digest" }, "Executing schedule");
  *   });
  *
  *   // Anywhere deeper in the call stack:

@@ -1,5 +1,5 @@
 ---
-name: weekly_report
+name: weekly-report
 description: >
   Weekly activity analysis and reporting. Runs as a cron job on the digest agent.
   Analyzes items by type, completion rates, active entities, stale items,
@@ -18,7 +18,7 @@ allowed-tools:
   - list_threads
 ---
 
-# weekly_report
+# weekly-report
 
 ## Trigger
 Cron: configured via agent_schedules (default "0 18 * * 0")

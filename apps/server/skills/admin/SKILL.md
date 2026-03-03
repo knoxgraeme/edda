@@ -33,7 +33,7 @@ allowed-tools:
 
 ### Create Agent
 "create an agent that...", "set up a new cron to..."
-- For full guided agent creation (prompt authoring, skill selection, schedule setup, memory seeding), use the `agent_creation` skill.
+- For full guided agent creation (prompt authoring, skill selection, schedule setup, memory seeding), use the `agent-creation` skill.
 - For quick creation: `create_agent` with name, description, and skills.
 
 ### View Agents

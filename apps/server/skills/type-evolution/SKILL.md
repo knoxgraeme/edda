@@ -1,5 +1,5 @@
 ---
-name: type_evolution
+name: type-evolution
 description: >
   Evolves the type system based on usage patterns. Runs as a cron job. Clusters
   unclassified "note" items, proposes new types or reclassifications. Respects
@@ -18,7 +18,7 @@ allowed-tools:
   - create_item_type
 ---
 
-# type_evolution
+# type-evolution
 
 ## Trigger
 Cron: configured via agent_schedules (default "0 10 1 * *")

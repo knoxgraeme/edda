@@ -1,5 +1,5 @@
 ---
-name: memory_maintenance
+name: memory-maintenance
 description: >
   Database housekeeping for the memory system. Merges near-duplicate memories,
   archives stale items, resolves contradictions, and consolidates entity
@@ -17,7 +17,7 @@ allowed-tools:
   - link_item_entity
 ---
 
-# memory_maintenance
+# memory-maintenance
 
 ## Trigger
 Cron: configured via agent_schedules (default "0 4 * * 0")

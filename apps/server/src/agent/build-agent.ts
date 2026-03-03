@@ -233,7 +233,7 @@ async function resolveSubagents(
  *
  * Dynamic data (item types, lists, approval settings) is available via tools
  * and skills — not baked into the system prompt. Memory guidelines live in
- * the self_improvement and capture skills.
+ * the self-improvement and capture skills.
  */
 export async function buildPrompt(
   agent: Agent,

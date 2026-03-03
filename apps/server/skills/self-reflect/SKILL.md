@@ -1,5 +1,5 @@
 ---
-name: self_reflect
+name: self-reflect
 description: >
   Cross-session self-improvement. Reviews session notes from recent conversations,
   identifies recurring corrections, preferences, and quality signals, then updates
@@ -13,7 +13,7 @@ allowed-tools:
   - list_agents
 ---
 
-# self_reflect
+# self-reflect
 
 ## Trigger
 Cron: configured via agent_schedules (default "0 3 * * 0", ephemeral thread)
@@ -31,7 +31,7 @@ skipped entirely (zero LLM cost).
 ```
 search_items({ query: "session note", type: "session_note", limit: 50 })
 ```
-Filter to items since your last self_reflect run.
+Filter to items since your last self-reflect run.
 
 ### 2. Analyze across all notes
 

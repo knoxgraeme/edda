@@ -96,7 +96,7 @@ async function main() {
         { configurable: { thread_id: threadId, agent_name: agentRow.name } },
       );
     } catch (err: unknown) {
-      log.warn({ err }, "Initial AGENTS.md bootstrap failed (will populate on first self_reflect)");
+      log.warn({ err }, "Initial AGENTS.md bootstrap failed (will populate on first self-reflect)");
     }
   }
 
