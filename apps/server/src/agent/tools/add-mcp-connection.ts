@@ -14,23 +14,44 @@ import { invalidateAllAgents } from "../agent-cache.js";
 import { MCPOAuthProvider } from "../../mcp/oauth-provider.js";
 import { getLogger } from "../../logger.js";
 
-export const addMcpConnectionSchema = z.object({
-  name: z.string().describe("User-facing label"),
-  url: z.string().url().describe("MCP server endpoint URL"),
-  transport: z
-    .enum(["sse", "streamable-http"])
-    .default("streamable-http")
-    .describe("Transport type (default: streamable-http)"),
-  description: z.string().optional().describe("Description of what this MCP server provides"),
-  auth_env_var: z
-    .string()
-    .regex(
-      /^MCP_AUTH_[A-Z0-9_]+$/,
-      "auth_env_var must match MCP_AUTH_* pattern (e.g. MCP_AUTH_MYSERVICE_TOKEN)",
-    )
-    .optional()
-    .describe("Env var name for Bearer token (e.g. MCP_AUTH_MYSERVICE_TOKEN)"),
-});
+export const addMcpConnectionSchema = z.preprocess(
+  (val) => {
+    if (typeof val !== "object" || val === null) return val;
+    const obj = val as Record<string, unknown>;
+    // LLMs sometimes nest url/description inside a "config" object — hoist them
+    let config = obj.config;
+    if (typeof config === "string") {
+      try { config = JSON.parse(config); } catch { /* leave as-is */ }
+    }
+    if (typeof config === "object" && config !== null) {
+      const c = config as Record<string, unknown>;
+      const result = { ...obj };
+      if (!result.url && c.url) result.url = c.url;
+      if (!result.description && c.description) result.description = c.description;
+      if (!result.auth_env_var && c.auth_env_var) result.auth_env_var = c.auth_env_var;
+      delete result.config;
+      return result;
+    }
+    return val;
+  },
+  z.object({
+    name: z.string().describe("User-facing label"),
+    url: z.string().url().describe("MCP server endpoint URL"),
+    transport: z
+      .enum(["sse", "streamable-http"])
+      .default("streamable-http")
+      .describe("Transport type (default: streamable-http)"),
+    description: z.string().optional().describe("Description of what this MCP server provides"),
+    auth_env_var: z
+      .string()
+      .regex(
+        /^MCP_AUTH_[A-Z0-9_]+$/,
+        "auth_env_var must match MCP_AUTH_* pattern (e.g. MCP_AUTH_MYSERVICE_TOKEN)",
+      )
+      .optional()
+      .describe("Env var name for Bearer token (e.g. MCP_AUTH_MYSERVICE_TOKEN)"),
+  }),
+);
 
 export const addMcpConnectionTool = tool(
   async ({ name, url, description, auth_env_var, transport }) => {
