@@ -59,7 +59,7 @@ export const addMcpConnectionSchema = z.preprocess(
     args: z
       .array(z.string())
       .optional()
-      .describe("For stdio transport: command arguments (e.g. ['workspace-mcp'])"),
+      .describe("For stdio transport: command arguments"),
     env: z
       .record(z.string())
       .optional()
