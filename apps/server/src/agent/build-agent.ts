@@ -39,6 +39,8 @@ import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
 import { isGeminiModel, normalizeToolForGemini } from "./normalize-schemas.js";
 import { formatDateInTimezoneOrUtc, isValidIanaTimezone } from "../utils/timezone.js";
+import { createLazyToolsMiddleware } from "./middleware/lazy-tools.js";
+import type { SkillToolMapping } from "./middleware/lazy-tools.js";
 
 // ---------------------------------------------------------------------------
 // Skill frontmatter parsing (DB-backed, no disk reads)
@@ -416,6 +418,35 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 8. Backend — closes over store for SkillsMiddleware compatibility
   const backend = await buildBackend(agent, store, { sandbox });
 
+  // 9. Lazy tools middleware — only include skill tools after the agent reads the SKILL.md.
+  //    Only enabled when agent.tools[] has explicit core tools (opt-in per agent).
+  const middleware = [];
+  if (agent.tools.length > 0 && skills.length > 0) {
+    const skillToTools = new Map<string, Set<string>>();
+    for (const skill of skills) {
+      if (!skill.content) continue;
+      const toolNames = parseFrontmatterList(skill.content, "allowed-tools");
+      if (toolNames.length > 0) {
+        skillToTools.set(skill.name, new Set(toolNames));
+      }
+    }
+
+    if (skillToTools.size > 0) {
+      const coreTools = new Set(agent.tools);
+      coreTools.add("list_my_runs");
+      const mapping: SkillToolMapping = { skillToTools, coreTools };
+      middleware.push(createLazyToolsMiddleware(mapping));
+      getLogger().debug(
+        {
+          agent: agent.name,
+          coreTools: [...coreTools],
+          lazySkills: [...skillToTools.keys()],
+        },
+        "Lazy tools middleware enabled",
+      );
+    }
+  }
+
   return createDeepAgent({
     name: agent.name,
     model,
@@ -426,5 +457,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     backend,
     subagents,
     skills: ["/skills/"],
+    ...(middleware.length > 0 ? { middleware } : {}),
   });
 }
