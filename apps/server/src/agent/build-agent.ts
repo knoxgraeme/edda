@@ -197,7 +197,7 @@ async function resolveSubagents(
     ...enabled.map(async (row) => {
       const modelString = getModelString(row.model_provider, row.model);
       const model = await resolveModel(row.model_provider, row.model);
-      log.info(
+      getLogger().info(
         {
           agent: row.name,
           modelString,
@@ -352,7 +352,7 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 1. Model — provider:model string (or direct model instance for providers not in initChatModel)
   const modelString = getModelString(agent.model_provider, agent.model);
   const model = await resolveModel(agent.model_provider, agent.model);
-  log.info(
+  getLogger().info(
     {
       agent: agent.name,
       modelString,
