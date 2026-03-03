@@ -33,7 +33,9 @@ import { getCheckpointer } from "../checkpointer.js";
 import { getStore } from "../store.js";
 import { getSearchTool } from "../search.js";
 import { loadMCPTools } from "../mcp/client.js";
-import { allTools, loadCommunityTools } from "./tools/index.js";
+import { allTools, loadCommunityTools, toolInterruptDefaults } from "./tools/index.js";
+import type { InterruptLevel } from "./tools/index.js";
+import { wrapInterruptibleTools } from "./interrupt-wrapper.js";
 import { buildBackend } from "./backends.js";
 import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
@@ -376,6 +378,19 @@ export async function buildAgent(agent: Agent): Promise<any> {
     tools = tools.map(normalizeToolForGemini);
     getLogger().debug({ agent: agent.name }, "Normalized tool schemas for Gemini compatibility");
   }
+
+  // 3d. Wrap interruptible tools
+  const interruptOverrides = (agent.metadata?.interrupt_overrides ?? {}) as Record<
+    string,
+    InterruptLevel
+  >;
+  const interruptTtl = (agent.metadata?.interrupt_ttl as string) ?? "1 hour";
+  tools = wrapInterruptibleTools(tools, {
+    defaults: toolInterruptDefaults,
+    overrides: interruptOverrides,
+    agentName: agent.name,
+    ttl: interruptTtl,
+  });
 
   if (getLogger().isLevelEnabled("debug")) {
     getLogger().debug(

@@ -18,6 +18,7 @@ import {
   getUnreadNotifications,
   markNotificationsRead,
   deleteExpiredNotifications,
+  expirePendingActions,
   claimDueReminders,
   advanceReminderByDate,
   advanceReminderByInterval,
@@ -177,6 +178,13 @@ export class LocalCronRunner implements CronRunner {
         if (deleted > 0) log.info({ count: deleted }, "Cleaned up expired notifications");
       } catch (cleanupErr) {
         log.warn({ err: cleanupErr }, "Failed to clean expired notifications");
+      }
+
+      try {
+        const expired = await expirePendingActions();
+        if (expired > 0) log.info({ count: expired }, "Expired pending actions");
+      } catch (cleanupErr) {
+        log.warn({ err: cleanupErr }, "Failed to expire pending actions");
       }
 
       try {

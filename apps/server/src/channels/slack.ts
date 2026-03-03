@@ -18,10 +18,13 @@ import {
   deleteChannel,
   checkPlatformUser,
   requestPlatformPairing,
+  addChannelRef,
 } from "@edda/db";
+import type { PendingAction } from "@edda/db";
 import { getLogger } from "../logger.js";
 import { registerAdapter, unregisterAdapter } from "./deliver.js";
 import { handleInboundMessage } from "./handle-message.js";
+import { resolveAndNotify } from "../agent/resolve-action.js";
 import { splitMessage } from "./utils.js";
 import type { ChannelAdapter, MessageHandle, ParsedMessage } from "./adapter.js";
 
@@ -109,6 +112,43 @@ export class SlackAdapter implements ChannelAdapter {
       }
     });
 
+    // Pending action buttons (approve/reject)
+    this.app.action(/^pa_(approve|reject):/, async ({ action, ack, respond, body }) => {
+      await ack();
+
+      // Access control — only approved/paired users may resolve actions
+      const paired = await checkPlatformUser("slack", body.user.id);
+      if (!paired || paired.status !== "approved") {
+        await respond({ replace_original: false, text: "You are not authorized to resolve this action." });
+        return;
+      }
+
+      if (!("value" in action)) return;
+
+      const parts = (action as { value: string }).value.split(":");
+      if (parts.length !== 2) return;
+
+      const decision = parts[0] as "approve" | "reject";
+      const actionId = parts[1];
+      const resolvedDecision = decision === "approve" ? "approved" : "rejected";
+      const resolvedBy = `slack:${body.user.id}`;
+
+      try {
+        const result = await resolveAndNotify(actionId, resolvedDecision, resolvedBy);
+        if (result) {
+          await respond({
+            replace_original: true,
+            text: `${result.action.description}\n\n${resolvedDecision === "approved" ? "Approved" : "Rejected"} by ${resolvedBy}`,
+          });
+        } else {
+          await respond({ replace_original: true, text: "This action has already been resolved." });
+        }
+      } catch (err) {
+        getLogger().error({ err, actionId }, "Slack action button handler failed");
+        await respond({ replace_original: false, text: "Error processing action" });
+      }
+    });
+
     await this.app.start();
     try {
       const auth = await this.app.client.auth.test();
@@ -169,6 +209,59 @@ export class SlackAdapter implements ChannelAdapter {
   }
 
   // sendTypingIndicator intentionally omitted — not available for Slack bots.
+
+  // ---------------------------------------------------------------------------
+  // Confirmations
+  // ---------------------------------------------------------------------------
+
+  async sendActionPrompt(externalId: string, action: PendingAction): Promise<MessageHandle> {
+    if (!this.app) throw new Error("Slack adapter not initialized");
+
+    const channelId = parseExternalId(externalId);
+    const result = await this.app.client.chat.postMessage({
+      channel: channelId,
+      text: `Action requires confirmation:\n\n${action.description}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Action requires confirmation:*\n\n${action.description}`,
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "Approve" },
+              style: "primary",
+              action_id: `pa_approve:${action.id}`,
+              value: `approve:${action.id}`,
+            },
+            {
+              type: "button",
+              text: { type: "plain_text", text: "Reject" },
+              style: "danger",
+              action_id: `pa_reject:${action.id}`,
+              value: `reject:${action.id}`,
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!result.ts) throw new Error("Slack chat.postMessage did not return a timestamp");
+    const handle: MessageHandle = { messageId: result.ts, externalId };
+
+    await addChannelRef(action.id, {
+      platform: "slack",
+      message_id: handle.messageId,
+      external_id: externalId,
+    });
+
+    return handle;
+  }
 
   // ---------------------------------------------------------------------------
   // Slash command handling

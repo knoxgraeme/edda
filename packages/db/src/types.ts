@@ -469,6 +469,28 @@ export interface AgentChannel {
 // Notifications
 // ──────────────────────────────────────────────
 
+// ──────────────────────────────────────────────
+// Pending Actions (tool-level confirmations)
+// ──────────────────────────────────────────────
+
+export type PendingActionStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+
+export interface PendingAction {
+  id: string;
+  agent_name: string;
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+  description: string;
+  status: PendingActionStatus;
+  thread_id: string | null;
+  run_context: Record<string, unknown>;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  expires_at: string;
+  channel_refs: Array<{ platform: string; message_id: string; external_id: string }>;
+  created_at: string;
+}
+
 export interface Notification {
   id: string;
   source_type: NotificationSourceType;

@@ -12,8 +12,11 @@ import {
   REST,
   Routes,
   ApplicationCommandOptionType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
 } from "discord.js";
-import type { Message, ChatInputCommandInteraction } from "discord.js";
+import type { Message, ChatInputCommandInteraction, ButtonInteraction } from "discord.js";
 import {
   getChannelByExternalId,
   getChannelsByAgent,
@@ -25,7 +28,10 @@ import {
   deleteChannel,
   checkPlatformUser,
   requestPlatformPairing,
+  addChannelRef,
 } from "@edda/db";
+import type { PendingAction } from "@edda/db";
+import { resolveAndNotify } from "../agent/resolve-action.js";
 import { getLogger } from "../logger.js";
 import { registerAdapter, unregisterAdapter } from "./deliver.js";
 import { handleInboundMessage } from "./handle-message.js";
@@ -66,10 +72,15 @@ export class DiscordAdapter implements ChannelAdapter {
     });
 
     this.client.on("interactionCreate", (interaction) => {
-      if (!interaction.isChatInputCommand()) return;
-      this.handleSlashCommand(interaction).catch((err) => {
-        getLogger().error({ err }, "Discord slash command failed");
-      });
+      if (interaction.isChatInputCommand()) {
+        this.handleSlashCommand(interaction).catch((err) => {
+          getLogger().error({ err }, "Discord slash command failed");
+        });
+      } else if (interaction.isButton() && interaction.customId.startsWith("pa:")) {
+        this.handleActionButton(interaction).catch((err) => {
+          getLogger().error({ err }, "Discord action button failed");
+        });
+      }
     });
 
     await this.client.login(this.token);
@@ -117,7 +128,7 @@ export class DiscordAdapter implements ChannelAdapter {
     const channelId = parseExternalId(handle.externalId);
     try {
       await this.client.rest.patch(Routes.channelMessage(channelId, handle.messageId), {
-        body: { content: text },
+        body: { content: text, components: [] },
       });
     } catch (err: unknown) {
       // Suppress "message not modified" errors during streaming (matches Telegram adapter pattern)
@@ -366,6 +377,75 @@ export class DiscordAdapter implements ChannelAdapter {
     }
 
     await interaction.editReply(lines.join("\n"));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Confirmations
+  // ---------------------------------------------------------------------------
+
+  async sendActionPrompt(externalId: string, action: PendingAction): Promise<MessageHandle> {
+    const channel = await this.resolveChannel(externalId);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`pa:approve:${action.id}`)
+        .setLabel("Approve")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`pa:reject:${action.id}`)
+        .setLabel("Reject")
+        .setStyle(ButtonStyle.Danger),
+    );
+
+    const msg = await channel.send({
+      content: `Action requires confirmation:\n\n${action.description}`,
+      components: [row],
+    });
+
+    const handle: MessageHandle = { messageId: msg.id, externalId };
+
+    await addChannelRef(action.id, {
+      platform: "discord",
+      message_id: handle.messageId,
+      external_id: externalId,
+    });
+
+    return handle;
+  }
+
+  private async handleActionButton(interaction: ButtonInteraction): Promise<void> {
+    const parts = interaction.customId.split(":");
+    if (parts.length !== 3) return;
+
+    // Access control — only approved/paired users may resolve actions
+    const paired = await checkPlatformUser("discord", interaction.user.id);
+    if (!paired || paired.status !== "approved") {
+      await interaction.reply({ content: "You are not authorized to resolve this action.", ephemeral: true });
+      return;
+    }
+
+    const decision = parts[1] as "approve" | "reject";
+    const actionId = parts[2];
+    const resolvedDecision = decision === "approve" ? "approved" : "rejected";
+    const resolvedBy = `discord:${interaction.user.id}`;
+
+    try {
+      await interaction.deferUpdate();
+      const result = await resolveAndNotify(actionId, resolvedDecision, resolvedBy);
+      if (result) {
+        await interaction.editReply({
+          content: `${result.action.description}\n\n${resolvedDecision === "approved" ? "Approved" : "Rejected"} by <@${interaction.user.id}>`,
+          components: [],
+        });
+      } else {
+        await interaction.editReply({
+          content: "This action has already been resolved.",
+          components: [],
+        });
+      }
+    } catch (err) {
+      getLogger().error({ err, actionId }, "Discord action button handler failed");
+    }
   }
 
   // ---------------------------------------------------------------------------
