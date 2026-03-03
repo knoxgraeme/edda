@@ -120,4 +120,20 @@ export async function seedSkills(): Promise<void> {
       getLogger().error({ err: r.reason }, "Failed to seed skill");
     }
   }
+
+  // Clean up old underscore-named store entries from pre-kebab-case rename.
+  // store.delete is a no-op if the key doesn't exist, so this is safe to run always.
+  const legacySkillPaths = [
+    "/agent_creation/SKILL.md",
+    "/agent_creation/references/prompt-templates.md",
+    "/agent_creation/references/skill-guide.md",
+    "/daily_digest/SKILL.md",
+    "/memory_maintenance/SKILL.md",
+    "/self_improvement/SKILL.md",
+    "/self_reflect/SKILL.md",
+    "/skill_management/SKILL.md",
+    "/type_evolution/SKILL.md",
+    "/weekly_report/SKILL.md",
+  ];
+  await Promise.all(legacySkillPaths.map((p) => store.delete(["filesystem"], p)));
 }
