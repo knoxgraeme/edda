@@ -178,8 +178,9 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
         },
       );
 
-      // Track reasoning block state across chunks (e.g. <think>...</think> from Minimax, DeepSeek)
+      // Track reasoning block state across chunks (e.g. <think>/<thinking> from Minimax, DeepSeek, Anthropic)
       let insideThinkBlock = false;
+      let activeCloseTag: string | undefined;
 
       for await (const event of stream) {
         if (event.event === "on_chat_model_stream") {
@@ -199,7 +200,7 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
           }
 
           // Strip reasoning blocks that span across streaming chunks
-          ({ content, insideThinkBlock } = stripReasoningContent(content, insideThinkBlock));
+          ({ content, insideThinkBlock, activeCloseTag } = stripReasoningContent(content, insideThinkBlock, activeCloseTag));
 
           const hasToolCalls = chunk.tool_calls && chunk.tool_calls.length > 0;
           if (!content && !hasToolCalls) continue;

@@ -135,6 +135,7 @@ export async function streamToAdapter(opts: {
     );
 
     let insideThinkBlock = false;
+    let activeCloseTag: string | undefined;
 
     for await (const event of stream) {
       if (event.event !== "on_chat_model_stream") continue;
@@ -145,8 +146,8 @@ export async function streamToAdapter(opts: {
       let content = extractChunkContent(chunk as Record<string, unknown>);
       if (!content) continue;
 
-      // Strip reasoning blocks (e.g. <think>...</think> from Minimax, DeepSeek)
-      ({ content, insideThinkBlock } = stripReasoningContent(content, insideThinkBlock));
+      // Strip reasoning blocks (e.g. <think>/<thinking> from Minimax, DeepSeek, Anthropic)
+      ({ content, insideThinkBlock, activeCloseTag } = stripReasoningContent(content, insideThinkBlock, activeCloseTag));
       if (!content) continue;
 
       fullText += content;

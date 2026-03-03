@@ -4,9 +4,43 @@ import {
   contextEditingMiddleware,
   ClearToolUsesEdit,
   modelRetryMiddleware,
+  createMiddleware,
 } from "langchain";
 import type { AgentMiddleware } from "langchain";
 import type { Agent } from "@edda/db";
+
+/**
+ * Known parameter aliases that LLMs use instead of the canonical names.
+ * Key = tool name, value = map of alias → canonical name.
+ */
+const TOOL_ARG_ALIASES: Record<string, Record<string, string>> = {
+  execute: { cmd: "command" },
+};
+
+/**
+ * Middleware that normalizes common tool argument aliases before validation.
+ * Some LLMs (especially non-Anthropic) use variant parameter names like
+ * "cmd" instead of "command". This catches those before Zod rejects them.
+ */
+function toolArgNormalizerMiddleware(): AgentMiddleware {
+  return createMiddleware({
+    name: "toolArgNormalizer",
+    wrapToolCall: async (request, handler) => {
+      const toolName = request.toolCall?.name;
+      const args = request.toolCall?.args;
+      if (toolName && args && TOOL_ARG_ALIASES[toolName]) {
+        const aliases = TOOL_ARG_ALIASES[toolName];
+        for (const [alias, canonical] of Object.entries(aliases)) {
+          if (alias in args && !(canonical in args)) {
+            args[canonical] = args[alias];
+            delete args[alias];
+          }
+        }
+      }
+      return handler(request);
+    },
+  });
+}
 
 const DEFAULTS = {
   toolCallRunLimit: 30,
@@ -19,6 +53,9 @@ export function buildMiddleware(agent: Agent): AgentMiddleware[] {
   const config = agent.metadata?.middleware as Record<string, unknown> | undefined;
 
   const middleware: AgentMiddleware[] = [];
+
+  // Normalize common tool argument aliases (e.g. cmd → command for execute)
+  middleware.push(toolArgNormalizerMiddleware());
 
   // Tool call limit (global default + optional per-tool overrides)
   const toolRunLimit = (config?.toolCallRunLimit as number) ?? DEFAULTS.toolCallRunLimit;
