@@ -12,6 +12,7 @@ allowed-commands:
   - git
   - python3
   - pip
+  - uvx
   - cat
   - ls
   - head

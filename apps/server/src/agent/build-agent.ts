@@ -197,6 +197,16 @@ async function resolveSubagents(
     ...enabled.map(async (row) => {
       const modelString = getModelString(row.model_provider, row.model);
       const model = await resolveModel(row.model_provider, row.model);
+      log.info(
+        {
+          agent: row.name,
+          modelString,
+          agentProvider: row.model_provider ?? "(inherit)",
+          agentModel: row.model ?? "(inherit)",
+          resolvedType: typeof model === "string" ? "initChatModel" : model.constructor.name,
+        },
+        "Subagent model resolved",
+      );
       const systemPrompt = await buildPrompt(row, settings);
 
       const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
@@ -342,6 +352,16 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 1. Model — provider:model string (or direct model instance for providers not in initChatModel)
   const modelString = getModelString(agent.model_provider, agent.model);
   const model = await resolveModel(agent.model_provider, agent.model);
+  log.info(
+    {
+      agent: agent.name,
+      modelString,
+      agentProvider: agent.model_provider ?? "(inherit)",
+      agentModel: agent.model ?? "(inherit)",
+      resolvedType: typeof model === "string" ? "initChatModel" : model.constructor.name,
+    },
+    "Agent model resolved",
+  );
 
   // 2. Gather ALL available tools + prompt data + skills in one parallel batch
   const [
