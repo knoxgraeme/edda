@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { batchCreateItems, getSettingsSync, getListByName, type List } from "@edda/db";
+import { batchCreateItems, getSettingsSync, getListByName, getItemTypes, type List } from "@edda/db";
 import { embedBatch, buildEmbeddingText } from "../../embed.js";
 import type { EmbeddingContext } from "../../embed.js";
 import { getAgentName } from "../tool-helpers.js";
@@ -30,6 +30,16 @@ export const batchCreateItemsTool = tool(
     const agentName = getAgentName(config);
     const settings = getSettingsSync();
     const today = new Date().toISOString().split("T")[0];
+
+    // Validate item types exist
+    const allTypes = await getItemTypes();
+    const validNames = new Set(allTypes.map((t) => t.name));
+    const invalidTypes = [...new Set(items.map((i) => i.type).filter((t) => !validNames.has(t)))];
+    if (invalidTypes.length > 0) {
+      return JSON.stringify({
+        error: `Unknown item type(s): ${invalidTypes.join(", ")}. Valid types: ${[...validNames].join(", ")}. Use create_item_type to define new types.`,
+      });
+    }
 
     // Resolve list names to full List objects (cached)
     const listCache = new Map<string, List>(); // name → List

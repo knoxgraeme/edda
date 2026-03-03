@@ -10,6 +10,7 @@
  */
 
 import { ChatOpenRouter } from "@langchain/openrouter";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { getSettingsSync, LLM_PROVIDERS } from "@edda/db";
 import type { LlmProvider } from "@edda/db";
 
@@ -31,7 +32,10 @@ const PROVIDER_MAP: Record<LlmProvider, string> = {
   fireworks: "fireworks",
   together: "together",
   azure_openai: "azure_openai",
-  openrouter: "openrouter", // handled specially in build-agent.ts
+  openrouter: "openrouter", // handled specially in resolveModel()
+  minimax: "minimax", // handled specially in resolveModel()
+  moonshot: "moonshot", // handled specially in resolveModel()
+  zhipuai: "zhipuai", // handled specially in resolveModel()
 };
 
 /**
@@ -56,17 +60,40 @@ export function getModelString(
 /**
  * Resolve a model string into a model instance or pass-through string.
  *
- * OpenRouter is not registered in LangChain's `initChatModel`, so it requires
- * direct instantiation of `ChatOpenRouter`. All other providers return the
+ * Providers not in LangChain's `initChatModel` registry require direct
+ * instantiation of their chat model class. All other providers return the
  * `provider:model` string for initChatModel to resolve.
  */
-export function resolveModel(
+export async function resolveModel(
   agentProvider?: LlmProvider | null,
   agentModel?: string | null,
-): ChatOpenRouter | string {
-  const modelString = getModelString(agentProvider, agentModel);
-  if (modelString.startsWith("openrouter:")) {
-    return new ChatOpenRouter({ model: modelString.split(":").slice(1).join(":") });
+): Promise<BaseChatModel | string> {
+  const settings = getSettingsSync();
+  const provider = agentProvider || settings.llm_provider || "anthropic";
+  const model = agentModel || settings.default_model;
+
+  switch (provider) {
+    case "openrouter":
+      return new ChatOpenRouter({ model });
+    case "minimax": {
+      const { ChatMinimax } = await import("@langchain/community/chat_models/minimax");
+      return new ChatMinimax({
+        model,
+        minimaxApiKey: process.env.MINIMAX_API_KEY,
+        minimaxGroupId: process.env.MINIMAX_GROUP_ID,
+      });
+    }
+    case "moonshot": {
+      const { ChatMoonshot } = await import("@langchain/community/chat_models/moonshot");
+      return new ChatMoonshot({ model, apiKey: process.env.MOONSHOT_API_KEY });
+    }
+    case "zhipuai": {
+      const { ChatZhipuAI } = await import("@langchain/community/chat_models/zhipuai");
+      return new ChatZhipuAI({ model, apiKey: process.env.ZHIPUAI_API_KEY });
+    }
+    default: {
+      const langchainProvider = PROVIDER_MAP[provider as LlmProvider];
+      return `${langchainProvider}:${model}`;
+    }
   }
-  return modelString;
 }

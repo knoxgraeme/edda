@@ -23,6 +23,9 @@ export const LLM_PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
   { value: "together", label: "Together" },
   { value: "azure_openai", label: "Azure OpenAI" },
   { value: "openrouter", label: "OpenRouter" },
+  { value: "minimax", label: "Minimax" },
+  { value: "moonshot", label: "Moonshot" },
+  { value: "zhipuai", label: "ZhipuAI (ChatGLM)" },
 ];
 
 export const VALID_LLM_PROVIDERS = new Set<LlmProvider>(

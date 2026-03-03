@@ -24,6 +24,9 @@ export const LLM_PROVIDERS = [
   "together",
   "azure_openai",
   "openrouter",
+  "minimax",
+  "moonshot",
+  "zhipuai",
 ] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 export type EmbeddingProvider = "voyage" | "openai" | "google";

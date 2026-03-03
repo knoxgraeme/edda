@@ -196,7 +196,7 @@ async function resolveSubagents(
     Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
     ...enabled.map(async (row) => {
       const modelString = getModelString(row.model_provider, row.model);
-      const model = resolveModel(row.model_provider, row.model);
+      const model = await resolveModel(row.model_provider, row.model);
       const systemPrompt = await buildPrompt(row, settings);
 
       const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
@@ -339,9 +339,9 @@ export function resolveThreadId(
 export async function buildAgent(agent: Agent): Promise<any> {
   const settings = await getSettings();
 
-  // 1. Model — provider:model string (or ChatOpenRouter instance for openrouter)
+  // 1. Model — provider:model string (or direct model instance for providers not in initChatModel)
   const modelString = getModelString(agent.model_provider, agent.model);
-  const model = resolveModel(agent.model_provider, agent.model);
+  const model = await resolveModel(agent.model_provider, agent.model);
 
   // 2. Gather ALL available tools + prompt data + skills in one parallel batch
   const [

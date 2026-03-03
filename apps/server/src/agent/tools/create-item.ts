@@ -4,7 +4,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById, type List } from "@edda/db";
+import { createItem, getSettingsSync, searchItems, updateItem, getListByName, getListById, getItemTypes, type List } from "@edda/db";
 import { embed, buildEmbeddingText } from "../../embed.js";
 import type { EmbeddingContext } from "../../embed.js";
 import { getAgentName } from "../tool-helpers.js";
@@ -45,6 +45,15 @@ export const createItemTool = tool(
       ? { ...(metadata ?? {}), created_by: agentName }
       : metadata;
     const settings = getSettingsSync();
+
+    // Validate item type exists
+    const allTypes = await getItemTypes();
+    const validNames = allTypes.map((t) => t.name);
+    if (!validNames.includes(type)) {
+      return JSON.stringify({
+        error: `Unknown item type "${type}". Valid types: ${validNames.join(", ")}. Use create_item_type to define a new type.`,
+      });
+    }
 
     // List resolution
     let resolvedListId = list_id ?? null;

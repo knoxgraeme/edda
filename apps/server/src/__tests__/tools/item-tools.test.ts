@@ -31,6 +31,10 @@ vi.mock("@edda/db", () => ({
   getPendingItems: vi.fn(),
   getSettingsSync: vi.fn().mockReturnValue(DEFAULT_SETTINGS),
   getDashboard: vi.fn(),
+  getItemTypes: vi.fn().mockResolvedValue([
+    { name: "note" }, { name: "task" }, { name: "event" }, { name: "preference" },
+    { name: "learned_fact" }, { name: "pattern" }, { name: "journal" },
+  ]),
   ITEM_COLS: "i.id, i.type, i.content",
 }));
 
