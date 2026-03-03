@@ -22,10 +22,8 @@ describe("test infrastructure", () => {
   });
 
   it("schema rejects missing required fields", () => {
-    const result = createItemSchema.safeParse({
-      type: "note",
-      // missing content
-    });
+    // type is still required at schema level
+    const result = createItemSchema.safeParse({});
     expect(result.success).toBe(false);
   });
 

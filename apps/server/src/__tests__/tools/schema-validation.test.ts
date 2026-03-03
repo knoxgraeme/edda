@@ -176,7 +176,8 @@ describe("createItemSchema", () => {
   });
 
   it("rejects missing required fields", () => {
-    expect(() => createItemSchema.parse({ type: "note" })).toThrow(ZodError);
+    // type is still required at schema level; content/body are runtime-validated
+    expect(() => createItemSchema.parse({})).toThrow(ZodError);
   });
 
   it("rejects invalid status enum", () => {

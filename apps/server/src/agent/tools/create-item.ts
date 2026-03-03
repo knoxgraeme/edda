@@ -11,7 +11,8 @@ import { getAgentName } from "../tool-helpers.js";
 
 export const createItemSchema = z.object({
   type: z.string().describe("The item type (e.g. note, task, event, preference)"),
-  content: z.string().describe("The main content text"),
+  content: z.string().optional().describe("The main content text"),
+  body: z.string().optional().describe("Alias for content"),
   summary: z.string().optional().describe("A short summary of the content"),
   metadata: z.record(z.unknown()).optional().describe("Arbitrary metadata for the item"),
   day: z.string().optional().describe("Date for the item (YYYY-MM-DD). Defaults to today."),
@@ -39,7 +40,12 @@ export const createItemSchema = z.object({
 const DEDUP_TYPES = new Set(['preference', 'learned_fact', 'pattern']);
 
 export const createItemTool = tool(
-  async ({ type, content, summary, metadata, day, status, parent_id, list_id, list_name, source, confirmed, pending_action }, config) => {
+  async ({ type, content, body, summary, metadata, day, status, parent_id, list_id, list_name, source, confirmed, pending_action }, config) => {
+    const resolvedContent = content ?? body;
+    if (!resolvedContent) {
+      throw new Error("Either 'content' or 'body' is required");
+    }
+
     const agentName = getAgentName(config);
     const finalMetadata = agentName
       ? { ...(metadata ?? {}), created_by: agentName }
@@ -77,7 +83,7 @@ export const createItemTool = tool(
       }
     }
 
-    const embedding = await embed(buildEmbeddingText(type, content, summary, embeddingContext));
+    const embedding = await embed(buildEmbeddingText(type, resolvedContent, summary, embeddingContext));
 
     // Dedup check — only for knowledge types (preference, learned_fact, pattern)
     if (DEDUP_TYPES.has(type)) {
@@ -104,7 +110,7 @@ export const createItemTool = tool(
 
     const item = await createItem({
       type,
-      content,
+      content: resolvedContent,
       summary,
       metadata: finalMetadata,
       day,

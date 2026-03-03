@@ -9,6 +9,7 @@
  * NULL in either agent field means "inherit from settings".
  */
 
+import { ChatOpenAI } from "@langchain/openai";
 import { ChatOpenRouter } from "@langchain/openrouter";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { getSettingsSync, LLM_PROVIDERS } from "@edda/db";
@@ -76,20 +77,34 @@ export async function resolveModel(
     case "openrouter":
       return new ChatOpenRouter({ model });
     case "minimax": {
-      const { ChatMinimax } = await import("@langchain/community/chat_models/minimax");
-      return new ChatMinimax({
+      if (!process.env.MINIMAX_API_KEY) {
+        throw new Error("Minimax requires MINIMAX_API_KEY environment variable");
+      }
+      return new ChatOpenAI({
         model,
-        minimaxApiKey: process.env.MINIMAX_API_KEY,
-        minimaxGroupId: process.env.MINIMAX_GROUP_ID,
+        apiKey: process.env.MINIMAX_API_KEY,
+        configuration: { baseURL: "https://api.minimax.io/v1" },
       });
     }
     case "moonshot": {
-      const { ChatMoonshot } = await import("@langchain/community/chat_models/moonshot");
-      return new ChatMoonshot({ model, apiKey: process.env.MOONSHOT_API_KEY });
+      if (!process.env.MOONSHOT_API_KEY) {
+        throw new Error("Moonshot requires MOONSHOT_API_KEY environment variable");
+      }
+      return new ChatOpenAI({
+        model,
+        apiKey: process.env.MOONSHOT_API_KEY,
+        configuration: { baseURL: "https://api.moonshot.ai/v1" },
+      });
     }
     case "zhipuai": {
-      const { ChatZhipuAI } = await import("@langchain/community/chat_models/zhipuai");
-      return new ChatZhipuAI({ model, apiKey: process.env.ZHIPUAI_API_KEY });
+      if (!process.env.ZHIPUAI_API_KEY) {
+        throw new Error("ZhipuAI requires ZHIPUAI_API_KEY environment variable");
+      }
+      return new ChatOpenAI({
+        model,
+        apiKey: process.env.ZHIPUAI_API_KEY,
+        configuration: { baseURL: "https://open.bigmodel.cn/api/paas/v4" },
+      });
     }
     default: {
       const langchainProvider = PROVIDER_MAP[provider as LlmProvider];
