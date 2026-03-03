@@ -11,6 +11,18 @@ import type { StructuredTool } from "@langchain/core/tools";
 import { createPendingAction } from "@edda/db";
 import type { InterruptLevel } from "./tools/index.js";
 
+/** Extract only JSON-safe scalar keys from configurable to avoid circular refs. */
+function safeRunContext(configurable?: Record<string, unknown>): Record<string, unknown> {
+  if (!configurable) return {};
+  const safe: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(configurable)) {
+    if (val === null || val === undefined || typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
+      safe[key] = val;
+    }
+  }
+  return { configurable: safe };
+}
+
 export interface InterruptConfig {
   defaults: Record<string, InterruptLevel>;
   overrides: Record<string, InterruptLevel>;
@@ -51,9 +63,7 @@ function wrapTool(tool: StructuredTool, config: InterruptConfig): StructuredTool
         tool_input: input as Record<string, unknown>,
         description: `${tool.name} called with: ${JSON.stringify(input).slice(0, 200)}`,
         thread_id: threadId ?? null,
-        run_context: {
-          configurable: toolConfig?.configurable ?? {},
-        },
+        run_context: safeRunContext(toolConfig?.configurable),
         ttl: config.ttl,
       });
 
