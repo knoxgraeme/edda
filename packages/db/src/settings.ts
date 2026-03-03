@@ -58,6 +58,7 @@ const SETTINGS_UPDATE_COLUMNS = [
   "sandbox_provider",
   "approval_new_entity",
   "memory_extraction_model",
+  "subagent_overrides",
 ] as const;
 
 export async function updateSettings(updates: Partial<Settings>): Promise<Settings> {

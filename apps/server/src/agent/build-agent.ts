@@ -20,7 +20,7 @@ import type { SandboxBackendProtocol } from "deepagents";
 import type { LanguageModelLike } from "@langchain/core/language_models/base";
 import type { StructuredTool } from "@langchain/core/tools";
 import type { BaseStore } from "@langchain/langgraph";
-import type { Agent, Settings } from "@edda/db";
+import type { Agent, Settings, SubagentOverrides } from "@edda/db";
 import {
   getSettings,
   getAgentsMdContent,
@@ -168,8 +168,28 @@ interface SubagentSpec {
 }
 
 /**
+ * Merge global subagent overrides with optional per-agent overrides.
+ * Per-agent values win when present.
+ */
+function mergeOverrides(
+  global: SubagentOverrides,
+  perAgent: Partial<SubagentOverrides>,
+): SubagentOverrides {
+  return {
+    blocked_tools: perAgent.blocked_tools ?? global.blocked_tools,
+    blocked_skills: perAgent.blocked_skills ?? global.blocked_skills,
+    memory_capture: perAgent.memory_capture ?? global.memory_capture,
+    allow_nesting: perAgent.allow_nesting ?? global.allow_nesting,
+  };
+}
+
+/**
  * Resolve subagent specs from the DB. Each subagent gets its own scoped
  * tools, skills, system prompt (with AGENTS.md context), and model.
+ *
+ * Subagent mode overrides (from settings.subagent_overrides + per-agent
+ * metadata.subagent_overrides) strip blocked tools/skills, disable memory
+ * capture, and prevent nesting — keeping subagents as focused workers.
  */
 async function resolveSubagents(
   names: string[],
@@ -182,6 +202,9 @@ async function resolveSubagents(
   const rows = await getAgentsByNames(names);
   const enabled = rows.filter((r) => r.enabled);
 
+  // Global subagent overrides from settings
+  const globalOverrides = settings.subagent_overrides;
+
   // Fetch all subagent skills from DB in one batch
   const allSkillNames = [...new Set(enabled.flatMap((r) => r.skills))];
   const allSkills = allSkillNames.length > 0 ? await getSkillsByNames(allSkillNames) : [];
@@ -192,25 +215,67 @@ async function resolveSubagents(
 
   // Write all subagent skills + build prompts + resolve models in parallel
   const [, ...specs] = await Promise.all([
-    Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
+    Promise.all(
+      enabled.map((row) => {
+        const effective = mergeOverrides(
+          globalOverrides,
+          (row.metadata?.subagent_overrides ?? {}) as Partial<SubagentOverrides>,
+        );
+        const effectiveSkills = row.skills.filter(
+          (s) => !effective.blocked_skills.includes(s),
+        );
+        const overriddenRow: Agent = { ...row, skills: effectiveSkills };
+        return writeSkillsToStore(getRowSkills(overriddenRow), store);
+      }),
+    ),
     ...enabled.map(async (row) => {
+      // --- Apply subagent mode overrides ---
+      const agentOverrides = (row.metadata?.subagent_overrides ?? {}) as Partial<SubagentOverrides>;
+      const effective = mergeOverrides(globalOverrides, agentOverrides);
+
+      const effectiveSkills = row.skills.filter(
+        (s) => !effective.blocked_skills.includes(s),
+      );
+      const overriddenRow: Agent = {
+        ...row,
+        skills: effectiveSkills,
+        memory_capture: effective.memory_capture,
+        subagents: effective.allow_nesting ? row.subagents : [],
+      };
+
       const modelString = getModelString(row.model_provider, row.model);
       const model = resolveModel(row.model_provider, row.model);
-      const systemPrompt = await buildPrompt(row, settings);
+      const systemPrompt = await buildPrompt(overriddenRow, settings);
 
-      const declared = collectFromSkills(getRowSkills(row), "allowed-tools");
-      for (const t of row.tools) declared.add(t);
+      // Scope tools then remove blocked tools
+      const declared = collectFromSkills(getRowSkills(overriddenRow), "allowed-tools");
+      for (const t of overriddenRow.tools) declared.add(t);
       declared.add("list_my_runs");
+      for (const bt of effective.blocked_tools) declared.delete(bt);
       const scoped = scopeTools(available, declared);
       ensureObjectSchemas(scoped);
       const subTools = isGeminiModel(modelString) ? scoped.map(normalizeToolForGemini) : scoped;
+
+      if (getLogger().isLevelEnabled("debug")) {
+        getLogger().debug(
+          {
+            subagent: row.name,
+            blockedTools: effective.blocked_tools,
+            blockedSkills: effective.blocked_skills,
+            memoryCapture: effective.memory_capture,
+            allowNesting: effective.allow_nesting,
+            toolCount: subTools.length,
+          },
+          "Resolved subagent with overrides",
+        );
+      }
 
       return {
         name: row.name,
         description: row.description,
         systemPrompt,
         tools: subTools,
-        skills: row.skills.length > 0 ? ["/skills/"] : [],
+        skills: effectiveSkills.length > 0 ? ["/skills/"] : [],
         model,
       } satisfies SubagentSpec;
     }),

@@ -33,6 +33,13 @@ export type CronRunner = "local" | "langgraph";
 export type ApprovalMode = "auto" | "confirm";
 export type SandboxProvider = "none" | "node-vfs";
 
+export interface SubagentOverrides {
+  blocked_tools: string[];
+  blocked_skills: string[];
+  memory_capture: boolean;
+  allow_nesting: boolean;
+}
+
 export interface Settings {
   id: true;
 
@@ -88,6 +95,9 @@ export interface Settings {
 
   // Sandbox
   sandbox_provider: SandboxProvider;
+
+  // Subagent mode
+  subagent_overrides: SubagentOverrides;
 
   // Meta
   created_at: string;
