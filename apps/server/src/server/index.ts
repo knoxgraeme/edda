@@ -36,6 +36,7 @@ import { executeAgentRun } from "../agent/run-execution.js";
 import { deliverRunResults } from "../utils/notify.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import { getAdapter } from "../channels/deliver.js";
+import { resolveAndNotify } from "../agent/resolve-action.js";
 
 const StreamRequestSchema = z.object({
   messages: z.array(z.object({ content: z.string().min(1) })).min(1),
@@ -573,6 +574,37 @@ async function handleAgentRun(agentName: string, req: IncomingMessage, res: Serv
   });
 }
 
+const ResolveActionSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
+  resolved_by: z.string().default("web"),
+});
+
+async function handleResolveAction(actionId: string, req: IncomingMessage, res: ServerResponse) {
+  try {
+    const raw = await readBody(req);
+    const parsed = ResolveActionSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: parsed.error.issues[0].message }));
+      return;
+    }
+
+    const result = await resolveAndNotify(actionId, parsed.data.decision, parsed.data.resolved_by);
+    if (!result) {
+      res.writeHead(409, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Action already resolved" }));
+      return;
+    }
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ action: result.action, tool_result: result.toolResult ?? null }));
+  } catch (err) {
+    getLogger().error({ err, actionId }, "Failed to resolve pending action");
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Failed to resolve action" }));
+  }
+}
+
 export async function startHealthServer(port: number): Promise<void> {
   const server = createServer(async (req, res) => {
     setCors(res);
@@ -589,6 +621,9 @@ export async function startHealthServer(port: number): Promise<void> {
     const agentThreadMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/thread$/);
     const agentRunMatch = urlPath.match(/^\/api\/agents\/([^/]+)\/run$/);
     const channelWebhookMatch = urlPath.match(/^\/api\/channels\/(\w+)\/webhook$/);
+    const resolveActionMatch = urlPath.match(
+      /^\/api\/pending-actions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/resolve$/i,
+    );
 
     // Unauthenticated endpoints (own auth or public)
     if (urlPath === "/api/health" && req.method === "GET") {
@@ -625,6 +660,8 @@ export async function startHealthServer(port: number): Promise<void> {
       await handleAgentRun(decodeURIComponent(agentRunMatch[1]), req, res);
     } else if (urlPath === "/api/search/items" && req.method === "POST") {
       await handleSearchItems(req, res);
+    } else if (resolveActionMatch && req.method === "POST") {
+      await handleResolveAction(resolveActionMatch[1], req, res);
     } else if (urlPath === "/internal/mcp-oauth/complete" && req.method === "POST") {
       await handleMcpOAuthComplete(req, res);
     } else if (urlPath === "/internal/mcp-invalidate" && req.method === "POST") {

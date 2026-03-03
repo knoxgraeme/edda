@@ -26,6 +26,7 @@ export * from "./notifications.js";
 export * from "./channels.js";
 export * from "./telegram-users.js";
 export * from "./paired-users.js";
+export * from "./pending-actions.js";
 export * from "./crypto.js";
 export * from "./migrate.js";
 export * from "./seed-settings.js";

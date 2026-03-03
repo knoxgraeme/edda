@@ -115,3 +115,17 @@ User: "Actually don't auto-archive things, always ask me first"
 | "Don't merge Tom entities" | Memory (correction) | Specific learned lesson |
 | "Also create tasks for action items" | Agent prompt (output change) | What you produce |
 | "Always include the item ID" | Memory (standard) | Format preference |
+
+## Interrupt Preferences
+
+When the user tells you to stop/start asking for confirmation on a specific action,
+update interrupt_overrides via update_agent:
+- "always": always ask before executing
+- "never": execute without asking
+- "suggest": use your judgment
+
+Example: User says "stop asking me before deleting items"
+→ `update_agent(name="edda", metadata={ interrupt_overrides: { delete_item: "never" } })`
+
+Example: User says "always confirm before creating new types"
+→ `update_agent(name="edda", metadata={ interrupt_overrides: { create_item_type: "always" } })`
