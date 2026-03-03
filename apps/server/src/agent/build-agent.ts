@@ -37,6 +37,7 @@ import { allTools, loadCommunityTools, toolInterruptDefaults } from "./tools/ind
 import type { InterruptLevel } from "./tools/index.js";
 import { wrapInterruptibleTools } from "./interrupt-wrapper.js";
 import { buildBackend } from "./backends.js";
+import { buildMiddleware } from "./middleware.js";
 import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
 import { isGeminiModel, normalizeToolForGemini } from "./normalize-schemas.js";
@@ -433,9 +434,8 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 8. Backend — closes over store for SkillsMiddleware compatibility
   const backend = await buildBackend(agent, store, { sandbox });
 
-  // 9. Lazy tools middleware — only include skill tools after the agent reads the SKILL.md.
-  //    Only enabled when agent.tools[] has explicit core tools (opt-in per agent).
-  const middleware = [];
+  // 9. Middleware stack — safety middleware (limits, retry, context editing) + lazy tools
+  const middleware = [...buildMiddleware(agent)];
   if (agent.tools.length > 0 && skills.length > 0) {
     const skillToTools = new Map<string, Set<string>>();
     for (const skill of skills) {
@@ -472,6 +472,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     backend,
     subagents,
     skills: ["/skills/"],
-    ...(middleware.length > 0 ? { middleware } : {}),
+    middleware,
   });
 }
