@@ -27,46 +27,29 @@ export async function createNotification(input: {
   const pool = getPool();
   const isScheduled = !!input.scheduled_at;
 
-  // Scheduled reminders get status='scheduled' and no expiry
   const status = isScheduled ? "scheduled" : "unread";
+  const detail = JSON.stringify(input.detail ?? {});
+  const priority = input.priority ?? "normal";
+  const targetId = input.target_id ?? null;
+  const scheduledAt = input.scheduled_at ?? null;
+  const recurrence = input.recurrence ?? null;
+  const targets = input.targets ?? [];
 
-  // Compute expires_at in TypeScript: scheduled → null, explicit null → null, otherwise compute from interval
-  let expiresAt: string | null;
-  if (isScheduled || input.expires_after === null) {
-    expiresAt = null;
-  } else {
-    // Default 72-hour expiry; custom interval handled via SQL addition
-    expiresAt = input.expires_after ?? null;
-  }
-
-  // Always use fixed parameter positions $1–$12
-  const params: unknown[] = [
-    input.source_type, // $1
-    input.source_id, // $2
-    input.target_type, // $3
-    input.target_id ?? null, // $4
-    input.summary, // $5
-    JSON.stringify(input.detail ?? {}), // $6
-    input.priority ?? "normal", // $7
-    expiresAt, // $8
-    status, // $9
-    input.scheduled_at ?? null, // $10
-    input.recurrence ?? null, // $11
-    input.targets ?? [], // $12
-  ];
-
-  // If a custom expires_after interval is provided, use it; otherwise default to 72 hours.
-  // Scheduled reminders and explicit null already set expiresAt = null above.
-  const expiresExpr =
-    expiresAt === null && (isScheduled || input.expires_after === null)
-      ? "NULL"
-      : "now() + COALESCE($8::interval, interval '72 hours')";
+  // Scheduled reminders and explicit null → no expiry (NULL).
+  // Otherwise use the provided interval or default to 72 hours.
+  const nullExpiry = isScheduled || input.expires_after === null;
 
   const { rows } = await pool.query(
-    `INSERT INTO notifications (source_type, source_id, target_type, target_id, summary, detail, priority, expires_at, status, scheduled_at, recurrence, targets)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, ${expiresExpr}, $9, $10, $11, $12)
-     RETURNING ${NOTIFICATION_COLS}`,
-    params,
+    nullExpiry
+      ? `INSERT INTO notifications (source_type, source_id, target_type, target_id, summary, detail, priority, expires_at, status, scheduled_at, recurrence, targets)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9, $10, $11)
+         RETURNING ${NOTIFICATION_COLS}`
+      : `INSERT INTO notifications (source_type, source_id, target_type, target_id, summary, detail, priority, expires_at, status, scheduled_at, recurrence, targets)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now() + COALESCE($8::interval, interval '72 hours'), $9, $10, $11, $12)
+         RETURNING ${NOTIFICATION_COLS}`,
+    nullExpiry
+      ? [input.source_type, input.source_id, input.target_type, targetId, input.summary, detail, priority, status, scheduledAt, recurrence, targets]
+      : [input.source_type, input.source_id, input.target_type, targetId, input.summary, detail, priority, input.expires_after ?? null, status, scheduledAt, recurrence, targets],
   );
   return rows[0] as Notification;
 }

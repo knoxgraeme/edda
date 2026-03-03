@@ -8,11 +8,10 @@ import { createNotification } from "@edda/db";
 import { getAgentName } from "../tool-helpers.js";
 import { validateRecurrence } from "../../utils/reminder-recurrence.js";
 
-export const createReminderSchema = z
-  .object({
-    message: z.string().max(2000).optional().describe("The reminder message to deliver when it fires"),
-    summary: z.string().max(2000).optional().describe("Alias for message (deprecated, use message)"),
-    scheduled_at: z.string().describe("ISO 8601 datetime (must be in the future)"),
+export const createReminderSchema = z.object({
+  message: z.string().max(2000).optional().describe("The reminder message to deliver when it fires"),
+  summary: z.string().max(2000).optional().describe("Alias for message"),
+  scheduled_at: z.string().describe("ISO 8601 datetime (must be in the future)"),
   recurrence: z
     .string()
     .optional()
@@ -25,14 +24,14 @@ export const createReminderSchema = z
     .enum(["low", "normal", "high"])
     .optional()
     .describe("Priority (default: normal)"),
-  })
-  .refine((d) => d.message || d.summary, {
-    message: "Either 'message' or 'summary' is required",
-  });
+});
 
 export const createReminderTool = tool(
   async ({ message, summary, scheduled_at, recurrence, targets, priority }, config) => {
-    const resolvedMessage = (message ?? summary)!;
+    const resolvedMessage = message ?? summary;
+    if (!resolvedMessage) {
+      throw new Error("Either 'message' or 'summary' is required");
+    }
     const callingAgent = getAgentName(config) ?? "unknown";
 
     // Validate scheduled_at is in the future
