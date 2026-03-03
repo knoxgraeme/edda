@@ -252,7 +252,10 @@ export class LocalCronRunner implements CronRunner {
       try {
         const format = detectRecurrenceFormat(reminder.recurrence);
         if (format === "cron") {
-          const nextAt = getNextCronDate(reminder.recurrence);
+          const reminderTz = (reminder.detail as Record<string, unknown>)?.timezone as
+            | string
+            | undefined;
+          const nextAt = getNextCronDate(reminder.recurrence, undefined, reminderTz);
           await advanceReminderByDate(reminder.id, nextAt);
           log.info({ reminderId: reminder.id, nextAt: nextAt.toISOString() }, "Advanced cron reminder");
         } else {

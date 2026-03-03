@@ -71,10 +71,12 @@ export function validateRecurrence(recurrence: string): string | null {
 
 /**
  * Get the next fire date from a cron expression.
+ * When timezone is provided, cron fields are interpreted in that timezone.
  */
-export function getNextCronDate(expr: string, after?: Date): Date {
+export function getNextCronDate(expr: string, after?: Date, timezone?: string): Date {
   const cron = CronExpressionParser.parse(expr, {
     currentDate: after ?? new Date(),
+    ...(timezone && { tz: timezone }),
   });
   return cron.next().toDate();
 }
