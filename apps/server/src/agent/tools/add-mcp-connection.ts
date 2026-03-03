@@ -1,8 +1,8 @@
 /**
  * Tool: add_mcp_connection — Register a new MCP server connection.
  *
- * Supports SSE and streamable-http transports. For streamable-http URLs
- * that return 401, automatically initiates OAuth via the MCP SDK.
+ * Supports stdio, SSE, and streamable-http transports. For streamable-http
+ * URLs that return 401, automatically initiates OAuth via the MCP SDK.
  */
 
 import { tool } from "@langchain/core/tools";
@@ -14,33 +14,58 @@ import { invalidateAllAgents } from "../agent-cache.js";
 import { MCPOAuthProvider } from "../../mcp/oauth-provider.js";
 import { getLogger } from "../../logger.js";
 
+/** Parse stringified JSON if needed. */
+function maybeParseJson(val: unknown): unknown {
+  if (typeof val === "string") {
+    try { return JSON.parse(val); } catch { return val; }
+  }
+  return val;
+}
+
 export const addMcpConnectionSchema = z.preprocess(
   (val) => {
     if (typeof val !== "object" || val === null) return val;
     const obj = val as Record<string, unknown>;
     // LLMs sometimes nest url/description inside a "config" object — hoist them
-    let config = obj.config;
-    if (typeof config === "string") {
-      try { config = JSON.parse(config); } catch { /* leave as-is */ }
-    }
+    const config = maybeParseJson(obj.config);
     if (typeof config === "object" && config !== null) {
       const c = config as Record<string, unknown>;
       const result = { ...obj };
       if (!result.url && c.url) result.url = c.url;
       if (!result.description && c.description) result.description = c.description;
       if (!result.auth_env_var && c.auth_env_var) result.auth_env_var = c.auth_env_var;
+      if (!result.command && c.command) result.command = c.command;
+      if (!result.args && c.args) result.args = c.args;
+      if (!result.env && c.env) result.env = c.env;
       delete result.config;
       return result;
     }
-    return val;
+    // Parse stringified env/args
+    if (obj.env) obj.env = maybeParseJson(obj.env);
+    if (obj.args) obj.args = maybeParseJson(obj.args);
+    return obj;
   },
   z.object({
     name: z.string().describe("User-facing label"),
-    url: z.string().url().describe("MCP server endpoint URL"),
     transport: z
-      .enum(["sse", "streamable-http"])
+      .enum(["stdio", "sse", "streamable-http"])
       .default("streamable-http")
-      .describe("Transport type (default: streamable-http)"),
+      .describe("Transport type: stdio (local command), sse, or streamable-http (default)"),
+    // --- stdio fields ---
+    command: z
+      .string()
+      .optional()
+      .describe("For stdio transport: the command to run (e.g. 'uvx', 'npx', 'node')"),
+    args: z
+      .array(z.string())
+      .optional()
+      .describe("For stdio transport: command arguments (e.g. ['workspace-mcp'])"),
+    env: z
+      .record(z.string())
+      .optional()
+      .describe("For stdio transport: environment variables to pass to the process"),
+    // --- network fields ---
+    url: z.string().url().optional().describe("MCP server endpoint URL (required for sse/streamable-http)"),
     description: z.string().optional().describe("Description of what this MCP server provides"),
     auth_env_var: z
       .string()
@@ -54,10 +79,29 @@ export const addMcpConnectionSchema = z.preprocess(
 );
 
 export const addMcpConnectionTool = tool(
-  async ({ name, url, description, auth_env_var, transport }) => {
-    const config: Record<string, unknown> = { url };
+  async ({ name, url, description, auth_env_var, transport, command, args, env }) => {
+    // Build config based on transport
+    const config: Record<string, unknown> = {};
+
+    if (transport === "stdio") {
+      if (!command) {
+        return JSON.stringify({
+          error: "stdio transport requires 'command' (e.g. 'uvx', 'npx', 'node')",
+        });
+      }
+      config.command = command;
+      if (args) config.args = args;
+      if (env) config.env = env;
+    } else {
+      if (!url) {
+        return JSON.stringify({
+          error: `${transport} transport requires 'url'`,
+        });
+      }
+      config.url = url;
+      if (auth_env_var) config.auth_env_var = auth_env_var;
+    }
     if (description) config.description = description;
-    if (auth_env_var) config.auth_env_var = auth_env_var;
 
     const connection = await createMcpConnection({
       name,
@@ -65,8 +109,8 @@ export const addMcpConnectionTool = tool(
       config,
     });
 
-    // For streamable-http without a static bearer token, probe for OAuth
-    if ((transport === "streamable-http" || transport === "sse") && !auth_env_var) {
+    // For streamable-http/sse without a static bearer token, probe for OAuth
+    if ((transport === "streamable-http" || transport === "sse") && !auth_env_var && url) {
       let probeStatus: number | null = null;
       try {
         const probeRes = await ssrfSafeFetch(url, {
@@ -162,7 +206,7 @@ export const addMcpConnectionTool = tool(
   {
     name: "add_mcp_connection",
     description:
-      "Register a new MCP server connection. Supports SSE and streamable-http transports. For servers requiring OAuth, returns an auth URL the user must visit.",
+      "Register a new MCP server connection. Supports stdio (local command like uvx/npx), SSE, and streamable-http transports. For servers requiring OAuth, returns an auth URL the user must visit.",
     schema: addMcpConnectionSchema,
   },
 );

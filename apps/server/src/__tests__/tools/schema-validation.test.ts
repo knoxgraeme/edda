@@ -57,7 +57,6 @@ describe("addMcpConnectionSchema", () => {
 
   it("rejects missing required fields", () => {
     expect(() => addMcpConnectionSchema.parse({})).toThrow(ZodError);
-    expect(() => addMcpConnectionSchema.parse({ name: "test" })).toThrow(ZodError);
   });
 
   it("rejects invalid url", () => {
