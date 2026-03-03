@@ -33,6 +33,7 @@ import { getCheckpointer } from "../checkpointer.js";
 import { getStore } from "../store.js";
 import { getSearchTool } from "../search.js";
 import { loadMCPTools } from "../mcp/client.js";
+import { z } from "zod";
 import { allTools, loadCommunityTools, toolInterruptDefaults } from "./tools/index.js";
 import type { InterruptLevel } from "./tools/index.js";
 import { wrapInterruptibleTools } from "./interrupt-wrapper.js";
@@ -167,17 +168,33 @@ interface SubagentSpec {
   model?: LanguageModelLike | string;
 }
 
+/** Zod schema for runtime validation of metadata.subagent_overrides */
+const SubagentOverridesSchema = z
+  .object({
+    blocked_tools: z.array(z.string()),
+    blocked_skills: z.array(z.string()),
+    memory_capture: z.boolean(),
+    allow_nesting: z.boolean(),
+  })
+  .partial();
+
 /**
  * Merge global subagent overrides with optional per-agent overrides.
- * Per-agent values win when present.
+ * Array fields (blocked_tools, blocked_skills) use union semantics —
+ * per-agent values ADD to the global blocklist, never replace it.
+ * Boolean fields use per-agent-wins semantics.
  */
 function mergeOverrides(
   global: SubagentOverrides,
   perAgent: Partial<SubagentOverrides>,
 ): SubagentOverrides {
   return {
-    blocked_tools: perAgent.blocked_tools ?? global.blocked_tools,
-    blocked_skills: perAgent.blocked_skills ?? global.blocked_skills,
+    blocked_tools: perAgent.blocked_tools
+      ? [...new Set([...global.blocked_tools, ...perAgent.blocked_tools])]
+      : global.blocked_tools,
+    blocked_skills: perAgent.blocked_skills
+      ? [...new Set([...global.blocked_skills, ...perAgent.blocked_skills])]
+      : global.blocked_skills,
     memory_capture: perAgent.memory_capture ?? global.memory_capture,
     allow_nesting: perAgent.allow_nesting ?? global.allow_nesting,
   };
@@ -213,36 +230,37 @@ async function resolveSubagents(
   const getRowSkills = (row: Agent): Skill[] =>
     row.skills.map((n) => skillsByName.get(n)).filter(Boolean) as Skill[];
 
+  // Pre-compute effective overrides and overridden rows once per agent
+  const effectiveRows = enabled.map((row) => {
+    const parsed = SubagentOverridesSchema.safeParse(row.metadata?.subagent_overrides);
+    const perAgent = parsed.success ? parsed.data : {};
+    if (!parsed.success && row.metadata?.subagent_overrides !== undefined) {
+      getLogger().warn(
+        { agent: row.name, error: parsed.error.message },
+        "Invalid metadata.subagent_overrides — using global defaults",
+      );
+    }
+    const effective = mergeOverrides(globalOverrides, perAgent);
+    const effectiveSkills = row.skills.filter(
+      (s) => !effective.blocked_skills.includes(s),
+    );
+    const overriddenRow: Agent = {
+      ...row,
+      skills: effectiveSkills,
+      memory_capture: effective.memory_capture,
+      subagents: effective.allow_nesting ? row.subagents : [],
+    };
+    return { row, effective, overriddenRow, effectiveSkills };
+  });
+
   // Write all subagent skills + build prompts + resolve models in parallel
   const [, ...specs] = await Promise.all([
     Promise.all(
-      enabled.map((row) => {
-        const effective = mergeOverrides(
-          globalOverrides,
-          (row.metadata?.subagent_overrides ?? {}) as Partial<SubagentOverrides>,
-        );
-        const effectiveSkills = row.skills.filter(
-          (s) => !effective.blocked_skills.includes(s),
-        );
-        const overriddenRow: Agent = { ...row, skills: effectiveSkills };
-        return writeSkillsToStore(getRowSkills(overriddenRow), store);
-      }),
+      effectiveRows.map(({ overriddenRow }) =>
+        writeSkillsToStore(getRowSkills(overriddenRow), store),
+      ),
     ),
-    ...enabled.map(async (row) => {
-      // --- Apply subagent mode overrides ---
-      const agentOverrides = (row.metadata?.subagent_overrides ?? {}) as Partial<SubagentOverrides>;
-      const effective = mergeOverrides(globalOverrides, agentOverrides);
-
-      const effectiveSkills = row.skills.filter(
-        (s) => !effective.blocked_skills.includes(s),
-      );
-      const overriddenRow: Agent = {
-        ...row,
-        skills: effectiveSkills,
-        memory_capture: effective.memory_capture,
-        subagents: effective.allow_nesting ? row.subagents : [],
-      };
-
+    ...effectiveRows.map(async ({ row, effective, overriddenRow, effectiveSkills }) => {
       const modelString = getModelString(row.model_provider, row.model);
       const model = resolveModel(row.model_provider, row.model);
       const systemPrompt = await buildPrompt(overriddenRow, settings);
