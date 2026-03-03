@@ -9,7 +9,7 @@ import { getAgentName } from "../tool-helpers.js";
 import { validateRecurrence } from "../../utils/reminder-recurrence.js";
 
 export const createReminderSchema = z.object({
-  summary: z.string().max(2000).describe("The reminder message to deliver when it fires"),
+  message: z.string().max(2000).describe("The reminder message to deliver when it fires"),
   scheduled_at: z
     .string()
     .describe("ISO 8601 datetime (must be in the future)"),
@@ -28,7 +28,7 @@ export const createReminderSchema = z.object({
 });
 
 export const createReminderTool = tool(
-  async ({ summary, scheduled_at, recurrence, targets, priority }, config) => {
+  async ({ message, scheduled_at, recurrence, targets, priority }, config) => {
     const callingAgent = getAgentName(config) ?? "unknown";
 
     // Validate scheduled_at is in the future
@@ -53,7 +53,7 @@ export const createReminderTool = tool(
       source_id: callingAgent,
       // target_type is always 'inbox' — actual delivery is driven by the targets array
       target_type: "inbox",
-      summary,
+      summary: message,
       detail: {
         agent_name: callingAgent,
         reminder: true,
