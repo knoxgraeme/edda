@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { RetrievalContext } from "@edda/db";
+import { stripReasoningBlocks } from "../utils/strip-reasoning.js";
 
 /** Extract agent_name from LangGraph config with runtime type guard. */
 export function getAgentName(
@@ -31,7 +32,7 @@ export function extractLastAssistantMessage(result: {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if ((m.role === "assistant" || m._getType?.() === "ai") && typeof m.content === "string") {
-      return m.content;
+      return stripReasoningBlocks(m.content);
     }
   }
   return undefined;

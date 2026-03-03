@@ -9,6 +9,7 @@ import type { Runnable, RunnableConfig } from "@langchain/core/runnables";
 import { HumanMessage } from "@langchain/core/messages";
 import { getLogger } from "../logger.js";
 import { withTimeout } from "../utils/with-timeout.js";
+import { stripReasoningContent } from "../utils/strip-reasoning.js";
 import type { ChannelAdapter, MessageHandle } from "../channels/adapter.js";
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -133,13 +134,19 @@ export async function streamToAdapter(opts: {
       { ...config, signal: abortController.signal, version: "v2" },
     );
 
+    let insideThinkBlock = false;
+
     for await (const event of stream) {
       if (event.event !== "on_chat_model_stream") continue;
 
       const chunk = event.data?.chunk;
       if (!chunk) continue;
 
-      const content = extractChunkContent(chunk as Record<string, unknown>);
+      let content = extractChunkContent(chunk as Record<string, unknown>);
+      if (!content) continue;
+
+      // Strip reasoning blocks (e.g. <think>...</think> from Minimax, DeepSeek)
+      ({ content, insideThinkBlock } = stripReasoningContent(content, insideThinkBlock));
       if (!content) continue;
 
       fullText += content;

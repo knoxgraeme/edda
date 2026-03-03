@@ -3,6 +3,7 @@
  */
 
 import { randomUUID, timingSafeEqual } from "crypto";
+import { stripReasoningContent } from "../utils/strip-reasoning.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import {
   getPool,
@@ -177,6 +178,9 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
         },
       );
 
+      // Track reasoning block state across chunks (e.g. <think>...</think> from Minimax, DeepSeek)
+      let insideThinkBlock = false;
+
       for await (const event of stream) {
         if (event.event === "on_chat_model_stream") {
           const chunk = event.data?.chunk;
@@ -193,6 +197,9 @@ async function handleStream(req: IncomingMessage, res: ServerResponse) {
               else if (block?.type === "text_delta" && block.text) content += block.text;
             }
           }
+
+          // Strip reasoning blocks that span across streaming chunks
+          ({ content, insideThinkBlock } = stripReasoningContent(content, insideThinkBlock));
 
           const hasToolCalls = chunk.tool_calls && chunk.tool_calls.length > 0;
           if (!content && !hasToolCalls) continue;
