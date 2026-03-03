@@ -110,6 +110,29 @@ export async function loadCommunityTools(): Promise<StructuredTool[]> {
   return results.filter((t): t is StructuredTool => t !== null);
 }
 
+// ---------------------------------------------------------------------------
+// Tool interrupt defaults — per-tool confirmation configuration
+// ---------------------------------------------------------------------------
+
+export type InterruptLevel = "always" | "never" | "suggest";
+
+/**
+ * Default interrupt levels for tools. Unlisted tools default to 'never'.
+ * Per-agent overrides live in agent.metadata.interrupt_overrides.
+ */
+export const toolInterruptDefaults: Record<string, InterruptLevel> = {
+  // Destructive — always confirm
+  delete_item: "always",
+  delete_agent: "always",
+  remove_mcp_connection: "always",
+  delete_schedule: "always",
+
+  // Structural changes — suggest (prompt-level, not enforced)
+  create_item_type: "suggest",
+  create_agent: "suggest",
+  update_settings: "suggest",
+};
+
 /**
  * All Edda tools — single pool shared by all agents.
  *

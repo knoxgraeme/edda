@@ -7,7 +7,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { Bot, GrammyError, type Context, type CommandContext } from "grammy";
+import { Bot, GrammyError, InlineKeyboard, type Context, type CommandContext } from "grammy";
 import type { Update } from "grammy/types";
 import {
   getChannelByExternalId,
@@ -20,7 +20,10 @@ import {
   deleteChannel,
   checkPlatformUser,
   requestPlatformPairing,
+  addChannelRef,
 } from "@edda/db";
+import type { PendingAction } from "@edda/db";
+import { resolveAndNotify } from "../agent/resolve-action.js";
 import { getLogger } from "../logger.js";
 import { registerAdapter, unregisterAdapter } from "./deliver.js";
 import { handleInboundMessage } from "./handle-message.js";
@@ -92,6 +95,9 @@ export class TelegramAdapter implements ChannelAdapter {
     this.bot.command("status", (ctx) => this.handleStatusCommand(ctx));
 
     this.bot.on("message:text", (ctx) => this.handleTextMessage(ctx));
+
+    // Pending action callback buttons (approve/reject)
+    this.bot.on("callback_query:data", (ctx) => this.handleCallbackQuery(ctx));
 
     // Register in the delivery dispatcher
     registerAdapter(this);
@@ -184,7 +190,9 @@ export class TelegramAdapter implements ChannelAdapter {
     if (!this.bot) throw new Error("Telegram adapter not initialized");
     const { chatId } = parseExternalId(handle.externalId);
     try {
-      await this.bot.api.editMessageText(chatId, Number(handle.messageId), text);
+      await this.bot.api.editMessageText(chatId, Number(handle.messageId), text, {
+        reply_markup: { inline_keyboard: [] },
+      });
     } catch (err) {
       // Telegram returns 400 when message content hasn't changed — not a real error
       if (err instanceof GrammyError && err.description?.includes("message is not modified")) return;
@@ -205,6 +213,68 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   // ---------------------------------------------------------------------------
+  // Confirmations
+  // ---------------------------------------------------------------------------
+
+  async sendActionPrompt(externalId: string, action: PendingAction): Promise<MessageHandle> {
+    if (!this.bot) throw new Error("Telegram adapter not initialized");
+    const { chatId, threadId } = parseExternalId(externalId);
+
+    const keyboard = new InlineKeyboard()
+      .text("Approve", `pa:approve:${action.id}`)
+      .text("Reject", `pa:reject:${action.id}`);
+
+    const msg = await this.bot.api.sendMessage(
+      chatId,
+      `Action requires confirmation:\n\n${action.description}`,
+      { message_thread_id: threadId, reply_markup: keyboard },
+    );
+
+    const handle: MessageHandle = { messageId: String(msg.message_id), externalId };
+
+    await addChannelRef(action.id, {
+      platform: "telegram",
+      message_id: handle.messageId,
+      external_id: externalId,
+    });
+
+    return handle;
+  }
+
+  private async handleCallbackQuery(ctx: Context): Promise<void> {
+    const data = ctx.callbackQuery?.data;
+    if (!data?.startsWith("pa:")) {
+      // Not ours — answer to dismiss the loading spinner, then bail
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const log = getLogger();
+    const parts = data.split(":");
+    if (parts.length !== 3) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const decision = parts[1] as "approve" | "reject";
+    const actionId = parts[2];
+    const resolvedDecision = decision === "approve" ? "approved" : "rejected";
+    const resolvedBy = `telegram:${ctx.from?.id ?? "unknown"}`;
+
+    try {
+      const result = await resolveAndNotify(actionId, resolvedDecision, resolvedBy);
+      if (result) {
+        await ctx.answerCallbackQuery({ text: `Action ${resolvedDecision}` });
+      } else {
+        await ctx.answerCallbackQuery({ text: "Action already resolved" });
+      }
+    } catch (err) {
+      log.error({ err, actionId }, "Telegram callback query handler failed");
+      await ctx.answerCallbackQuery({ text: "Error processing action" });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Webhook registration (Telegram-specific public helper)
   // ---------------------------------------------------------------------------
 
@@ -212,7 +282,7 @@ export class TelegramAdapter implements ChannelAdapter {
     if (!this.bot) throw new Error("Telegram adapter not initialized");
 
     await this.bot.api.setWebhook(webhookUrl, {
-      allowed_updates: ["message"],
+      allowed_updates: ["message", "callback_query"],
       secret_token: this.webhookSecret,
       drop_pending_updates: true,
     });

@@ -33,13 +33,17 @@ import { getCheckpointer } from "../checkpointer.js";
 import { getStore } from "../store.js";
 import { getSearchTool } from "../search.js";
 import { loadMCPTools } from "../mcp/client.js";
-import { allTools, loadCommunityTools } from "./tools/index.js";
+import { allTools, loadCommunityTools, toolInterruptDefaults } from "./tools/index.js";
+import type { InterruptLevel } from "./tools/index.js";
+import { wrapInterruptibleTools } from "./interrupt-wrapper.js";
 import { buildBackend } from "./backends.js";
 import { buildMiddleware } from "./middleware.js";
 import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
 import { isGeminiModel, normalizeToolForGemini } from "./normalize-schemas.js";
 import { formatDateInTimezoneOrUtc, isValidIanaTimezone } from "../utils/timezone.js";
+import { createLazyToolsMiddleware } from "./middleware/lazy-tools.js";
+import type { SkillToolMapping } from "./middleware/lazy-tools.js";
 
 // ---------------------------------------------------------------------------
 // Skill frontmatter parsing (DB-backed, no disk reads)
@@ -380,6 +384,19 @@ export async function buildAgent(agent: Agent): Promise<any> {
     getLogger().debug({ agent: agent.name }, "Normalized tool schemas for Gemini compatibility");
   }
 
+  // 3d. Wrap interruptible tools
+  const interruptOverrides = (agent.metadata?.interrupt_overrides ?? {}) as Record<
+    string,
+    InterruptLevel
+  >;
+  const interruptTtl = (agent.metadata?.interrupt_ttl as string) ?? "1 hour";
+  tools = wrapInterruptibleTools(tools, {
+    defaults: toolInterruptDefaults,
+    overrides: interruptOverrides,
+    agentName: agent.name,
+    ttl: interruptTtl,
+  });
+
   if (getLogger().isLevelEnabled("debug")) {
     getLogger().debug(
       { agent: agent.name, toolCount: tools.length, toolNames: tools.map((t) => t.name) },
@@ -417,6 +434,34 @@ export async function buildAgent(agent: Agent): Promise<any> {
   // 8. Backend — closes over store for SkillsMiddleware compatibility
   const backend = await buildBackend(agent, store, { sandbox });
 
+  // 9. Middleware stack — safety middleware (limits, retry, context editing) + lazy tools
+  const middleware = [...buildMiddleware(agent)];
+  if (agent.tools.length > 0 && skills.length > 0) {
+    const skillToTools = new Map<string, Set<string>>();
+    for (const skill of skills) {
+      if (!skill.content) continue;
+      const toolNames = parseFrontmatterList(skill.content, "allowed-tools");
+      if (toolNames.length > 0) {
+        skillToTools.set(skill.name, new Set(toolNames));
+      }
+    }
+
+    if (skillToTools.size > 0) {
+      const coreTools = new Set(agent.tools);
+      coreTools.add("list_my_runs");
+      const mapping: SkillToolMapping = { skillToTools, coreTools };
+      middleware.push(createLazyToolsMiddleware(mapping));
+      getLogger().debug(
+        {
+          agent: agent.name,
+          coreTools: [...coreTools],
+          lazySkills: [...skillToTools.keys()],
+        },
+        "Lazy tools middleware enabled",
+      );
+    }
+  }
+
   return createDeepAgent({
     name: agent.name,
     model,
@@ -427,6 +472,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     backend,
     subagents,
     skills: ["/skills/"],
-    middleware: buildMiddleware(agent),
+    middleware,
   });
 }

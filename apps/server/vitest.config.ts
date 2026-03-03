@@ -4,5 +4,8 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     testTimeout: 5_000,
+    deps: {
+      inline: ["langchain"],
+    },
   },
 });

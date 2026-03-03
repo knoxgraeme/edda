@@ -6,7 +6,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ChannelPlatform } from "@edda/db";
+import type { ChannelPlatform, PendingAction } from "@edda/db";
 
 /** Result of parsing a platform-specific inbound message. */
 export interface ParsedMessage {
@@ -55,4 +55,8 @@ export interface ChannelAdapter {
   // --- UX ---
   /** Send a typing indicator. Called periodically during agent execution. */
   sendTypingIndicator?(externalId: string): Promise<void>;
+
+  // --- Confirmations ---
+  /** Send an action confirmation prompt with approve/reject buttons. */
+  sendActionPrompt?(externalId: string, action: PendingAction): Promise<MessageHandle | void>;
 }
