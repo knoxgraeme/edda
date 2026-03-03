@@ -35,6 +35,7 @@ import { getSearchTool } from "../search.js";
 import { loadMCPTools } from "../mcp/client.js";
 import { allTools, loadCommunityTools } from "./tools/index.js";
 import { buildBackend } from "./backends.js";
+import { buildMiddleware } from "./middleware.js";
 import { SecureSandbox, createSandbox } from "./sandbox.js";
 import { getLogger } from "../logger.js";
 import { isGeminiModel, normalizeToolForGemini } from "./normalize-schemas.js";
@@ -426,5 +427,6 @@ export async function buildAgent(agent: Agent): Promise<any> {
     backend,
     subagents,
     skills: ["/skills/"],
+    middleware: buildMiddleware(agent),
   });
 }

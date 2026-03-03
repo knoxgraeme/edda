@@ -58,6 +58,7 @@ The server is built around **LangGraph** for agentic orchestration and **LangCha
 
 - **`src/index.ts`** — Entry point; orchestrates startup
 - **`src/agent/build-agent.ts`** — Unified agent factory: `buildAgent(agent)` builds any agent from an `Agent` DB row with skill-based tool scoping, prompt building, and backend assembly
+- **`src/agent/middleware.ts`** — Middleware builder: `buildMiddleware(agent)` assembles per-agent middleware (tool call limits, model call limits, context editing, model retry). Defaults overridable via `agent.metadata.middleware`.
 - **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure), `/store/` (own namespace), cross-agent store mounts (`metadata.stores`)
 - **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
 - **`src/agent/tools/get-agents-md.ts`** — Returns current AGENTS.md content and token budget for the calling agent.
@@ -145,6 +146,7 @@ Edda uses a unified multi-agent architecture. All agents are built by `buildAgen
 - **Thread lifetimes**: `ephemeral` (new thread every run), `daily` (shared thread per day), `persistent` (single shared thread)
 - **Tool scoping**: Each agent's tools are resolved additively — union of `allowed-tools` from SKILL.md frontmatter across all skills, plus any individual tools in `agent.tools[]`. Empty = all tools (backward compatible). Each SKILL.md declares its required tools via `allowed-tools` YAML frontmatter.
 - **`metadata.stores`** — Cross-agent store access. Keys are agent names (or `"*"` for wildcard), values are `"read"` or `"readwrite"`. Example: `{ "daily_digest": "read", "*": "read" }`.
+- **`metadata.middleware`** — Per-agent middleware overrides. Keys: `toolCallRunLimit` (default 30), `modelCallRunLimit` (default 15), `toolLimits` (per-tool limits, e.g. `{ "web_search": 5 }`), `contextEditingTriggerTokens` (default 80000), `contextEditingKeepMessages` (default 5), `contextEditingExcludeTools` (tool names to skip clearing). All limits are per-run (reset each invocation).
 
 **Built-in system agents**:
 | Agent | Skills | Thread Lifetime | Schedules |
