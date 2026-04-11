@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Edda is a full-stack AI personal assistant ("second brain") built as a pnpm monorepo with Turbo. It has a LangGraph-based agent backend, a Next.js frontend, a shared PostgreSQL database package, and a CLI setup wizard.
+Edda is a full-stack AI personal assistant ("second brain") built as a pnpm monorepo with Turbo. It uses [deepagents](https://www.npmjs.com/package/deepagents) (built on LangGraph + LangChain) as its core agent runtime, a Next.js frontend, a shared PostgreSQL database package, and a CLI setup wizard.
 
 ## Monorepo Structure
 
@@ -54,31 +54,39 @@ pnpm init                         # Run interactive setup wizard
 
 ### Backend (`apps/server`)
 
-The server is built around **LangGraph** for agentic orchestration and **LangChain** for multi-provider LLM abstraction.
+The server is built on **[deepagents](https://www.npmjs.com/package/deepagents)** (`createDeepAgent()`) which wraps LangGraph and LangChain. Edda never uses LangGraph graph primitives (StateGraph, createReactAgent) directly — all agents are created via `createDeepAgent()`.
 
-- **`src/index.ts`** — Entry point; orchestrates startup
-- **`src/agent/build-agent.ts`** — Unified agent factory: `buildAgent(agent)` builds any agent from an `Agent` DB row with skill-based tool scoping, prompt building, and backend assembly
+#### Agent Runtime
+- **`src/agent/build-agent.ts`** — Unified agent factory: `buildAgent(agent)` builds any agent from an `Agent` DB row. Resolves model, gathers tools (built-in + MCP + community), scopes via skills, builds three-layer prompt, assembles CompositeBackend, resolves subagents, and calls `createDeepAgent()`. This is the single entry point — server startup, cron runner, and on-demand execution all use it.
 - **`src/agent/middleware.ts`** — Middleware builder: `buildMiddleware(agent)` assembles per-agent middleware (tool call limits, model call limits, context editing, model retry). Defaults overridable via `agent.metadata.middleware`.
-- **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure), `/store/` (own namespace), cross-agent store mounts (`metadata.stores`)
-- **`src/agent/tools/`** — Tool definitions (each exports a Zod schema)
-- **`src/agent/tools/get-agents-md.ts`** — Returns current AGENTS.md content and token budget for the calling agent.
-- **`src/mcp/client.ts`** — MCP client manager (multi-server, SSRF-safe fetch, OAuth support)
-- **`src/mcp/oauth-provider.ts`** — MCP OAuth provider (PKCE, token storage)
-- **`src/logger.ts`** — Structured logging via Pino with AsyncLocalStorage trace context. `getLogger()` returns the contextual logger; `withTraceId(bindings, fn)` scopes a traceId to an async call tree. Uses `pino-pretty` in development. Sensitive data (DB URLs, API keys) is auto-redacted in error serializers.
-- **`src/llm.ts`** — LLM model-string resolver: `getModelString(agentProvider?, agentModel?)` returns `provider:model` strings for deepagents/LangChain's `initChatModel`. Maps Edda DB provider names to LangChain keys via `PROVIDER_MAP`. Per-agent overrides are nullable (NULL = inherit from `settings` table).
-- **`src/embed.ts`** — Embedding provider factory (Voyage, OpenAI, Google)
-- **`src/search.ts`** — Search tool factory
-- **`src/store.ts`** — LangGraph store backend factory
+- **`src/agent/middleware/lazy-tools.ts`** — Progressive tool disclosure: hides skill-specific tools until the agent reads the corresponding SKILL.md. Tracks activated skills by intercepting `read_file` calls.
+- **`src/agent/backends.ts`** — CompositeBackend factory: `/skills/` (progressive disclosure via deepagents StoreBackend), `/store/` (own namespace, persistent cross-thread), cross-agent store mounts via `metadata.stores`. Includes `ReadOnlyStoreBackend` for permission-enforced cross-agent reads and `SandboxCompositeBackend` for code execution.
+- **`src/agent/interrupt-wrapper.ts`** — Tool-level approval system: wraps `"always"` interrupt tools with a gating function that creates `pending_actions` DB rows and returns a structured JSON response to the agent.
+- **`src/agent/execute-approved-action.ts`** — After user approves a gated tool call, finds the original tool and executes it, optionally injecting the result back into the agent's thread.
+- **`src/agent/resolve-action.ts`** — Orchestrates approval resolution: atomic DB update, channel surface cleanup (remove buttons), and tool execution.
+- **`src/agent/sandbox.ts`** — `SecureSandbox` wrapping `@langchain/node-vfs` VfsSandbox with shell injection prevention, global command denylist, optional skill-level command allowlist, and env stripping. Guardrail only — not a security boundary (no process/filesystem isolation).
+- **`src/agent/skill-utils.ts`** — Writes SKILL.md files to LangGraph BaseStore for deepagents progressive disclosure. Parses YAML frontmatter for `allowed-tools` and `allowed-commands`.
+- **`src/agent/run-execution.ts`** — Shared agent invocation: `executeAgentRun()` called by cron and on-demand runs.
+
+#### Tools & Skills
+- **`src/agent/tools/`** — 46+ tool definitions (each exports a Zod schema). Categories: items (CRUD, search, batch), lists, entities (upsert, link, profile), types, threads, settings, MCP connections, confirmations, agents (create, run, update, delete), AGENTS.md (get/save), notifications, channels, reminders, schedules, skills.
+- **`skills/`** — 14 SKILL.md files with YAML frontmatter: `admin`, `agent-creation`, `capture`, `coding`, `daily-digest`, `manage`, `memory-maintenance`, `recall`, `reminders`, `self-improvement`, `self-reflect`, `skill-management`, `type-evolution`, `weekly-report`. Skills declare `allowed-tools` and optionally `allowed-commands` in frontmatter.
+
+#### Infrastructure
+- **`src/index.ts`** — Entry point; orchestrates startup (migrations, agent build, cron, channels)
+- **`src/server/index.ts`** — HTTP server with SSE streaming endpoint (`POST /api/stream`), thread management, agent run API, semantic search, pending action resolution, MCP OAuth callback, and channel webhooks.
+- **`src/llm.ts`** — LLM model-string resolver: `getModelString()` returns `provider:model` strings for `initChatModel`. `resolveModel()` handles providers not in LangChain's registry (OpenRouter, Minimax, etc.) by direct class instantiation. 17+ providers: Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock, xAI, DeepSeek, Cerebras, Fireworks, Together, Azure, OpenRouter, Minimax, Moonshot, ZhipuAI.
+- **`src/embed.ts`** — Embedding provider factory (Voyage, OpenAI, Google). Formats text as `"${type}: ${content}${summary}"` for consistent vector space. Batch embedding with 96-item chunks.
+- **`src/search.ts`** — Web search tool factory (Tavily, Brave, Serper, SerpAPI, DuckDuckGo)
+- **`src/store.ts`** — LangGraph `PostgresStore` singleton for persistent cross-thread state
 - **`src/checkpointer.ts`** — State checkpointing backend (postgres, sqlite, or memory)
-- **`src/skills/`** — Modular agent capabilities: `admin`, `capture`, `daily_digest`, `manage`, `memory_maintenance`, `recall`, `reminders`, `self_improvement`, `self_reflect`, `type_evolution`, `weekly_report`
-- **`src/cron.ts`** — Local cron runner using node-cron; reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s
-- **`src/channels/`** — External channel adapters for delivering agent output. `telegram.ts` (webhook-based Telegram bot), `discord.ts` (Gateway WebSocket via discord.js), `slack.ts` (Socket Mode via @slack/bolt), `deliver.ts` (routes messages to platform adapters), `handle-message.ts` (platform-agnostic inbound handler), `adapter.ts` (ChannelAdapter interface), `utils.ts` (shared helpers like `splitMessage`)
-- **`src/agent/stream-to-adapter.ts`** — Streaming delivery with debounced edits and adapter fallback behavior
-- **`src/utils/notify.ts`** — Multi-target notification delivery; routes to inbox (DB row), announce (channel delivery via `deliverToChannel`), or agent (triggers agent run)
-- **`src/utils/reminder-recurrence.ts`** — Cron expression and interval string parsing, validation, and next-date computation (uses `cron-parser`)
+- **`src/mcp/client.ts`** — MCP client manager: singleton `MultiServerMCPClient`, stdio/SSE/streamable-http transports, SSRF prevention (blocks private/encoded IPs), env sanitization, OAuth PKCE. Tools prefixed `mcp__${serverName}__${toolName}`.
+- **`src/logger.ts`** — Structured logging via Pino with AsyncLocalStorage trace context. Auto-redacts sensitive data.
+- **`src/cron.ts`** — Local cron runner (386 lines, node-cron); reads `agent_schedules` table, creates `task_run` records, syncs dynamically, polls for due reminders every 60s, handles `skip_when_empty_type` optimization, notification consumption/delivery, crash recovery.
+- **`src/channels/`** — External channel adapters: `telegram.ts` (grammY, webhook), `discord.ts` (discord.js, Gateway WebSocket), `slack.ts` (@slack/bolt, Socket Mode). Shared: `adapter.ts` (ChannelAdapter interface), `handle-message.ts` (platform-agnostic inbound: access control → channel→agent resolution → thread resolution → streaming), `deliver.ts` (outbound routing), `stream-to-adapter.ts` (debounced progressive edits, 1/sec, 50 char min, with fallback).
+- **`src/utils/notify.ts`** — Multi-target notification delivery. Targets: `inbox` (DB row), `announce:<agent_name>` (channel delivery), `agent:<agent_name>` (passive), `agent:<agent_name>:active` (triggers live run).
+- **`src/utils/reminder-recurrence.ts`** — Cron expression and interval string parsing/validation (uses `cron-parser`)
 - **`src/utils/semaphore.ts`** — Concurrency limiter (async-mutex) for parallel agent execution
-- **`src/utils/with-timeout.ts`** — Promise timeout wrapper for agent executions
-- **`src/utils/sanitize-error.ts`** — Strips internal details from errors before returning to agents
 - **`src/evals/`** — Vitest-based evaluation suite
 
 ### Frontend (`apps/web`)
@@ -97,24 +105,34 @@ Next.js App Router with React 19.
 
 Single source of truth for data model and queries.
 
-- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `AgentSchedule`, `TaskRun`, `Notification`, `Channel`, `TelegramUser`, `PairedUser`, `List`, `Thread`, `PendingItem`
+- **`src/types.ts`** — Core types: `Settings`, `Item`, `Entity`, `ItemType`, `McpConnection`, `AgentsMdVersion`, `Agent`, `AgentSchedule`, `TaskRun`, `Notification`, `Channel`, `TelegramUser`, `PairedUser`, `List`, `Thread`, `PendingItem`, `PendingAction`
 - **`src/index.ts`** — PostgreSQL connection pool and re-exports
-- **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getByName)
+- **`src/connection.ts`** — Pool singleton with `getPool()`
+- **`src/agents.ts`** — CRUD for agents (create, update, delete, list, getByName, modifyAgentTools)
 - **`src/agent-schedules.ts`** — Per-agent cron schedule CRUD
+- **`src/agents-md.ts`** — Versioned AGENTS.md storage: `getAgentsMdContent`, `saveAgentsMdVersion`, `pruneAgentsMdVersions`
+- **`src/items.ts`** — Item CRUD + semantic search: `createItem`, `updateItem`, `batchCreateItems`, `searchItems` (two-phase: cosine similarity → exponential time-decay re-ranking with 3x candidate over-fetch)
+- **`src/entities.ts`** — Entity CRUD with embedding: `upsertEntity`, `listEntityItems`, `getEntityProfile`
+- **`src/item-types.ts`** — Item type CRUD with per-type decay half-life
+- **`src/lists.ts`** — First-class lists with pgvector embeddings
 - **`src/task-runs.ts`** — Task run lifecycle (create, start, complete, fail, getRecent)
-- **`src/notifications.ts`** — Notification lifecycle: create, dismiss, claim due reminders, advance/complete recurring reminders, cleanup expired
+- **`src/notifications.ts`** — Notification lifecycle: create, dismiss, claim due reminders, advance/complete recurring reminders, cleanup expired, `resetStuckSendingReminders`
+- **`src/pending-actions.ts`** — Tool-level interrupt approvals: `createPendingAction`, `resolvePendingAction` (atomic), `expirePendingActions`, `addChannelRef`
 - **`src/channels.ts`** — Agent-channel link CRUD (agent_channels table)
 - **`src/telegram-users.ts`** — Telegram user pairing and lookup (legacy; see `paired-users.ts`)
 - **`src/paired-users.ts`** — Platform-agnostic user pairing: `checkPlatformUser`, `requestPlatformPairing`, approve/reject, pending list
+- **`src/confirmations.ts`** — Pending confirmation queries across items, entities, item_types, and pairings (unified `getPendingItems`)
 - **`src/threads.ts`** — Thread management with agent scoping and processing watermarks
-- **`src/lists.ts`** — First-class lists with pgvector embeddings
+- **`src/settings.ts`** — Settings CRUD (single-row config table)
+- **`src/skills.ts`** — Skill metadata storage and retrieval (DB-backed, not disk)
+- **`src/mcp-connections.ts`** — MCP connection CRUD
 - **`src/mcp-oauth.ts`** — OAuth state and token management for MCP connections
 - **`src/crypto.ts`** — AES-256-GCM encryption/decryption for sensitive credentials
-- **`src/confirmations.ts`** — Pending confirmation queries (item_types, entities)
 - **`src/dashboard.ts`** — Dashboard aggregation queries
-- **`src/skills.ts`** — Skill metadata storage and retrieval
-- **`migrations/`** — Ordered SQL migration files; applied via `pnpm migrate`
-- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `lists`, `mcp_connections`, `mcp_oauth_states`, `agents_md_versions`, `agents`, `agent_schedules`, `agent_channels`, `task_runs`, `notifications`, `threads`, `telegram_paired_users`, `paired_users`, `skills`
+- **`src/seed-settings.ts`** — Default settings seeder
+- **`src/migrate.ts`** — Migration runner
+- **`migrations/`** — 14 ordered SQL migration files; applied via `pnpm migrate`
+- Key tables: `settings`, `item_types`, `items` (with pgvector embeddings), `entities`, `item_entities`, `lists`, `mcp_connections`, `mcp_oauth_states`, `agents_md_versions`, `agents`, `agent_schedules`, `agent_channels`, `task_runs`, `notifications`, `threads`, `telegram_paired_users`, `paired_users`, `skills`, `pending_actions`
 
 ### Configuration Strategy
 
@@ -135,12 +153,48 @@ Notable DB settings (in `settings` table):
 - `task_max_concurrency` — Max parallel agent executions (default: 3)
 - `checkpointer_backend` — `postgres`, `sqlite`, or `memory` (server uses this directly)
 - `cron_runner` — `local` or `langgraph` (server currently runs local; logs fallback when set to `langgraph`)
+- `sandbox_provider` — `none`, `node-vfs`, `daytona`, or `deno` (only `node-vfs` implemented; default: `node-vfs`)
+- `embedding_provider` / `embedding_model` / `embedding_dimensions` — configurable embedding backend
+- `agents_md_token_budget` — max token budget for AGENTS.md content (default: 4000)
+- `agents_md_max_versions` — versions to retain before pruning (default: 30)
+- `approval_new_entity` — `auto` or `confirm` (default: auto)
+- `approval_new_type` — `auto` or `confirm` (default: confirm)
+- `user_timezone` — IANA timezone for date display and cron scheduling
+- `user_display_name` — injected into system prompt context
+
+### deepagents Integration
+
+Edda uses `deepagents` (v1.7.0) as a thin orchestration layer. The `createDeepAgent()` call in `buildAgent()` receives: model, tools, systemPrompt, checkpointer, store, backend, subagents, skills, middleware. Everything else (scheduling, notifications, channels, approvals, memory management) is custom Edda code.
+
+**What deepagents provides:**
+- Agent runtime (replaces direct StateGraph/createReactAgent usage)
+- `CompositeBackend` + `StoreBackend` for virtual filesystem mounts
+- `SandboxBackendProtocol` for code execution
+- Native `task` tool for synchronous subagent delegation (auto-injected when subagents present)
+- Progressive skill disclosure via `/skills/` mount
+
+**What Edda builds on top:**
+- Scheduling (`cron.ts`) + reminder polling
+- Notification system (`notify.ts`) + inbox
+- Tool-level approvals (`interrupt-wrapper.ts` + `pending_actions` table)
+- Channel adapters (Telegram, Discord, Slack)
+- Streaming delivery (`stream-to-adapter.ts`)
+- Memory system (items + pgvector + AGENTS.md)
+- Lazy tools middleware (`middleware/lazy-tools.ts`)
+
+### Tool Approval System
+
+Two parallel approval systems exist:
+
+1. **Entity/type/pairing confirmations** (`confirmations.ts`) — `confirmed` boolean on items, entities, item_types, and paired_users. Surfaced in inbox Confirmations tab. Controlled by `approval_new_entity` and `approval_new_type` settings.
+
+2. **Tool-level interrupts** (`pending_actions` table) — for destructive tools (delete_item, delete_agent, etc.). Implemented via `interrupt-wrapper.ts` which wraps `"always"` tools with a gating function. Flow: agent calls gated tool → wrapper creates `pending_actions` row → returns JSON to agent → user approves via channel button or API → `resolve-action.ts` executes the original tool. Per-tool config in `toolInterruptDefaults` with per-agent overrides via `metadata.interrupt_overrides`.
 
 ### Agents (Multi-Agent System)
 
 Edda uses a unified multi-agent architecture. All agents are built by `buildAgent(agent)` — there is no separate orchestrator factory. A `default_agent` setting (default: `edda`) determines which agent serves as the conversational interface. Any agent can be the default.
 
-- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], thread_lifetime, trigger, model_settings_key, enabled flag, metadata.
+- **`agents`** table — Single source of truth for all agents (system + user-created). Each row defines: name, description, system_prompt, skills[], tools[], subagents[], thread_lifetime, thread_scope, trigger, model_provider, model, enabled flag, memory_capture, memory_self_reflect, metadata.
 - **`agent_schedules`** table — Per-agent cron triggers. Each row defines: agent_id, name, cron expression, prompt (user message), optional thread_lifetime override, enabled flag, `notify` (target array for delivery on completion/failure), `notify_expires_after` (interval for notification expiry), `skip_when_empty_type` (skip run if no new items of this type since last completion). One agent can have multiple schedules.
 - **`task_runs`** table — Tracks every agent execution with full lifecycle: pending → running → completed/failed. Records trigger source, duration, token usage, output summary, and errors
 - **Thread lifetimes**: `ephemeral` (new thread every run), `daily` (shared thread per day), `persistent` (single shared thread)
@@ -157,6 +211,20 @@ Edda uses a unified multi-agent architecture. All agents are built by `buildAgen
 
 Per-agent memory config: `memory_capture` (inline extraction during conversation) and `memory_self_reflect` (scheduled self-improvement). New user-created agents automatically get the `self_improvement` skill, a seeded AGENTS.md, and default `self_reflect` schedule.
 
+### Cross-Agent Collaboration
+
+Three delegation mechanisms:
+
+1. **Sync delegation** (`task` tool, deepagents native) — when an agent has `subagents[]`, deepagents injects a `task` tool. Blocks until subagent completes, returns result inline. Each subagent gets its own scoped tools, skills, model, and system prompt. Resolved at build time via `resolveSubagents()`. Max depth not enforced by Edda (deepagents default).
+
+2. **Async delegation** (`run_agent` tool) — fire-and-forget. Creates `task_run` with `trigger: "agent"`, executes target in background with concurrency limiting (`task_max_concurrency`). Returns `task_run_id` immediately; caller polls via `get_task_run`.
+
+3. **Cross-agent notifications** — `send_notification` with `target: "agent:<name>"` (passive, read on next run) or `target: "agent:<name>:active"` (triggers immediate run consuming the notification).
+
+**Cross-agent store access** (`metadata.stores`): Each agent's `/store/` is namespaced by agent name. `metadata.stores` declaratively mounts other agents' stores: `{ "daily_digest": "read", "*": "read" }`. Mounted as `/store/{name}/` with read or readwrite permission.
+
+**Agent discovery**: `list_agents` tool returns all agents; `get_task_run` tool checks async run status.
+
 ### System Prompt Architecture (Three Layers)
 
 The assembled system prompt has three layers with distinct ownership:
@@ -172,9 +240,23 @@ Built by `buildPrompt()` in `src/agent/build-agent.ts`.
 AGENTS.md is the agent's operating notes about how to serve a specific user — communication preferences, behavioral patterns, quality standards, and corrections. Stored in `agents_md_versions` DB table (not on disk), scoped per agent.
 
 - **`src/agent/tools/get-agents-md.ts`** — Returns current AGENTS.md content and token budget for the calling agent.
-- **`src/agent/tools/save-agents-md.ts`** — Writes curated AGENTS.md content to DB. Used by `self_reflect` (scheduled) and `self_improvement` (real-time).
+- **`src/agent/tools/save-agents-md.ts`** — Writes full AGENTS.md content as new version (max 8000 chars). Prunes old versions, invalidates agent cache.
 - **Seeding**: `create_agent` tool auto-seeds an empty AGENTS.md with section scaffolding (Communication, Patterns, Standards, Corrections)
-- **Self-improvement loop**: Real-time corrections via `self_improvement` skill → scheduled cross-session analysis via `self_reflect` (reviews `session_note` items → updates AGENTS.md)
+
+### Self-Improvement Loop
+
+The agent edits **two things** during self-improvement:
+
+1. **AGENTS.md** (Layer 2, how to serve the user) — via `save_agents_md`. Updated in real-time by `self_improvement` skill during conversation, and weekly by `self_reflect` skill.
+2. **`agent.system_prompt`** (Layer 1, what the agent does) — via `update_agent`. Only when task-level patterns are clear across 3+ session notes.
+
+**Layer 3 (system context) is not agent-editable** — it's assembled deterministically by `buildPrompt()` from settings (date, timezone, user name, memory capture flag, capabilities, rules).
+
+**The loop:**
+- Real-time: user corrects agent → `self_improvement` skill fires → agent updates AGENTS.md immediately (first action, before responding) → also creates `session_note` item
+- Weekly: `self_reflect` skill (Sunday 3am, cron) → searches `session_note` items since last run → cross-session synthesis → surgical AGENTS.md updates → optionally updates `system_prompt` if 3+ notes support a task-level change
+- Maintenance: `memory_maintenance` skill (Sunday 4am) → merges duplicate items (>0.8 similarity), archives stale items (>90 days unreinforced), resolves contradictions
+- Skip optimization: `skip_when_empty_type: "session_note"` on the self_reflect schedule → zero LLM cost when no new notes exist
 
 ### Memory System
 
@@ -190,7 +272,7 @@ Memory uses three complementary mechanisms:
 - **`session_note` item type** — Agent observations about conversations (corrections, quality signals, user feedback). Created during conversation, consumed by `self_reflect` for cross-session improvement.
 - **`self_reflect` skill** — Scheduled per-agent self-improvement. Searches session notes since last run, identifies recurring patterns, updates AGENTS.md. Skipped (zero LLM cost) when no new session notes exist via `skip_when_empty_type` on the schedule.
 - **`get_entity_profile` tool** — Dynamically assembles a complete entity profile from `entities` + linked `items`; always fresh, no cron needed
-- **Dedup**: Semantic similarity thresholds — reinforce ≥0.95, supersede 0.85–0.95, create new otherwise
+- **Dedup**: Only for knowledge types (`preference`, `learned_fact`, `pattern`) in `create_item`. Threshold 0.95 → reinforce existing item (`last_reinforced_at`) instead of creating duplicate. `batch_create_items` bypasses dedup. The capture skill also instructs the agent to search at 0.85 before creating.
 
 ### Notification System
 
@@ -217,6 +299,27 @@ Agents can be linked to external messaging platforms for receiving messages and 
 - **`apps/server/src/channels/handle-message.ts`** — Shared inbound handler: resolves channel→agent, builds thread, streams response.
 - **`apps/server/src/agent/stream-to-adapter.ts`** — Streaming delivery with debounced message edits and fallback to `send()`.
 - **Announcement flow** — When a scheduled agent run completes, the cron runner queries `getChannelsByAgent(agentId, { receiveAnnouncements: true })` and delivers the last assistant message to each linked channel.
+
+### Sandbox / Code Execution
+
+Agents with the `execute` tool get a `SecureSandbox` wrapping `@langchain/node-vfs` VfsSandbox. Controlled by `sandbox_provider` setting (`none`, `node-vfs`, `daytona`, `deno` — only `node-vfs` is currently implemented).
+
+Security layers:
+- Shell injection prevention (blocks `$`, backticks, `;`, `&&`, `||`, `|`)
+- Global command denylist (env, sudo, kill, ssh, package managers, shell spawning)
+- Optional skill-level command allowlist via `allowed-commands` frontmatter
+- Environment sanitization (only HOME, PATH, NODE_ENV, TERM, LANG forwarded)
+
+**Not a security boundary** — VfsSandbox has no process/filesystem isolation. For untrusted agents, use a container-based provider (Daytona, Docker) — the schema supports it but implementations are not yet built.
+
+### Semantic Search Details
+
+`searchItems()` in `packages/db/src/items.ts` implements two-phase retrieval:
+
+1. **Candidate retrieval**: Cosine similarity filter `1 - (embedding <=> query) > threshold` (default 0.65). Fetches `limit * 3` candidates for re-ranking headroom.
+2. **Re-ranking**: Applies exponential time decay `similarity * exp(-ln2 * age / half_life)` where `half_life` is per-type configurable (default 30 days). `last_reinforced_at` resets the decay clock. Optional boosts for authorship and type.
+
+Superseded items (`superseded_by IS NOT NULL`) are excluded by default.
 
 ### MCP OAuth
 

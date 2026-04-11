@@ -9,6 +9,8 @@
 
 Edda is an open-source personal assistant powered by LLMs. It extracts knowledge from your conversations, learns your preferences, remembers corrections, and runs scheduled tasks automatically. It gets better at helping you over time.
 
+Built on [deepagents](https://www.npmjs.com/package/deepagents) (LangGraph + LangChain), PostgreSQL + pgvector, and Next.js.
+
 Self-hosted. Your infrastructure, your data.
 
 ## Why Edda?
@@ -37,14 +39,13 @@ You <──> Default agent (edda)
 
 ### Built-in agents
 
-| Agent | Skills | Schedules | Purpose |
-|-------|--------|-----------|---------|
-| **Edda** (default) | capture, recall, manage, admin | — | Conversational interface: save, search, organize, configure |
-| **Digest** | daily_digest, weekly_reflect | 7am daily, 3am Sunday | Daily summaries, weekly pattern analysis, dropped thread detection |
-| **Memory** | memory_extraction | 10pm nightly | Extract preferences, facts, and entities from conversations |
-| **Maintenance** | context_refresh, type_evolution | 5am and 6am daily | Refresh operating memory, evolve data schemas |
+| Agent | Skills | Thread | Schedules | Purpose |
+|-------|--------|--------|-----------|---------|
+| **edda** (default) | capture, recall, manage, admin, self-improvement, self-reflect, reminders | persistent | self-reflect (Sun 3am) | Conversational interface with inline memory capture |
+| **digest** | daily-digest, weekly-report | daily | daily-digest (7am), weekly-report (Sun 6pm) | Summaries and weekly reflections |
+| **maintenance** | type-evolution, memory-maintenance | ephemeral | type-evolution (monthly), memory-maintenance (Sun 4am) | Schema evolution, knowledge cleanup |
 
-All agents are configurable — change skills, schedules, models, or disable them. Any agent can be set as the default.
+All agents are configurable — change skills, schedules, models, or disable them. Any agent can be the default.
 
 ### Custom agents
 
@@ -54,14 +55,28 @@ Create agents through the chat interface or API:
 
 Each agent gets scoped tools (based on assigned skills), a configurable thread lifetime (`ephemeral`, `daily`, or `persistent`), and its own AGENTS.md operating memory with self-improvement built in.
 
-## Notifications
+## Notifications & Channels
 
-- **Inbox** — Web UI notifications
-- **Telegram** — Two-way messaging with proactive updates
-- **Announcements** — Scheduled run outputs pushed to linked channels
-- **Agent triggers** — One agent's output can trigger another agent
+### Delivery targets
 
-Reminders are also supported — time-based notifications (cron or interval) that fire without invoking an LLM.
+- **Inbox** — Web UI notifications with unread/read/dismissed lifecycle
+- **Channels** — Two-way messaging via Telegram, Discord, and Slack
+- **Announcements** — Scheduled run outputs pushed to agent's linked channels (zero LLM cost)
+- **Agent triggers** — `agent:<name>` (passive, read on next run) or `agent:<name>:active` (triggers immediate run)
+
+### Reminders
+
+Time-based notifications that fire without invoking an LLM. Created via `create_reminder` tool. Supports cron expressions (`0 9 * * 4`) and PostgreSQL intervals (`1 day`, `2 hours`). The cron runner polls every 60 seconds with atomic claims and crash recovery.
+
+### Channel adapters
+
+| Platform | Transport | Features |
+|----------|-----------|----------|
+| **Telegram** | grammY, webhook | Forum topic routing, inline approval buttons, voice memos |
+| **Discord** | discord.js, Gateway WebSocket | Slash commands (`/edda link\|unlink\|status`), streaming edits |
+| **Slack** | @slack/bolt, Socket Mode | Slash command (`/edda`), ephemeral responses |
+
+All adapters share: platform-agnostic inbound routing (`handle-message.ts`), access control via `paired_users`, and debounced progressive streaming (`stream-to-adapter.ts`).
 
 ## Memory system
 
@@ -69,19 +84,23 @@ Reminders are also supported — time-based notifications (cron or interval) tha
 
 Every item gets a vector embedding. Items are typed (note, task, preference, learned_fact, pattern, etc.) with optional metadata. Search is semantic — matches on meaning, not keywords.
 
-### Learning cycle
+### Self-improvement loop
 
-1. **During conversation** — `self_improvement` skill updates operating notes in real-time
-2. **After conversation** — `memory_extraction` pulls out implicit knowledge and writes a session summary
-3. **Nightly** — Memory agent processes any missed threads
-4. **Weekly** — Digest agent reviews session summaries, identifies recurring corrections and preferences, updates AGENTS.md
+1. **During conversation** — `self-improvement` skill updates AGENTS.md immediately when user corrects the agent or expresses preferences. Also creates `session_note` items recording observations.
+2. **Weekly reflection** — `self-reflect` skill (Sunday 3am) searches session notes since last run, identifies recurring patterns, surgically updates AGENTS.md. Optionally updates agent prompt if 3+ notes support a task-level change. Skipped (zero LLM cost) when no new session notes exist.
+3. **Weekly maintenance** — `memory-maintenance` skill (Sunday 4am) merges near-duplicate items (>0.8 similarity), archives stale items (>90 days unreinforced), resolves contradictions.
+
+### Implicit capture
+
+When `memory_capture` is enabled on an agent, the `capture` skill extracts implicit knowledge (preferences, facts, patterns) inline during natural conversation. Lightweight: 1-2 tool calls per turn.
 
 ### Deduplication
 
-Automatic, based on semantic similarity:
-- **95%+** — Existing item reinforced
-- **85–95%** — Old item superseded
-- **Below 85%** — New item created
+Automatic for knowledge types (`preference`, `learned_fact`, `pattern`) in `create_item`:
+- **95%+ similarity** — Existing item reinforced (`last_reinforced_at` updated, decay timer reset)
+- **Below 95%** — New item created
+
+The `capture` skill also instructs the agent to search at 0.85 before creating. `batch_create_items` bypasses dedup for performance.
 
 ### Entity tracking
 
@@ -99,19 +118,23 @@ edda/
 
 ### Tech stack
 
-- **Agent framework**: [LangGraph](https://langchain-ai.github.io/langgraphjs/) + [LangChain](https://js.langchain.com/)
-- **LLM providers**: Anthropic (default), OpenAI, Google, Groq, Ollama, Mistral, AWS Bedrock
+- **Agent runtime**: [deepagents](https://www.npmjs.com/package/deepagents) (wraps [LangGraph](https://langchain-ai.github.io/langgraphjs/) + [LangChain](https://js.langchain.com/))
+- **LLM providers**: 17+ — Anthropic, OpenAI, Google, Groq, Ollama, Mistral, Bedrock, xAI, DeepSeek, Cerebras, Fireworks, Together, Azure, OpenRouter, Minimax, Moonshot, ZhipuAI
 - **Embeddings**: Voyage AI (default), OpenAI, Google
 - **Database**: PostgreSQL + [pgvector](https://github.com/pgvector/pgvector)
 - **Frontend**: Next.js 16, React 19, Tailwind CSS
+- **Channels**: Telegram (grammY), Discord (discord.js), Slack (@slack/bolt)
 - **Scheduling**: node-cron with concurrency control
+- **MCP**: Multi-server client with stdio/SSE/streamable-http transports, OAuth PKCE
 
 ### Design decisions
 
 - **Database-driven configuration** — LLM provider, model, and feature flags live in a `settings` table. Change models without redeploying.
-- **Skill-based tool scoping** — Each skill declares required tools in SKILL.md frontmatter. Agents only access tools from their assigned skills.
+- **Skill-based tool scoping** — Each skill declares required tools in SKILL.md frontmatter. Agents only access tools from their assigned skills. 14 built-in skills.
 - **Append-only migrations** — Schema changes are always new files, never edits to existing ones.
-- **Three-layer system prompt** — Agent task description + operating memory (AGENTS.md) + deterministic system context. Each layer has distinct ownership and update cadence.
+- **Three-layer system prompt** — Agent task description (agent-editable) + operating memory/AGENTS.md (agent-editable) + deterministic system context (protected). Each layer has distinct ownership and update cadence.
+- **Tool-level approvals** — Destructive tools (delete_item, delete_agent, etc.) are gated with configurable interrupt levels (`always`/`suggest`/`never`). Per-agent overrides via `metadata.interrupt_overrides`.
+- **Cross-agent collaboration** — Sync delegation (`task` tool, deepagents native), async delegation (`run_agent`, fire-and-forget), cross-agent store access (`metadata.stores`), and cross-agent notifications.
 
 ## Prerequisites
 
@@ -174,52 +197,47 @@ Server on port 8000, web UI on port 3000. Open [http://localhost:3000](http://lo
 | Variable | Description |
 |----------|------------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `LLM_PROVIDER` | `anthropic`, `openai`, `google`, `groq`, `ollama`, `mistral`, or `bedrock` |
-| `LLM_MODEL` | Model identifier (e.g., `claude-sonnet-4-20250514`) |
-| Provider API key | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc. |
-| `EMBEDDING_PROVIDER` | `voyage`, `openai`, or `google` |
-| Embedding API key | `VOYAGEAI_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` |
+| Provider API key | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, etc. |
+
+LLM provider, model, embedding provider/model, and feature flags are stored in the **`settings` database table** (not env vars). Configure via the web UI settings page, `pnpm db:seed-settings`, or the `update_settings` agent tool.
 
 ### Optional
 
 | Variable | Description |
 |----------|------------|
 | `EDDA_PASSWORD` | Password-protect the web UI |
-| `SEARCH_PROVIDER` | Web search: `tavily`, `brave`, `serper`, `serpapi` (+ API key) |
-| `WOLFRAM_APP_ID` | WolframAlpha tool |
+| `EDDA_ENCRYPTION_KEY` | Required for MCP OAuth token encryption (`openssl rand -base64 32`) |
 | `TELEGRAM_BOT_TOKEN` | Telegram integration (see below) |
+| `TELEGRAM_WEBHOOK_SECRET` | Required when `TELEGRAM_BOT_TOKEN` is set |
+| `DISCORD_BOT_TOKEN` | Discord integration (Gateway WebSocket) |
+| `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` | Slack integration (Socket Mode) |
 | `INTERNAL_API_SECRET` | Backend auth for server API |
-| `TELEGRAM_WEBHOOK_SECRET` | Telegram webhook verification secret |
 | `LANGSMITH_API_KEY` | LangSmith tracing |
-| `ALLOW_FILESYSTEM_ACCESS` | `true` + `FILESYSTEM_ROOT` for agent file access |
 | `CORS_ORIGIN` | Backend CORS origin (default: `http://localhost:3000`) |
 
-### Telegram setup
+### Channel setup
 
-Two-way messaging from your phone, with per-topic agent routing.
+#### Telegram
 
-**1. Create a bot** — [@BotFather](https://t.me/BotFather) → `/newbot`. To receive regular messages in group topics (not just commands), disable Group Privacy in Bot Settings.
+**1. Create a bot** — [@BotFather](https://t.me/BotFather) → `/newbot`. Disable Group Privacy for topic-based routing.
 
-**2. Set environment variables**
+**2. Set environment variables** — `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
 
-```
-TELEGRAM_BOT_TOKEN=<your token>
-TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 32>
-TELEGRAM_WEBHOOK_URL=https://your-server.railway.app/api/telegram/webhook
-```
+**3. Approve users** — First-time users get a pairing request in the web UI inbox. Approve to grant access.
 
-`TELEGRAM_WEBHOOK_URL` defaults to `http://localhost:8000/api/telegram/webhook` if omitted (use ngrok for local development).
+**4. Bot commands** — `/link <agent_name>`, `/unlink`, `/status`. DMs route to the default agent.
 
-**3. Approve users** — First-time users get a pairing request visible in the web UI. Approve to grant access.
+#### Discord
 
-**4. Bot commands**
-- `/link <agent_name>` — Link a forum topic to an agent (DMs route to the default agent)
-- `/unlink` — Remove the link
-- `/status` — Show linked agent and recent activity
+Set `DISCORD_BOT_TOKEN`. The bot connects via Gateway WebSocket. Slash commands: `/edda link|unlink|status`.
+
+#### Slack
+
+Set `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` (both required). Uses Socket Mode (no public URL needed). Slash command: `/edda link|unlink|status`.
 
 ### MCP connections
 
-Edda supports remote [MCP](https://modelcontextprotocol.io/) servers for additional tools. API keys are stored as env var references in the database (name only, not the secret). MCP auth env vars must start with `MCP_AUTH_`.
+Edda supports [MCP](https://modelcontextprotocol.io/) servers for additional tools via stdio, SSE, or streamable-http transports. Includes SSRF prevention (blocks private/encoded IPs), environment sanitization, and OAuth PKCE for remote servers. Tokens encrypted at rest with AES-256-GCM (requires `EDDA_ENCRYPTION_KEY`).
 
 ## Deploying to Railway
 
@@ -233,16 +251,16 @@ New Railway project + **PostgreSQL** add-on (includes pgvector).
 
 ```
 DATABASE_URL          → (auto-populated by PostgreSQL add-on)
-LLM_PROVIDER          → anthropic
-LLM_MODEL             → claude-sonnet-4-20250514
 ANTHROPIC_API_KEY     → sk-ant-...
-EMBEDDING_PROVIDER    → voyage
 VOYAGEAI_API_KEY      → ...
 NODE_ENV              → production
 EDDA_PASSWORD         → (set for public deployments)
+EDDA_ENCRYPTION_KEY   → (openssl rand -base64 32)
 INTERNAL_API_SECRET   → (openssl rand -hex 32)
 CORS_ORIGIN           → https://your-web-domain.railway.app
 ```
+
+LLM provider/model and embedding provider/model are configured in the DB `settings` table after first deploy (via `pnpm db:seed-settings` or the web UI settings page).
 
 ### 3. Connect repo
 
@@ -277,20 +295,22 @@ pnpm eval             # Eval suite (server)
 apps/
   server/
     src/
-      agent/           # Agent factory, tools, skill loading
-      channels/        # Platform adapters (Telegram)
-      server/          # HTTP server, API routes
+      agent/           # Agent factory, tools, middleware, sandbox, backends
+      channels/        # Platform adapters (Telegram, Discord, Slack)
+      mcp/             # MCP client, OAuth, SSRF protection
+      server/          # HTTP server, SSE streaming, API routes
       utils/           # Notifications, reminders, concurrency
-    skills/            # SKILL.md definitions
+    skills/            # 14 SKILL.md definitions with YAML frontmatter
     evals/             # Eval suite
   web/
-    src/app/           # Next.js pages and API routes
+    src/app/           # Next.js pages (chat, agents, inbox, settings, etc.)
+    src/app/api/v1/    # REST API routes
     src/components/    # UI components
 
 packages/
   db/
     src/               # Queries, types, connection pool
-    migrations/        # SQL files (append-only)
+    migrations/        # 14 SQL files (append-only)
   cli/src/             # Setup wizard
 ```
 
