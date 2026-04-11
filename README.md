@@ -31,10 +31,9 @@ Edda runs a **unified multi-agent system**. Any agent can serve as the default c
 You <──> Default agent (edda)
               |
               |── Digest ────── Daily summaries, weekly reflections
-              |── Memory ────── Nightly knowledge extraction
-              |── Maintenance ── Context refresh, schema evolution
+              |── Maintenance ── Type evolution, knowledge cleanup
               |
-              |── Custom agents
+              |── Custom agents (created by you or by other agents)
 ```
 
 ### Built-in agents
@@ -49,11 +48,27 @@ All agents are configurable — change skills, schedules, models, or disable the
 
 ### Custom agents
 
-Create agents through the chat interface or API:
+Agents can create other agents. Ask in chat or let an existing agent do it:
 
 > "Create an agent called researcher with the recall and capture skills, triggered on demand, with an ephemeral thread lifetime"
 
-Each agent gets scoped tools (based on assigned skills), a configurable thread lifetime (`ephemeral`, `daily`, or `persistent`), and its own AGENTS.md operating memory with self-improvement built in.
+The `agent-creation` skill walks through a guided workflow — gathering purpose, triggers, schedules, output targets, and boundaries — then writes the system prompt and configures everything. Each new agent gets scoped tools (based on assigned skills), a configurable thread lifetime (`ephemeral`, `daily`, or `persistent`), its own AGENTS.md operating memory, and a default self-reflect schedule.
+
+Agents collaborate through sync delegation (`task` tool — blocks and returns inline), async delegation (`run_agent` — fire-and-forget), and cross-agent notifications.
+
+### Skills
+
+Skills are discoverable and installable at runtime. The `skill-management` skill runs `npx skillfish search` and `npx skillfish add` to browse and download from the [skillfish registry](https://mcpmarket.com), then installs them to the database via `install_skill`. Installing a skill doesn't auto-assign it — use `update_agent` to grant access.
+
+14 built-in skills: admin, agent-creation, capture, coding, daily-digest, manage, memory-maintenance, recall, reminders, self-improvement, self-reflect, skill-management, type-evolution, weekly-report.
+
+### MCP connections
+
+Connect to external [MCP](https://modelcontextprotocol.io/) servers through chat. Give the agent a URL and it handles the rest:
+
+> "Connect to the GitHub MCP server at https://api.githubcopilot.com/mcp/"
+
+For servers that require OAuth, Edda probes the endpoint, detects the 401, initiates the OAuth PKCE flow, and returns an authorization URL. Click it, authorize, and the connection activates automatically. Supports stdio (local commands like `npx`/`uvx`), SSE, and streamable-http transports.
 
 ## Notifications & Channels
 
@@ -86,9 +101,9 @@ Every item gets a vector embedding. Items are typed (note, task, preference, lea
 
 ### Self-improvement loop
 
-1. **During conversation** — `self-improvement` skill updates AGENTS.md immediately when user corrects the agent or expresses preferences. Also creates `session_note` items recording observations.
-2. **Weekly reflection** — `self-reflect` skill (Sunday 3am) searches session notes since last run, identifies recurring patterns, surgically updates AGENTS.md. Optionally updates agent prompt if 3+ notes support a task-level change. Skipped (zero LLM cost) when no new session notes exist.
-3. **Weekly maintenance** — `memory-maintenance` skill (Sunday 4am) merges near-duplicate items (>0.8 similarity), archives stale items (>90 days unreinforced), resolves contradictions.
+1. **During conversation** — `self-improvement` skill updates AGENTS.md immediately when the user corrects the agent or expresses preferences. Also creates `session_note` items recording observations.
+2. **Self-reflect** (default: Sunday 3am, user-adjustable via `agent_schedules`) — searches session notes since last run, identifies recurring patterns, surgically updates AGENTS.md. Optionally updates the agent's system prompt if 3+ notes support a task-level change. Skipped (zero LLM cost) when no new session notes exist.
+3. **Memory maintenance** (default: Sunday 4am, user-adjustable) — merges near-duplicate items (>0.8 similarity), archives stale items (>90 days unreinforced), resolves contradictions.
 
 ### Implicit capture
 
@@ -110,7 +125,7 @@ Named entities (people, projects, companies, tools) are extracted automatically 
 
 ```
 edda/
-  apps/server     — LangGraph agent backend (Node.js/TypeScript, port 8000)
+  apps/server     — deepagents/LangGraph agent backend (Node.js/TypeScript, port 8000)
   apps/web        — Next.js frontend (React 19, port 3000)
   packages/db     — Shared database client, queries, types, migrations
   packages/cli    — Interactive setup wizard
@@ -234,10 +249,6 @@ Set `DISCORD_BOT_TOKEN`. The bot connects via Gateway WebSocket. Slash commands:
 #### Slack
 
 Set `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` (both required). Uses Socket Mode (no public URL needed). Slash command: `/edda link|unlink|status`.
-
-### MCP connections
-
-Edda supports [MCP](https://modelcontextprotocol.io/) servers for additional tools via stdio, SSE, or streamable-http transports. Includes SSRF prevention (blocks private/encoded IPs), environment sanitization, and OAuth PKCE for remote servers. Tokens encrypted at rest with AES-256-GCM (requires `EDDA_ENCRYPTION_KEY`).
 
 ## Deploying to Railway
 

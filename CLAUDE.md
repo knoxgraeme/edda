@@ -247,14 +247,14 @@ AGENTS.md is the agent's operating notes about how to serve a specific user — 
 
 The agent edits **two things** during self-improvement:
 
-1. **AGENTS.md** (Layer 2, how to serve the user) — via `save_agents_md`. Updated in real-time by `self_improvement` skill during conversation, and weekly by `self_reflect` skill.
+1. **AGENTS.md** (Layer 2, how to serve the user) — via `save_agents_md`. Updated in real-time by `self_improvement` skill during conversation, and on schedule by `self_reflect` skill (default: Sunday 3am, user-adjustable via `agent_schedules`).
 2. **`agent.system_prompt`** (Layer 1, what the agent does) — via `update_agent`. Only when task-level patterns are clear across 3+ session notes.
 
 **Layer 3 (system context) is not agent-editable** — it's assembled deterministically by `buildPrompt()` from settings (date, timezone, user name, memory capture flag, capabilities, rules).
 
 **The loop:**
 - Real-time: user corrects agent → `self_improvement` skill fires → agent updates AGENTS.md immediately (first action, before responding) → also creates `session_note` item
-- Weekly: `self_reflect` skill (Sunday 3am, cron) → searches `session_note` items since last run → cross-session synthesis → surgical AGENTS.md updates → optionally updates `system_prompt` if 3+ notes support a task-level change
+- Scheduled: `self_reflect` skill (default Sunday 3am, user-adjustable via `agent_schedules`) → searches `session_note` items since last run → cross-session synthesis → surgical AGENTS.md updates → optionally updates `system_prompt` if 3+ notes support a task-level change
 - Maintenance: `memory_maintenance` skill (Sunday 4am) → merges duplicate items (>0.8 similarity), archives stale items (>90 days unreinforced), resolves contradictions
 - Skip optimization: `skip_when_empty_type: "session_note"` on the self_reflect schedule → zero LLM cost when no new notes exist
 
