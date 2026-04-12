@@ -9,17 +9,17 @@
 
 Edda is an open-source personal assistant powered by LLMs. It extracts knowledge from your conversations, learns your preferences, remembers corrections, and runs scheduled tasks automatically. It gets better at helping you over time.
 
-Built on [deepagents](https://www.npmjs.com/package/deepagents) (LangGraph + LangChain), PostgreSQL + pgvector, and Next.js.
+Built on [deepagents](https://www.npmjs.com/package/deepagents)
 
-Self-hosted. Your infrastructure, your data.
+Self-hosted. 1-click deploy on Railway
 
 ## Why Edda?
 
-Most AI assistants are stateless — every session starts from scratch. Edda maintains three layers of persistent memory:
+Simple to set and understand. Edda maintains three layers of persistent memory:
 
 - **Knowledge** — Facts, preferences, and patterns extracted from conversations, stored as vector embeddings for semantic search
 - **History** — Full conversation threads preserved across sessions
-- **Operating notes** — A living document (AGENTS.md) tracking communication style, quality standards, and past corrections
+- **Operating notes** — AGENTS.md is a living document maintained by the agent, tracking communication style, quality standards, and past corrections
 
 Corrections are durable. Tell Edda "don't summarize, give me the raw data" and that preference gets recorded, analyzed weekly, and written into its operating memory permanently.
 
@@ -340,4 +340,4 @@ Contributions welcome. Open an issue first to discuss.
 
 ## License
 
-MIT
+AGPL-3.0
