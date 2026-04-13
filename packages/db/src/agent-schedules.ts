@@ -46,6 +46,25 @@ export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   return rows as EnabledSchedule[];
 }
 
+/**
+ * List all schedules (enabled and disabled) with their parent agent name.
+ * Used by the CLI for a flat view across every agent. For the cron runner
+ * use `getEnabledSchedules` which filters to enabled rows only.
+ */
+export async function listAllSchedules(): Promise<EnabledSchedule[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime,
+            s.notify, s.notify_expires_after::text, s.skip_when_empty_type,
+            s.enabled, s.created_at::text, a.name AS agent_name
+     FROM agent_schedules s
+     JOIN agents a ON a.id = s.agent_id
+     ORDER BY a.name, s.name`,
+  );
+  for (const row of rows) normalizeInterval(row as Record<string, unknown>);
+  return rows as EnabledSchedule[];
+}
+
 export async function getSchedulesForAgent(agentId: string): Promise<AgentSchedule[]> {
   const pool = getPool();
   const { rows } = await pool.query(

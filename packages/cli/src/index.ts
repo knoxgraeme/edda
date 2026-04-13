@@ -33,6 +33,18 @@
  *   edda memory edit <agent>           — open AGENTS.md in $EDITOR
  *   edda memory versions <agent>       — list AGENTS.md versions
  *   edda memory diff <agent> <v1> <v2> — diff two versions
+ *
+ *   edda schedules list                — all schedules across agents
+ *   edda schedules create <agent>      — interactive schedule creator
+ *   edda schedules toggle <id>         — enable / disable
+ *   edda schedules delete <id>
+ *   edda channels list                 — all linked channels
+ *   edda channels link <agent> <platform> <external-id>
+ *   edda channels unlink <id>
+ *   edda settings list | edit | get | set | export
+ *   edda approve <pending-action-id>
+ *   edda reject <pending-action-id>
+ *   edda confirm <table>/<id>          — confirm pending item/entity/type/pairing
  */
 
 import { Command } from "commander";
@@ -47,6 +59,10 @@ import { registerTasksCommands } from "./commands/tasks.js";
 import { registerCatalogCommands } from "./commands/catalog.js";
 import { registerAgentsCommands } from "./commands/agents.js";
 import { registerMemoryCommands } from "./commands/memory.js";
+import { registerSchedulesCommands } from "./commands/schedules.js";
+import { registerChannelsCommands } from "./commands/channels.js";
+import { registerSettingsCommands } from "./commands/settings.js";
+import { registerApprovalCommands } from "./commands/approvals.js";
 
 const program = new Command();
 
@@ -84,6 +100,12 @@ registerCatalogCommands(program);
 // ─── Agent + memory authoring ──────────────────────────────────────
 registerAgentsCommands(program);
 registerMemoryCommands(program);
+
+// ─── Schedules, channels, settings, approvals ──────────────────────
+registerSchedulesCommands(program);
+registerChannelsCommands(program);
+registerSettingsCommands(program);
+registerApprovalCommands(program);
 
 program.parseAsync().catch((err) => {
   console.error(err);

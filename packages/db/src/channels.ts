@@ -50,6 +50,27 @@ export async function getChannelByExternalId(
   return (rows[0] as AgentChannel) ?? null;
 }
 
+/** Channel row joined with its parent agent's name. Used by the CLI for flat listings. */
+export interface ChannelWithAgent extends AgentChannel {
+  agent_name: string;
+}
+
+/**
+ * List every channel across all agents (enabled and disabled) with the
+ * parent agent name joined. Used by the CLI (`edda channels list`).
+ */
+export async function listAllChannels(): Promise<ChannelWithAgent[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT c.id, c.agent_id, c.platform, c.external_id, c.config, c.enabled,
+            c.receive_announcements, c.created_at, a.name AS agent_name
+     FROM agent_channels c
+     JOIN agents a ON a.id = c.agent_id
+     ORDER BY a.name, c.platform, c.created_at`,
+  );
+  return rows as ChannelWithAgent[];
+}
+
 export async function getChannelsByAgent(
   agentId: string,
   opts?: { receiveAnnouncements?: boolean; platform?: ChannelPlatform; includeDisabled?: boolean },
