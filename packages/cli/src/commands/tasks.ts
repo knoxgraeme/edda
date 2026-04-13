@@ -7,7 +7,7 @@
 import type { Command } from "commander";
 import { getDb } from "../lib/db.js";
 import { runAction } from "../lib/run.js";
-import { printTable, printJson, formatDate, formatId, type Column } from "../lib/output.js";
+import { printTable, printJson, formatDate, formatId, wantsJson, type Column } from "../lib/output.js";
 
 const TASK_RUN_COLUMNS: Column[] = [
   { key: "id", header: "ID", width: 8, format: (v) => formatId(v) },
@@ -53,11 +53,11 @@ export function registerTasksCommands(program: Command) {
             limit: Number(options.limit),
           });
 
-          if (options.json || program.opts().json) {
+          if (wantsJson(options, program)) {
             printJson(rows);
             return;
           }
-          printTable(rows as unknown as Record<string, unknown>[], TASK_RUN_COLUMNS);
+          printTable(rows, TASK_RUN_COLUMNS);
         },
       ),
     );

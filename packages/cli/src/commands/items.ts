@@ -21,6 +21,8 @@ import {
   formatDate,
   formatContent,
   formatId,
+  indent,
+  wantsJson,
   type Column,
 } from "../lib/output.js";
 
@@ -54,7 +56,7 @@ export function registerItemsCommands(program: Command) {
         });
         const rows = result.results ?? result.items ?? [];
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
@@ -71,7 +73,7 @@ export function registerItemsCommands(program: Command) {
           },
           { key: "last_reinforced_at", header: "Reinforced", width: 10, format: formatDate },
         ];
-        printTable(rows as Array<Record<string, unknown>>, columns);
+        printTable(rows, columns);
       }),
     );
 
@@ -92,11 +94,11 @@ export function registerItemsCommands(program: Command) {
             limit: Number(options.limit),
           });
 
-          if (options.json || program.opts().json) {
+          if (wantsJson(options, program)) {
             printJson(rows);
             return;
           }
-          printTable(rows as unknown as Record<string, unknown>[], ITEM_LIST_COLUMNS);
+          printTable(rows, ITEM_LIST_COLUMNS);
         },
       ),
     );
@@ -109,13 +111,9 @@ export function registerItemsCommands(program: Command) {
       runAction(async (id: string, options: { json?: boolean }) => {
         const db = await getDb();
         const item = await db.getItemById(id);
-        if (!item) {
-          console.error(chalk.red(`Item not found: ${id}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!item) throw new Error(`Item not found: ${id}`);
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(item);
           return;
         }
@@ -145,11 +143,4 @@ export function registerItemsCommands(program: Command) {
         }
       }),
     );
-}
-
-function indent(text: string, prefix = "  "): string {
-  return text
-    .split("\n")
-    .map((line) => prefix + line)
-    .join("\n");
 }

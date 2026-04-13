@@ -19,6 +19,7 @@ import {
   printKeyValue,
   formatDate,
   formatContent,
+  wantsJson,
   type Column,
 } from "../lib/output.js";
 
@@ -42,11 +43,11 @@ export function registerThreadsCommands(program: Command) {
         const db = await getDb();
         const rows = await db.listThreads(Number(options.limit), options.agent);
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
-        printTable(rows as unknown as Record<string, unknown>[], THREAD_LIST_COLUMNS);
+        printTable(rows, THREAD_LIST_COLUMNS);
       }),
     );
 
@@ -60,13 +61,9 @@ export function registerThreadsCommands(program: Command) {
         const rows = await db.listThreads(1000);
         const thread = rows.find((t) => t.thread_id === id);
 
-        if (!thread) {
-          console.error(chalk.red(`Thread not found: ${id}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!thread) throw new Error(`Thread not found: ${id}`);
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(thread);
           return;
         }

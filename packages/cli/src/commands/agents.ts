@@ -34,6 +34,9 @@ import {
   formatDate,
   formatContent,
   formatId,
+  indent,
+  wantsJson,
+  promptCancel,
   type Column,
 } from "../lib/output.js";
 
@@ -71,11 +74,11 @@ export function registerAgentsCommands(program: Command) {
         const db = await getDb();
         const rows = await db.getAgents();
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
-        printTable(rows as unknown as Record<string, unknown>[], AGENT_LIST_COLUMNS);
+        printTable(rows, AGENT_LIST_COLUMNS);
       }),
     );
 
@@ -88,11 +91,7 @@ export function registerAgentsCommands(program: Command) {
       runAction(async (name: string, options: { json?: boolean }) => {
         const db = await getDb();
         const agent = await db.getAgentByName(name);
-        if (!agent) {
-          console.error(chalk.red(`Agent not found: ${name}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!agent) throw new Error(`Agent not found: ${name}`);
 
         const [schedules, channels, runs] = await Promise.all([
           db.getSchedulesForAgent(agent.id),
@@ -100,7 +99,7 @@ export function registerAgentsCommands(program: Command) {
           db.getRecentTaskRuns({ agent_name: name, limit: 5 }),
         ]);
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson({ agent, schedules, channels, runs });
           return;
         }
@@ -132,7 +131,7 @@ export function registerAgentsCommands(program: Command) {
         if (schedules.length > 0) {
           console.log();
           console.log(chalk.bold(`Schedules (${schedules.length})`));
-          printTable(schedules as unknown as Record<string, unknown>[], [
+          printTable(schedules, [
             { key: "name", header: "Name", width: 20 },
             { key: "cron", header: "Cron", width: 18 },
             { key: "enabled", header: "Enabled", width: 8, format: (v) => (v ? "yes" : "no") },
@@ -143,7 +142,7 @@ export function registerAgentsCommands(program: Command) {
         if (channels.length > 0) {
           console.log();
           console.log(chalk.bold(`Channels (${channels.length})`));
-          printTable(channels as unknown as Record<string, unknown>[], [
+          printTable(channels, [
             { key: "platform", header: "Platform", width: 10 },
             { key: "external_id", header: "External ID", width: 30 },
             { key: "enabled", header: "Enabled", width: 8, format: (v) => (v ? "yes" : "no") },
@@ -159,7 +158,7 @@ export function registerAgentsCommands(program: Command) {
         if (runs.length > 0) {
           console.log();
           console.log(chalk.bold(`Recent runs (${runs.length})`));
-          printTable(runs as unknown as Record<string, unknown>[], [
+          printTable(runs, [
             { key: "id", header: "ID", width: 8, format: (v) => formatId(v) },
             { key: "trigger", header: "Trigger", width: 10 },
             { key: "status", header: "Status", width: 10 },
@@ -193,7 +192,7 @@ export function registerAgentsCommands(program: Command) {
             if (!NAME_RE.test(v)) return "Must match /^[a-z][a-z0-9_]*$/";
           },
         });
-        if (p.isCancel(name)) return cancel();
+        if (p.isCancel(name)) return promptCancel();
 
         const existing = await db.getAgentByName(name);
         if (existing) {
@@ -207,7 +206,7 @@ export function registerAgentsCommands(program: Command) {
             if (!v || !v.trim()) return "Required";
           },
         });
-        if (p.isCancel(description)) return cancel();
+        if (p.isCancel(description)) return promptCancel();
 
         // Skills
         const allSkills = await db.getSkills();
@@ -222,7 +221,7 @@ export function registerAgentsCommands(program: Command) {
               hint: s.description?.slice(0, 60),
             })),
           });
-          if (p.isCancel(picked)) return cancel();
+          if (p.isCancel(picked)) return promptCancel();
           skills = picked;
         }
 
@@ -231,13 +230,13 @@ export function registerAgentsCommands(program: Command) {
           options: THREAD_LIFETIME_OPTIONS,
           initialValue: "ephemeral",
         })) as ThreadLifetime | symbol;
-        if (p.isCancel(threadLifetime)) return cancel();
+        if (p.isCancel(threadLifetime)) return promptCancel();
 
         const editPrompt = await p.confirm({
           message: "Open $EDITOR now to write the system prompt?",
           initialValue: false,
         });
-        if (p.isCancel(editPrompt)) return cancel();
+        if (p.isCancel(editPrompt)) return promptCancel();
 
         let systemPrompt: string | undefined;
         if (editPrompt) {
@@ -275,11 +274,7 @@ export function registerAgentsCommands(program: Command) {
         const db = await getDb();
 
         let agent = await db.getAgentByName(name);
-        if (!agent) {
-          console.error(chalk.red(`Agent not found: ${name}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!agent) throw new Error(`Agent not found: ${name}`);
 
         p.intro(chalk.bold(`Edit agent: ${agent.name}`));
 
@@ -319,11 +314,7 @@ export function registerAgentsCommands(program: Command) {
       runAction(async (name: string) => {
         const db = await getDb();
         const agent = await db.getAgentByName(name);
-        if (!agent) {
-          console.error(chalk.red(`Agent not found: ${name}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!agent) throw new Error(`Agent not found: ${name}`);
         if (agent.system_prompt) {
           process.stdout.write(agent.system_prompt);
           if (!agent.system_prompt.endsWith("\n")) process.stdout.write("\n");
@@ -340,21 +331,13 @@ export function registerAgentsCommands(program: Command) {
       runAction(async (name: string, options: { force?: boolean }) => {
         const db = await getDb();
         const agent = await db.getAgentByName(name);
-        if (!agent) {
-          console.error(chalk.red(`Agent not found: ${name}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!agent) throw new Error(`Agent not found: ${name}`);
 
         const settings = await db.getSettings();
         if (settings.default_agent === name) {
-          console.error(
-            chalk.red(
-              `Cannot delete "${name}" — it's the current default agent. Change default_agent in settings first.`,
-            ),
+          throw new Error(
+            `Cannot delete "${name}" — it's the current default agent. Change default_agent in settings first.`,
           );
-          process.exitCode = 1;
-          return;
         }
 
         if (!options.force) {
@@ -429,12 +412,12 @@ export function registerAgentsCommands(program: Command) {
           limit: Number(options.limit),
         });
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
 
-        printTable(rows as unknown as Record<string, unknown>[], [
+        printTable(rows, [
           { key: "id", header: "ID", width: 8, format: (v) => formatId(v) },
           { key: "trigger", header: "Trigger", width: 10 },
           { key: "status", header: "Status", width: 10 },
@@ -568,21 +551,15 @@ function printAgentSummaryShort(agent: Agent): void {
   console.log();
 }
 
-function cancel(): void {
-  p.cancel("Cancelled");
-  process.exitCode = 0;
-}
-
 function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
 }
 
-function indent(text: string, prefix = "  "): string {
-  return text
-    .split("\n")
-    .map((line) => prefix + line)
-    .join("\n");
-}
+/** Upper bound on how long `edda agents run --wait` blocks before giving up.
+ *  Protects against hung/crashed backends where the task_run row never flips
+ *  to completed/failed. 30 minutes is longer than any sane interactive run. */
+const MAX_WAIT_MS = 30 * 60 * 1000;
+const POLL_INTERVAL_MS = 1000;
 
 async function waitForRun(runId: string): Promise<void> {
   const db = await getDb();
@@ -591,6 +568,15 @@ async function waitForRun(runId: string): Promise<void> {
   const started = Date.now();
   try {
     while (true) {
+      if (Date.now() - started > MAX_WAIT_MS) {
+        spinner.stop(
+          chalk.yellow(
+            `⏱ timed out after ${formatElapsed(started)} — the run may still be executing. Check status with: edda tasks recent`,
+          ),
+        );
+        process.exitCode = 1;
+        return;
+      }
       const run = await db.getTaskRunById(runId);
       if (!run) {
         spinner.stop("Run not found");
@@ -612,7 +598,7 @@ async function waitForRun(runId: string): Promise<void> {
         }
         return;
       }
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
   } catch (err) {
     spinner.stop("Polling failed");

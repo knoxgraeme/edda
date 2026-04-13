@@ -20,6 +20,9 @@ import {
   printKeyValue,
   formatDate,
   formatId,
+  indent,
+  wantsJson,
+  promptCancel,
   type Column,
 } from "../lib/output.js";
 
@@ -62,11 +65,11 @@ export function registerSchedulesCommands(program: Command) {
           rows = await db.listAllSchedules();
         }
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
-        printTable(rows as unknown as Record<string, unknown>[], SCHEDULE_LIST_COLUMNS);
+        printTable(rows, SCHEDULE_LIST_COLUMNS);
       }),
     );
 
@@ -83,7 +86,7 @@ export function registerSchedulesCommands(program: Command) {
           throw new Error(`Schedule not found: ${id}`);
         }
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(schedule);
           return;
         }
@@ -129,7 +132,7 @@ export function registerSchedulesCommands(program: Command) {
             if (!v || !v.trim()) return "Required";
           },
         });
-        if (p.isCancel(name)) return cancelOut();
+        if (p.isCancel(name)) return promptCancel();
 
         const cron = await p.text({
           message: "Cron expression (5 fields, e.g. '0 7 * * *' for 7am daily)",
@@ -138,7 +141,7 @@ export function registerSchedulesCommands(program: Command) {
             if (v.trim().split(/\s+/).length !== 5) return "Expected 5 space-separated fields";
           },
         });
-        if (p.isCancel(cron)) return cancelOut();
+        if (p.isCancel(cron)) return promptCancel();
 
         const prompt = await p.text({
           message: "Prompt (the message the agent sees when this schedule fires)",
@@ -146,13 +149,13 @@ export function registerSchedulesCommands(program: Command) {
             if (!v || !v.trim()) return "Required";
           },
         });
-        if (p.isCancel(prompt)) return cancelOut();
+        if (p.isCancel(prompt)) return promptCancel();
 
         const wantOverride = await p.confirm({
           message: "Override the agent's default thread_lifetime for this schedule?",
           initialValue: false,
         });
-        if (p.isCancel(wantOverride)) return cancelOut();
+        if (p.isCancel(wantOverride)) return promptCancel();
 
         let threadLifetime: ThreadLifetime | undefined;
         if (wantOverride) {
@@ -164,7 +167,7 @@ export function registerSchedulesCommands(program: Command) {
               { value: "persistent", label: "persistent" },
             ],
           })) as ThreadLifetime | symbol;
-          if (p.isCancel(lifetime)) return cancelOut();
+          if (p.isCancel(lifetime)) return promptCancel();
           threadLifetime = lifetime as ThreadLifetime;
         }
 
@@ -173,7 +176,7 @@ export function registerSchedulesCommands(program: Command) {
             "Notification targets, comma-separated (e.g. 'inbox,announce:edda'). Empty = no notify.",
           initialValue: "inbox",
         });
-        if (p.isCancel(notifyText)) return cancelOut();
+        if (p.isCancel(notifyText)) return promptCancel();
         const notify = (notifyText as string)
           .split(",")
           .map((s) => s.trim())
@@ -184,7 +187,7 @@ export function registerSchedulesCommands(program: Command) {
             "Skip run when no new items of this type since last success (empty = always run)",
           placeholder: "session_note",
         });
-        if (p.isCancel(skipType)) return cancelOut();
+        if (p.isCancel(skipType)) return promptCancel();
 
         const spinner = p.spinner();
         spinner.start("Creating schedule...");
@@ -256,14 +259,3 @@ export function registerSchedulesCommands(program: Command) {
     );
 }
 
-function cancelOut(): void {
-  p.cancel("Cancelled");
-  process.exitCode = 0;
-}
-
-function indent(text: string, prefix = "  "): string {
-  return text
-    .split("\n")
-    .map((line) => prefix + line)
-    .join("\n");
-}

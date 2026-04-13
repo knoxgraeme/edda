@@ -13,7 +13,7 @@ import * as p from "@clack/prompts";
 import type { ChannelPlatform } from "@edda/db";
 import { getDb } from "../lib/db.js";
 import { runAction } from "../lib/run.js";
-import { printTable, printJson, formatDate, formatId, type Column } from "../lib/output.js";
+import { printTable, printJson, formatDate, formatId, wantsJson, type Column } from "../lib/output.js";
 
 const VALID_PLATFORMS: ChannelPlatform[] = ["telegram", "discord", "slack"];
 
@@ -55,11 +55,11 @@ export function registerChannelsCommands(program: Command) {
           rows = await db.listAllChannels();
         }
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
-        printTable(rows as unknown as Record<string, unknown>[], CHANNEL_LIST_COLUMNS);
+        printTable(rows, CHANNEL_LIST_COLUMNS);
       }),
     );
 

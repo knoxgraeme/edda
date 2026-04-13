@@ -6,11 +6,14 @@
  *  - `printJson` for `--json` output
  *  - `formatDate` for relative timestamps (e.g. "3h ago")
  *  - `formatContent` for truncating multiline content to a single line
+ *  - `indent` / `wantsJson` / `promptCancel` — small helpers reused across commands
  */
 
 import chalk from "chalk";
+import type { Command } from "commander";
+import * as p from "@clack/prompts";
 
-export type Row = Record<string, unknown>;
+type Row = Record<string, unknown>;
 
 export interface Column {
   key: string;
@@ -20,13 +23,14 @@ export interface Column {
   format?: (value: unknown, row: Row) => string;
 }
 
-export function printTable(rows: Row[], columns: Column[]): void {
+export function printTable(rows: readonly unknown[], columns: Column[]): void {
   if (rows.length === 0) {
     console.log(chalk.dim("(no rows)"));
     return;
   }
 
-  const rendered = rows.map((row) =>
+  const asRows = rows as readonly Row[];
+  const rendered = asRows.map((row) =>
     columns.map((col) => (col.format ? col.format(row[col.key], row) : stringify(row[col.key]))),
   );
 
@@ -109,4 +113,30 @@ function truncate(s: string, width: number): string {
   if (s.length <= width) return s;
   if (width <= 1) return s.slice(0, width);
   return s.slice(0, width - 1) + "…";
+}
+
+// ─── small helpers reused across commands ─────────────────────────
+
+/** Indent every line of `text` with `prefix`. */
+export function indent(text: string, prefix = "  "): string {
+  return text
+    .split("\n")
+    .map((line) => prefix + line)
+    .join("\n");
+}
+
+/** True when the user asked for JSON output either via `--json` on the
+ *  subcommand or the top-level program. */
+export function wantsJson(
+  options: { json?: boolean } | undefined,
+  program: Command,
+): boolean {
+  return Boolean(options?.json) || Boolean(program.opts().json);
+}
+
+/** Print a clack "Cancelled" banner and exit cleanly. Used by interactive
+ *  commands when the user hits Ctrl-C or picks a cancel option. */
+export function promptCancel(): void {
+  p.cancel("Cancelled");
+  process.exitCode = 0;
 }

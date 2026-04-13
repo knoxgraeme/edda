@@ -17,7 +17,7 @@ import chalk from "chalk";
 import * as p from "@clack/prompts";
 import { getDb } from "../lib/db.js";
 import { runAction } from "../lib/run.js";
-import { printJson, printKeyValue } from "../lib/output.js";
+import { printJson, printKeyValue, wantsJson } from "../lib/output.js";
 
 const READ_ONLY_KEYS = new Set(["id", "created_at", "updated_at"]);
 
@@ -34,7 +34,7 @@ export function registerSettingsCommands(program: Command) {
         const db = await getDb();
         const current = await db.getSettings();
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(redact(current));
           return;
         }

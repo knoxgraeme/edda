@@ -7,6 +7,7 @@
 
 import type { Command } from "commander";
 import chalk from "chalk";
+import type { EntityType } from "@edda/db";
 import { getDb } from "../lib/db.js";
 import { runAction } from "../lib/run.js";
 import {
@@ -16,10 +17,21 @@ import {
   formatDate,
   formatContent,
   formatId,
+  wantsJson,
   type Column,
 } from "../lib/output.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const VALID_ENTITY_TYPES: ReadonlyArray<EntityType> = [
+  "person",
+  "project",
+  "company",
+  "topic",
+  "place",
+  "tool",
+  "concept",
+];
 
 const ENTITY_LIST_COLUMNS: Column[] = [
   { key: "id", header: "ID", width: 8, format: (v) => formatId(v) },
@@ -43,17 +55,26 @@ export function registerEntitiesCommands(program: Command) {
       runAction(
         async (options: { type?: string; search?: string; limit: string; json?: boolean }) => {
           const db = await getDb();
+          let type: EntityType | undefined;
+          if (options.type) {
+            if (!VALID_ENTITY_TYPES.includes(options.type as EntityType)) {
+              throw new Error(
+                `Invalid entity type: ${options.type}. Expected one of: ${VALID_ENTITY_TYPES.join(", ")}`,
+              );
+            }
+            type = options.type as EntityType;
+          }
           const rows = await db.listEntities({
-            type: options.type as NonNullable<Parameters<typeof db.listEntities>[0]>["type"],
+            type,
             search: options.search,
             limit: Number(options.limit),
           });
 
-          if (options.json || program.opts().json) {
+          if (wantsJson(options, program)) {
             printJson(rows);
             return;
           }
-          printTable(rows as unknown as Record<string, unknown>[], ENTITY_LIST_COLUMNS);
+          printTable(rows, ENTITY_LIST_COLUMNS);
         },
       ),
     );
@@ -66,25 +87,18 @@ export function registerEntitiesCommands(program: Command) {
       runAction(async (idOrName: string, options: { json?: boolean }) => {
         const db = await getDb();
 
-        let entity = null;
-        if (UUID_RE.test(idOrName)) {
-          entity = await db.getEntityById(idOrName);
-        } else {
-          entity = await db.resolveEntity(idOrName);
-        }
+        const entity = UUID_RE.test(idOrName)
+          ? await db.getEntityById(idOrName)
+          : await db.resolveEntity(idOrName);
 
-        if (!entity) {
-          console.error(chalk.red(`Entity not found: ${idOrName}`));
-          process.exitCode = 1;
-          return;
-        }
+        if (!entity) throw new Error(`Entity not found: ${idOrName}`);
 
         const [items, connections] = await Promise.all([
           db.getEntityItems(entity.id, { limit: 20 }),
           db.getEntityConnections(entity.id, 10),
         ]);
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson({ entity, items, connections });
           return;
         }
@@ -108,7 +122,7 @@ export function registerEntitiesCommands(program: Command) {
         if (items.length > 0) {
           console.log();
           console.log(chalk.bold(`Recent items (${items.length})`));
-          printTable(items as unknown as Record<string, unknown>[], [
+          printTable(items, [
             { key: "id", header: "ID", width: 8, format: (v) => formatId(v) },
             { key: "type", header: "Type", width: 14 },
             { key: "content", header: "Content", width: 55, format: (v) => formatContent(v, 55) },
@@ -119,7 +133,7 @@ export function registerEntitiesCommands(program: Command) {
         if (connections.length > 0) {
           console.log();
           console.log(chalk.bold(`Connections (${connections.length})`));
-          printTable(connections as unknown as Record<string, unknown>[], [
+          printTable(connections, [
             { key: "name", header: "Name", width: 30 },
             { key: "type", header: "Type", width: 12 },
             { key: "shared_items", header: "Shared", width: 7 },

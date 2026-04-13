@@ -16,6 +16,7 @@ import {
   formatDate,
   formatContent,
   formatId,
+  wantsJson,
   type Column,
 } from "../lib/output.js";
 
@@ -34,7 +35,7 @@ export function registerInboxCommand(program: Command) {
           db.getInboxNotifications({ status: "unread", limit: 50 }),
         ]);
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson({ pendingActions, confirmations, notifications });
           return;
         }
@@ -54,7 +55,7 @@ export function registerInboxCommand(program: Command) {
             { key: "description", header: "Description", width: 45, format: (v) => formatContent(v, 45) },
             { key: "expires_at", header: "Expires", width: 10, format: formatDate },
           ];
-          printTable(pendingActions as unknown as Record<string, unknown>[], columns);
+          printTable(pendingActions, columns);
         }
 
         if (confirmations.length > 0) {
@@ -67,7 +68,7 @@ export function registerInboxCommand(program: Command) {
             { key: "createdAt", header: "Created", width: 10, format: formatDate },
           ];
           printTable(
-            confirmations as unknown as Record<string, unknown>[],
+            confirmations,
             columns,
           );
         }
@@ -81,7 +82,7 @@ export function registerInboxCommand(program: Command) {
             { key: "summary", header: "Summary", width: 55, format: (v) => formatContent(v, 55) },
             { key: "created_at", header: "Created", width: 10, format: formatDate },
           ];
-          printTable(notifications as unknown as Record<string, unknown>[], columns);
+          printTable(notifications, columns);
         }
       }),
     );

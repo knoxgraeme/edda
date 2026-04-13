@@ -16,7 +16,7 @@ import { getDb } from "../lib/db.js";
 import { openInEditor } from "../lib/editor.js";
 import { lineDiff } from "../lib/diff.js";
 import { runAction } from "../lib/run.js";
-import { printTable, printJson, formatDate, type Column } from "../lib/output.js";
+import { printTable, printJson, formatDate, wantsJson, type Column } from "../lib/output.js";
 
 export function registerMemoryCommands(program: Command) {
   const memory = program.command("memory").description("View and edit agent AGENTS.md");
@@ -37,7 +37,7 @@ export function registerMemoryCommands(program: Command) {
           return;
         }
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(latest);
           return;
         }
@@ -110,7 +110,7 @@ export function registerMemoryCommands(program: Command) {
             return;
           }
 
-          if (options.json || program.opts().json) {
+          if (wantsJson(options, program)) {
             printJson(versions);
             return;
           }
@@ -131,7 +131,7 @@ export function registerMemoryCommands(program: Command) {
               format: (v) => firstLine(typeof v === "string" ? v : ""),
             },
           ];
-          printTable(versions as unknown as Record<string, unknown>[], columns);
+          printTable(versions, columns);
         },
       ),
     );
@@ -148,9 +148,7 @@ export function registerMemoryCommands(program: Command) {
         const id1 = Number(v1);
         const id2 = Number(v2);
         if (!Number.isInteger(id1) || !Number.isInteger(id2)) {
-          console.error(chalk.red("Version IDs must be integers"));
-          process.exitCode = 1;
-          return;
+          throw new Error("Version IDs must be integers");
         }
 
         const [a, b] = await Promise.all([
@@ -159,14 +157,10 @@ export function registerMemoryCommands(program: Command) {
         ]);
 
         if (!a || a.agent_name !== agentName) {
-          console.error(chalk.red(`Version ${id1} not found for agent "${agentName}"`));
-          process.exitCode = 1;
-          return;
+          throw new Error(`Version ${id1} not found for agent "${agentName}"`);
         }
         if (!b || b.agent_name !== agentName) {
-          console.error(chalk.red(`Version ${id2} not found for agent "${agentName}"`));
-          process.exitCode = 1;
-          return;
+          throw new Error(`Version ${id2} not found for agent "${agentName}"`);
         }
 
         console.log(

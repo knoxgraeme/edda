@@ -8,7 +8,7 @@
 import type { Command } from "commander";
 import { getDb } from "../lib/db.js";
 import { runAction } from "../lib/run.js";
-import { printTable, printJson, formatContent, type Column } from "../lib/output.js";
+import { printTable, printJson, formatContent, wantsJson, type Column } from "../lib/output.js";
 
 export function registerCatalogCommands(program: Command) {
   const types = program.command("types").description("Browse item types");
@@ -21,7 +21,7 @@ export function registerCatalogCommands(program: Command) {
         const db = await getDb();
         const rows = await db.getItemTypes();
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
@@ -32,7 +32,7 @@ export function registerCatalogCommands(program: Command) {
           { key: "decay_half_life_days", header: "Decay (d)", width: 10 },
           { key: "description", header: "Description", width: 60, format: (v) => formatContent(v, 60) },
         ];
-        printTable(rows as unknown as Record<string, unknown>[], columns);
+        printTable(rows, columns);
       }),
     );
 
@@ -46,7 +46,7 @@ export function registerCatalogCommands(program: Command) {
         const db = await getDb();
         const rows = await db.getSkills();
 
-        if (options.json || program.opts().json) {
+        if (wantsJson(options, program)) {
           printJson(rows);
           return;
         }
@@ -57,7 +57,7 @@ export function registerCatalogCommands(program: Command) {
           { key: "version", header: "Ver", width: 4 },
           { key: "description", header: "Description", width: 60, format: (v) => formatContent(v, 60) },
         ];
-        printTable(rows as unknown as Record<string, unknown>[], columns);
+        printTable(rows, columns);
       }),
     );
 }
