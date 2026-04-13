@@ -22,7 +22,9 @@ export async function GET(
   const url = new URL(request.url);
   const expand = url.searchParams.get("expand");
   if (expand?.includes("items")) {
-    const items = await getEntityItems(id);
+    const rawLimit = parseInt(url.searchParams.get("items_limit") ?? "20", 10);
+    const limit = Math.min(Math.max(isNaN(rawLimit) ? 20 : rawLimit, 1), 500);
+    const items = await getEntityItems(id, { limit });
     return NextResponse.json({ ...entity, items });
   }
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Inbox, Users, Bot, Puzzle, Settings } from "lucide-react";
+import { LayoutDashboard, Inbox, Users, Bot, Puzzle, Settings, Network } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -22,6 +22,7 @@ const navGroups = [
     items: [
       { href: "/inbox", label: "Inbox", icon: Inbox },
       { href: "/entities", label: "Entities", icon: Users },
+      { href: "/graph", label: "Graph", icon: Network },
     ],
   },
   {

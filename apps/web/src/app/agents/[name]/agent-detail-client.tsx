@@ -270,8 +270,6 @@ export function AgentDetailClient({
             <span>{modelLabel}</span>
             <span aria-hidden>·</span>
             <span>{agent.thread_lifetime}</span>
-            <span aria-hidden>·</span>
-            <span>{agent.trigger ?? "on_demand"}</span>
           </div>
         </div>
         <Button

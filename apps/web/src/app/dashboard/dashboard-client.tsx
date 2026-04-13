@@ -1,355 +1,551 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import * as React from "react";
+import { useCallback, useEffect, useMemo, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   CheckCircle2,
-  Clock,
-  Inbox,
-  List,
-  CalendarClock,
-  Archive,
   Moon,
-  Bot,
-  Activity,
+  Archive,
+  AlertCircle,
+  ChevronRight,
 } from "lucide-react";
-import type { DashboardData, Item, TaskRun } from "../types/db";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
+import type {
+  AgentSchedule,
+  DashboardData,
+  Item,
+  TaskRun,
+} from "../types/db";
+import { Section } from "@/app/components/section";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { formatCountdown, humanizeCron, nextRunAt } from "@/lib/cron";
+import { formatDuration } from "@/lib/format";
 import { updateItemStatusAction } from "../actions";
-import { formatDuration, statusVariant } from "@/lib/format";
+import { RunSparkline } from "../agents/[name]/_components/run-sparkline";
 
-function ItemRow({ item, showType }: { item: Item; showType?: boolean }) {
-  const [isPending, startTransition] = useTransition();
-  const dueDate =
-    typeof item.metadata?.due_date === "string" ? item.metadata.due_date : undefined;
+interface EnabledScheduleLike extends AgentSchedule {
+  agent_name: string;
+}
 
-  return (
-    <div className="flex items-start justify-between gap-3 py-2.5 border-b last:border-0">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm leading-snug">{item.content}</p>
-        <div className="flex items-center gap-2 mt-1">
-          {showType && (
-            <Badge variant="secondary" className="text-xs">
-              {item.type}
-            </Badge>
-          )}
-          {dueDate && (
-            <span className="text-xs text-muted-foreground">{dueDate}</span>
-          )}
-          {item.summary && (
-            <span className="text-xs text-muted-foreground truncate">
-              {item.summary}
-            </span>
-          )}
-        </div>
+// ─── Signal dot ─────────────────────────────────────────────────
+
+function statusDotClass(status: string): string {
+  switch (status) {
+    case "completed":
+      return "bg-signal-ok";
+    case "running":
+    case "pending":
+      return "bg-signal-run signal-dot-run";
+    default:
+      return "bg-signal-fail";
+  }
+}
+
+// ─── Hero stat card ─────────────────────────────────────────────
+
+function HeroStat({
+  value,
+  label,
+  accent,
+  href,
+}: {
+  value: number;
+  label: string;
+  accent?: boolean;
+  href?: string;
+}) {
+  const body = (
+    <div
+      className={cn(
+        "flex flex-col items-start gap-1 border-r border-border px-6 py-5 last:border-r-0",
+        "transition-colors",
+        href && "hover:bg-muted/30",
+      )}
+    >
+      <div
+        className={cn(
+          "font-display text-5xl leading-none tracking-tight",
+          accent && value > 0 ? "text-accent-warm" : "text-foreground",
+          value === 0 && "text-muted-foreground",
+        )}
+      >
+        {value}
       </div>
-      <TooltipProvider delayDuration={300}>
-        <div className="flex items-center gap-1 shrink-0">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                disabled={isPending}
-                onClick={() =>
-                  startTransition(() => updateItemStatusAction(item.id, "done"))
-                }
-              >
-                <CheckCircle2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Mark as complete</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                disabled={isPending}
-                onClick={() =>
-                  startTransition(() => updateItemStatusAction(item.id, "snoozed"))
-                }
-              >
-                <Moon className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Snooze until later</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                disabled={isPending}
-                onClick={() =>
-                  startTransition(() => updateItemStatusAction(item.id, "archived"))
-                }
-              >
-                <Archive className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Archive this item</TooltipContent>
-          </Tooltip>
-        </div>
-      </TooltipProvider>
+      <div className="section-eyebrow">{label}</div>
     </div>
   );
-}
-
-function StatusDot({ status }: { status: string }) {
-  const colorClass =
-    status === "completed"
-      ? "bg-green-500"
-      : status === "failed"
-        ? "bg-red-500"
-        : status === "running"
-          ? "bg-amber-500 animate-pulse"
-          : "bg-muted-foreground";
-
-  return <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${colorClass}`} />;
-}
-
-function SectionCard({
-  title,
-  icon: Icon,
-  items,
-  emptyContent,
-  showType,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  items: Item[];
-  emptyContent: React.ReactNode;
-  showType?: boolean;
-}) {
-  return (
-    <Card className="shadow-sm border-0 hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          {title}
-          {items.length > 0 && (
-            <Badge variant="secondary" className="ml-auto">
-              {items.length}
-            </Badge>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">{emptyContent}</div>
-        ) : (
-          items.map((item) => (
-            <ItemRow key={item.id} item={item} showType={showType} />
-          ))
-        )}
-      </CardContent>
-    </Card>
+  return href ? (
+    <Link href={href} className="flex-1 min-w-0">
+      {body}
+    </Link>
+  ) : (
+    <div className="flex-1 min-w-0">{body}</div>
   );
 }
+
+// ─── Item row ───────────────────────────────────────────────────
+
+function ItemRow({
+  item,
+  showType,
+}: {
+  item: Item;
+  showType?: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const dueDate =
+    typeof item.metadata?.due_date === "string"
+      ? item.metadata.due_date
+      : undefined;
+
+  const act = (status: "done" | "snoozed" | "archived") => {
+    startTransition(() => updateItemStatusAction(item.id, status));
+  };
+
+  return (
+    <li className="group flex items-start gap-3 border-b border-border/60 py-2.5 last:border-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-snug">{item.content}</p>
+        {(showType || dueDate || item.summary) && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {showType && (
+              <span className="font-mono text-[0.65rem] uppercase tracking-wide">
+                {item.type.replace(/_/g, " ")}
+              </span>
+            )}
+            {dueDate && <span>{dueDate}</span>}
+            {item.summary && <span className="truncate">{item.summary}</span>}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={pending}
+          title="Mark as complete"
+          aria-label="Mark as complete"
+          onClick={() => act("done")}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={pending}
+          title="Snooze"
+          aria-label="Snooze"
+          onClick={() => act("snoozed")}
+        >
+          <Moon className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={pending}
+          title="Archive"
+          aria-label="Archive"
+          onClick={() => act("archived")}
+        >
+          <Archive className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+// ─── Schedule forecast row ──────────────────────────────────────
+
+function ScheduleForecastRow({
+  schedule,
+  now,
+}: {
+  schedule: EnabledScheduleLike;
+  now: number;
+}) {
+  const next = useMemo(
+    () => nextRunAt(schedule.cron, new Date(now)),
+    [schedule.cron, now],
+  );
+  if (!next) return null;
+  const delta = next.getTime() - now;
+
+  return (
+    <li>
+      <Link
+        href={`/agents/${schedule.agent_name}`}
+        className="flex items-baseline gap-3 border-b border-border/60 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/30 -mx-6 px-6"
+      >
+        <span className="font-display text-base text-foreground">
+          {schedule.agent_name}
+        </span>
+        <span className="text-muted-foreground">·</span>
+        <span className="text-muted-foreground">{schedule.name}</span>
+        <div className="flex-1" />
+        <span className="text-xs text-muted-foreground">
+          {humanizeCron(schedule.cron)}
+        </span>
+        <span className="font-mono text-xs text-muted-foreground">
+          {formatCountdown(delta)}
+        </span>
+        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+      </Link>
+    </li>
+  );
+}
+
+// ─── Run row ────────────────────────────────────────────────────
+
+function RunRow({ run }: { run: TaskRun }) {
+  return (
+    <li className="flex items-center gap-3 border-b border-border/60 py-2 text-xs last:border-0">
+      <span
+        className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusDotClass(run.status))}
+        aria-hidden
+      />
+      <Link
+        href={`/agents/${run.agent_name}`}
+        className="font-medium text-foreground hover:underline underline-offset-2"
+      >
+        {run.agent_name}
+      </Link>
+      <span className="font-mono text-muted-foreground">{run.trigger}</span>
+      <span className="flex-1 min-w-0 truncate text-muted-foreground">
+        {run.output_summary || run.error || run.status}
+      </span>
+      {run.duration_ms != null && (
+        <span className="font-mono text-muted-foreground">
+          {formatDuration(run.duration_ms)}
+        </span>
+      )}
+      {run.started_at && (
+        <span className="font-mono text-muted-foreground w-20 text-right">
+          {formatDistanceToNow(new Date(run.started_at), { addSuffix: false })}
+        </span>
+      )}
+    </li>
+  );
+}
+
+// ─── Main ───────────────────────────────────────────────────────
 
 export function DashboardClient({
   data,
   pendingCount,
   recentRuns,
   activeCount,
+  schedules,
+  latestRunPerAgent,
 }: {
   data: DashboardData;
   pendingCount: number;
   recentRuns: TaskRun[];
   activeCount: number;
+  schedules: EnabledScheduleLike[];
+  latestRunPerAgent: Record<string, TaskRun>;
 }) {
-  const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
+  const router = useRouter();
 
-  const toggleList = (name: string) => {
-    setExpandedLists((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
+  // Shared clock for countdowns
+  const [now, setNow] = React.useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Poll every 30s while tab is visible
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [router]);
+
+  // Agents whose latest run is failed
+  const failingAgents = useMemo(
+    () =>
+      Object.entries(latestRunPerAgent)
+        .filter(([, run]) => run?.status === "failed")
+        .map(([name]) => name),
+    [latestRunPerAgent],
+  );
+
+  // 7-day rollup
+  const [sevenDaysAgo] = React.useState(
+    () => Date.now() - 7 * 24 * 60 * 60 * 1000,
+  );
+  const recentRuns7d = useMemo(
+    () =>
+      recentRuns.filter(
+        (r) =>
+          r.started_at && new Date(r.started_at).getTime() >= sevenDaysAgo,
+      ),
+    [recentRuns, sevenDaysAgo],
+  );
+  const totalTokens7d = useMemo(
+    () => recentRuns7d.reduce((sum, r) => sum + (r.tokens_used ?? 0), 0),
+    [recentRuns7d],
+  );
+
+  // Schedules firing in next 24h, sorted by soonest
+  const upcomingSchedules = useMemo(() => {
+    const horizon = now + 24 * 60 * 60 * 1000;
+    return schedules
+      .filter((s) => s.enabled)
+      .map((s) => {
+        const next = nextRunAt(s.cron, new Date(now));
+        return next ? { schedule: s, nextAt: next.getTime() } : null;
+      })
+      .filter((x): x is { schedule: EnabledScheduleLike; nextAt: number } => !!x)
+      .filter((x) => x.nextAt <= horizon)
+      .sort((a, b) => a.nextAt - b.nextAt)
+      .map((x) => x.schedule);
+  }, [schedules, now]);
 
   const listIds = Object.keys(data.lists);
   const today = format(new Date(), "EEEE, MMMM d");
 
+  const jumpToConfirmations = useCallback(() => {
+    router.push("/inbox");
+  }, [router]);
+
+  // Populated / quiet split — so empty sections collapse into a single
+  // summary row at the bottom instead of eating full-section real estate.
+  const hasDue = data.due_today.length > 0;
+  const hasCaptured = data.captured_today.length > 0;
+  const hasOpen = data.open_items.length > 0;
+  const hasRuns = recentRuns.length > 0;
+  const hasSchedules = upcomingSchedules.length > 0;
+  const hasLists = listIds.length > 0;
+
+  const quietAreas: string[] = [];
+  if (!hasDue) quietAreas.push("nothing due today");
+  if (!hasCaptured) quietAreas.push("nothing captured");
+  if (!hasOpen) quietAreas.push("no open items");
+  if (!hasRuns) quietAreas.push("no recent agent runs");
+
   return (
-    <main className="max-w-4xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
+    <main className="flex h-full flex-col overflow-hidden">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <header className="flex shrink-0 items-baseline justify-between border-b border-border px-6 py-5">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">{today}</p>
+          <div className="section-eyebrow">overview</div>
+          <h1 className="font-display text-4xl leading-none tracking-tight">
+            Today
+          </h1>
         </div>
-        {pendingCount > 0 && (
-          <Link href="/inbox">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Inbox className="h-4 w-4" />
-              {pendingCount} pending
-            </Button>
-          </Link>
-        )}
+        <p className="font-mono text-xs text-muted-foreground">{today}</p>
+      </header>
+
+      {/* ── Hero stat grid ─────────────────────────────────── */}
+      <div className="flex shrink-0 border-b border-border">
+        <HeroStat value={data.due_today.length} label="due today" />
+        <HeroStat value={data.captured_today.length} label="captured" />
+        <HeroStat value={data.open_items.length} label="open items" />
+        <HeroStat
+          value={activeCount}
+          label="running now"
+          accent={activeCount > 0}
+        />
+        <HeroStat
+          value={pendingCount}
+          label="pending review"
+          accent={pendingCount > 0}
+          href={pendingCount > 0 ? "/inbox" : undefined}
+        />
       </div>
 
-      <div className="grid gap-4">
-        {/* Top two cards side by side on larger screens */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <SectionCard
-            title="Due Today"
-            icon={CalendarClock}
-            items={data.due_today}
-            emptyContent="Nothing due today. Items with due dates will appear here."
-          />
-
-          <SectionCard
-            title="Captured Today"
-            icon={Clock}
-            items={data.captured_today}
-            emptyContent="Nothing captured yet today."
-            showType
-          />
+      {/* ── Failing run banner ─────────────────────────────── */}
+      {failingAgents.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-border bg-destructive/5 px-6 py-2.5 text-xs text-destructive">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {failingAgents.length === 1
+              ? `${failingAgents[0]} is failing.`
+              : `${failingAgents.length} agents are failing: ${failingAgents.join(", ")}.`}
+          </span>
+          <Link
+            href={`/agents/${failingAgents[0]}`}
+            className="ml-auto underline underline-offset-2 hover:no-underline"
+          >
+            investigate →
+          </Link>
         </div>
+      )}
 
-        <SectionCard
-          title="Open Items"
-          icon={CheckCircle2}
-          items={data.open_items}
-          emptyContent={
-            <p>
-              No open tasks or reminders. Capture something in chat to get started.{" "}
+      {/* ── Pending confirmations banner ───────────────────── */}
+      {pendingCount > 0 && failingAgents.length === 0 && (
+        <button
+          type="button"
+          onClick={jumpToConfirmations}
+          className="flex items-center gap-2 border-b border-border bg-accent-warm/5 px-6 py-2.5 text-left text-xs text-accent-warm transition-colors hover:bg-accent-warm/10"
+        >
+          <span className="section-eyebrow !text-accent-warm">
+            needs your review
+          </span>
+          <span>
+            {pendingCount} {pendingCount === 1 ? "confirmation" : "confirmations"}{" "}
+            pending
+          </span>
+          <span className="ml-auto underline underline-offset-2">
+            review in inbox →
+          </span>
+        </button>
+      )}
+
+      {/* ── Body ───────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Due today (only if populated) */}
+        {hasDue && (
+          <Section eyebrow={`Due today · ${data.due_today.length}`} delay={0}>
+            <ul>
+              {data.due_today.map((item) => (
+                <ItemRow key={item.id} item={item} />
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* Schedules — next 24h */}
+        {hasSchedules && (
+          <Section
+            eyebrow={`Schedules · next 24h · ${upcomingSchedules.length}`}
+            delay={40}
+          >
+            <ul>
+              {upcomingSchedules.map((s) => (
+                <ScheduleForecastRow key={s.id} schedule={s} now={now} />
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* Agent activity (only if runs exist) */}
+        {hasRuns && (
+          <Section eyebrow="Agent activity · last 7d" delay={80}>
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <RunSparkline runs={recentRuns} />
+              <div className="text-right">
+                <div className="font-display text-lg leading-none">
+                  {recentRuns7d.length}
+                </div>
+                <div className="section-eyebrow !tracking-tight">
+                  runs · {totalTokens7d.toLocaleString()} tok
+                </div>
+              </div>
+            </div>
+            <ul>
+              {recentRuns.slice(0, 5).map((run) => (
+                <RunRow key={run.id} run={run} />
+              ))}
+            </ul>
+            {recentRuns.length > 5 && (
               <Link
-                href="/"
-                className="text-primary underline-offset-4 hover:underline"
+                href="/agents"
+                className="mt-2 inline-block text-[0.7rem] text-muted-foreground hover:text-foreground"
               >
-                Go to Chat
+                View all agent activity →
               </Link>
-            </p>
-          }
-        />
+            )}
+          </Section>
+        )}
 
-        {listIds.length > 0 && (
-          <Card className="shadow-sm border-0 hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <List className="h-4 w-4 text-muted-foreground" />
-                Lists
-                <Badge variant="secondary" className="ml-auto">
-                  {listIds.length}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+        {/* Captured today (only if populated) */}
+        {hasCaptured && (
+          <Section
+            eyebrow={`Captured today · ${data.captured_today.length}`}
+            delay={120}
+          >
+            <ul>
+              {data.captured_today.map((item) => (
+                <ItemRow key={item.id} item={item} showType />
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* Open items (only if populated) */}
+        {hasOpen && (
+          <Section
+            eyebrow={`Open items · ${data.open_items.length}`}
+            delay={160}
+          >
+            <ul>
+              {data.open_items.map((item) => (
+                <ItemRow key={item.id} item={item} />
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* Lists */}
+        {hasLists && (
+          <Section eyebrow={`Lists · ${listIds.length}`} delay={200}>
+            <ul>
               {listIds.map((listId) => {
                 const { list, items } = data.lists[listId];
-                const isExpanded = expandedLists.has(listId);
                 return (
-                  <div key={listId} className="border-b last:border-0">
-                    <button
-                      type="button"
-                      className="flex items-center justify-between w-full py-2.5 text-sm font-medium hover:text-foreground/80"
-                      onClick={() => toggleList(listId)}
-                    >
-                      <span>{list.icon} {list.name}</span>
-                      <Badge variant="secondary">{items.length}</Badge>
-                    </button>
-                    {isExpanded &&
-                      items.map((item) => (
-                        <ItemRow key={item.id} item={item} />
-                      ))}
-                  </div>
+                  <li
+                    key={listId}
+                    className="flex items-center gap-3 border-b border-border/60 py-2 text-sm last:border-0"
+                  >
+                    <span>{list.icon}</span>
+                    <span className="text-foreground">{list.name}</span>
+                    <div className="flex-1" />
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {items.length} {items.length === 1 ? "item" : "items"}
+                    </span>
+                  </li>
                 );
               })}
-            </CardContent>
-          </Card>
+            </ul>
+          </Section>
         )}
 
-        {data.pending_confirmations.length > 0 && (
-          <SectionCard
-            title="Pending Confirmations"
-            icon={Inbox}
-            items={data.pending_confirmations}
-            emptyContent=""
-            showType
-          />
+        {/* ── Quiet areas summary ───────────────────────────── */}
+        {quietAreas.length > 0 && (
+          <div className="rise-in border-b border-border px-6 py-4">
+            <div className="flex items-center gap-2">
+              <span className="section-eyebrow">all quiet</span>
+              <span className="text-xs text-muted-foreground">
+                {quietAreas.join(" · ")}
+              </span>
+            </div>
+          </div>
         )}
 
-        {/* Agent Activity */}
-        <Card className="shadow-sm border-0 hover:shadow-md transition-shadow">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Bot className="h-4 w-4 text-muted-foreground" />
-              Agent Activity
-              {activeCount > 0 && (
-                <Badge className="ml-auto gap-1">
-                  <Activity className="h-3 w-3" />
-                  {activeCount} running
-                </Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentRuns.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No recent agent runs. Trigger a run from the{" "}
-                <Link
-                  href="/agents"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Agents page
-                </Link>
-                .
+        {/* ── All-clear hero state ──────────────────────────── */}
+        {!hasDue &&
+          !hasCaptured &&
+          !hasOpen &&
+          !hasRuns &&
+          !hasSchedules &&
+          !hasLists &&
+          pendingCount === 0 &&
+          failingAgents.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+              <p className="font-display text-2xl text-muted-foreground">
+                All caught up.
               </p>
-            ) : (
-              <div className="space-y-2">
-                {recentRuns.map((run) => (
-                  <div
-                    key={run.id}
-                    className="flex items-center justify-between py-1.5 border-b last:border-0 text-sm"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <StatusDot status={run.status} />
-                      <Badge
-                        variant={statusVariant(run.status)}
-                        className="text-xs"
-                      >
-                        {run.status}
-                      </Badge>
-                      <span className="font-medium truncate">{run.agent_name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-                      {run.duration_ms != null && (
-                        <span>{formatDuration(run.duration_ms)}</span>
-                      )}
-                      {run.started_at && (
-                        <span>
-                          {formatDistanceToNow(new Date(run.started_at), {
-                            addSuffix: true,
-                          })}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {recentRuns.length >= 5 && (
-                  <Link href="/agents" className="text-xs text-muted-foreground hover:text-foreground">
-                    View all agent activity
-                  </Link>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              <p className="text-xs text-muted-foreground">
+                Capture something in chat to see it here.
+              </p>
+            </div>
+          )}
       </div>
     </main>
   );

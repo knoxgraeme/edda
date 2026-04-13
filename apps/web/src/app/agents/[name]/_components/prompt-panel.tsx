@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Agent } from "../../../types/db";
 import { updateAgentAction } from "../../../actions";
-import { Section } from "./section";
+import { Section } from "@/app/components/section";
 import { Button } from "@/components/ui/button";
 
 /**

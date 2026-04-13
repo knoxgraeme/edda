@@ -4,7 +4,7 @@ import * as React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import type { TaskRun } from "../../../types/db";
-import { Section } from "./section";
+import { Section } from "@/app/components/section";
 import { RunSparkline } from "./run-sparkline";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";

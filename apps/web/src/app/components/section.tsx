@@ -4,16 +4,21 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Section primitive for the Mission Control right rail.
+ * Section primitive — the editorial "Mission Control" section.
  *
  * Layout:
- *   ┌─ vertical rule                           [action]
+ *   ┌─ sticky eyebrow bar                      [action]
  *   │  EYEBROW (small-caps)
  *   │  Heading (display serif, optional)
  *   │  ─────────────────────────
  *   │  children
  *
- * Sections stack vertically with hairline dividers between them.
+ * Sections stack vertically with hairline dividers between them. The
+ * eyebrow header pins to the top of its scroll container as you scroll
+ * past.
+ *
+ * Used by /agents/[name] (Mission Control), /agents/new (Compose), and
+ * /inbox. Shared primitive — keep app-wide.
  */
 export function Section({
   eyebrow,

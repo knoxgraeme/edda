@@ -10,7 +10,7 @@ import {
   updateScheduleAction,
   deleteScheduleAction,
 } from "../../../actions";
-import { Section } from "./section";
+import { Section } from "@/app/components/section";
 import { CronDisplay } from "./cron-display";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";

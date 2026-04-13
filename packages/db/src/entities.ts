@@ -263,3 +263,126 @@ export async function getTopEntities(limit: number = 15): Promise<Entity[]> {
   );
   return rows as Entity[];
 }
+
+// ── Graph data (knowledge-graph visualization) ────────────────────
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: "entity" | "item";
+  group: string;
+  weight: number;
+  description?: string | null;
+  aliases?: string[];
+  content?: string | null;
+  created_at?: string | null;
+  last_seen_at?: string | null;
+  last_reinforced_at?: string | null;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relationship?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+/**
+ * Returns a bipartite graph of the top-N entities (by mention_count) and the
+ * items linked to them. Used by the /graph visualization page.
+ */
+export async function getGraphData(
+  options: { entityLimit?: number; itemsPerEntity?: number } = {},
+): Promise<GraphData> {
+  const pool = getPool();
+  const entityLimit = options.entityLimit ?? 60;
+  const itemsPerEntity = options.itemsPerEntity ?? 8;
+
+  const { rows: entityRows } = await pool.query(
+    `SELECT id, name, type, aliases, description, mention_count, last_seen_at, created_at
+     FROM entities
+     WHERE confirmed = true
+     ORDER BY mention_count DESC
+     LIMIT $1`,
+    [entityLimit],
+  );
+
+  if (entityRows.length === 0) return { nodes: [], links: [] };
+
+  const entityIds = entityRows.map((r) => r.id as string);
+
+  const { rows: linkRows } = await pool.query(
+    `WITH ranked AS (
+       SELECT ie.item_id, ie.entity_id, ie.relationship,
+              i.type AS item_type,
+              i.content AS item_content,
+              i.summary AS item_summary,
+              i.created_at AS item_created_at,
+              i.last_reinforced_at AS item_last_reinforced_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY ie.entity_id
+                ORDER BY i.last_reinforced_at DESC NULLS LAST, i.created_at DESC
+              ) AS rn
+       FROM item_entities ie
+       JOIN items i ON i.id = ie.item_id
+       WHERE ie.entity_id = ANY($1::uuid[])
+         AND i.confirmed = true
+         AND i.superseded_by IS NULL
+     )
+     SELECT item_id, entity_id, relationship, item_type,
+            item_content, item_summary, item_created_at, item_last_reinforced_at
+     FROM ranked
+     WHERE rn <= $2`,
+    [entityIds, itemsPerEntity],
+  );
+
+  const itemMap = new Map<string, GraphNode>();
+  const links: GraphLink[] = [];
+
+  for (const row of linkRows) {
+    const itemId = row.item_id as string;
+    if (!itemMap.has(itemId)) {
+      const summary = (row.item_summary as string | null) ?? "";
+      const content = (row.item_content as string | null) ?? "";
+      const label = summary || content;
+      itemMap.set(itemId, {
+        id: itemId,
+        label: label.length > 80 ? label.slice(0, 77) + "..." : label,
+        kind: "item",
+        group: row.item_type as string,
+        weight: 1,
+        content,
+        created_at: (row.item_created_at as Date | null)?.toISOString?.() ?? null,
+        last_reinforced_at: (row.item_last_reinforced_at as Date | null)?.toISOString?.() ?? null,
+      });
+    } else {
+      itemMap.get(itemId)!.weight += 1;
+    }
+    links.push({
+      source: row.entity_id as string,
+      target: itemId,
+      relationship: (row.relationship as string | null) ?? undefined,
+    });
+  }
+
+  const nodes: GraphNode[] = [
+    ...entityRows.map((r) => ({
+      id: r.id as string,
+      label: r.name as string,
+      kind: "entity" as const,
+      group: r.type as string,
+      weight: Math.max(1, Number(r.mention_count) || 1),
+      description: (r.description as string | null) ?? null,
+      aliases: (r.aliases as string[] | null) ?? [],
+      created_at: (r.created_at as Date | null)?.toISOString?.() ?? undefined,
+      last_seen_at: (r.last_seen_at as Date | null)?.toISOString?.() ?? null,
+    })),
+    ...itemMap.values(),
+  ];
+
+  return { nodes, links };
+}

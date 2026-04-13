@@ -10,7 +10,7 @@ import {
   updateChannelAction,
   deleteChannelAction,
 } from "../../../actions";
-import { Section } from "./section";
+import { Section } from "@/app/components/section";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
