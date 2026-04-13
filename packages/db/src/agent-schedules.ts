@@ -8,7 +8,7 @@
 import { getPool } from "./connection.js";
 import type { AgentSchedule, ThreadLifetime } from "./types.js";
 
-const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after::text, skip_when_empty_type, enabled, created_at::text`;
+const SCHEDULE_COLS = `id, agent_id, name, cron, prompt, thread_lifetime, notify, notify_expires_after::text, skip_when_empty_type, enabled, last_fired_at::text, created_at::text`;
 
 /**
  * Normalize pg interval::text (e.g. "72:00:00") to human form (e.g. "72 hours").
@@ -36,7 +36,7 @@ export interface EnabledSchedule extends AgentSchedule {
 export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime, s.notify, s.notify_expires_after::text, s.skip_when_empty_type, s.enabled, s.created_at::text, a.name AS agent_name
+    `SELECT s.id, s.agent_id, s.name, s.cron, s.prompt, s.thread_lifetime, s.notify, s.notify_expires_after::text, s.skip_when_empty_type, s.enabled, s.last_fired_at::text, s.created_at::text, a.name AS agent_name
      FROM agent_schedules s
      JOIN agents a ON a.id = s.agent_id
      WHERE s.enabled = true AND a.enabled = true
@@ -44,6 +44,29 @@ export async function getEnabledSchedules(): Promise<EnabledSchedule[]> {
   );
   for (const row of rows) normalizeInterval(row as Record<string, unknown>);
   return rows as EnabledSchedule[];
+}
+
+/**
+ * Atomically claim a schedule fire. Updates `last_fired_at` only if the
+ * current value is older than `firedAt`. Returns true if this caller
+ * successfully claimed the fire; false if another caller already did.
+ *
+ * Used as a CAS guard so concurrent cron runners (e.g. in_process node-cron
+ * plus an external http_trigger tick happening in the same second) can't
+ * double-fire a schedule.
+ */
+export async function claimScheduleFire(
+  id: string,
+  firedAt: Date,
+): Promise<boolean> {
+  const pool = getPool();
+  const { rowCount } = await pool.query(
+    `UPDATE agent_schedules
+     SET last_fired_at = $2
+     WHERE id = $1 AND last_fired_at < $2`,
+    [id, firedAt.toISOString()],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function getSchedulesForAgent(agentId: string): Promise<AgentSchedule[]> {

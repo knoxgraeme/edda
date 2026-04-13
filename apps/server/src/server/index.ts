@@ -38,6 +38,7 @@ import { deliverRunResults } from "../utils/notify.js";
 import { runWithConcurrencyLimit } from "../utils/semaphore.js";
 import { getAdapter } from "../channels/deliver.js";
 import { resolveAndNotify } from "../agent/resolve-action.js";
+import { runCronTick } from "../cron.js";
 
 const StreamRequestSchema = z.object({
   messages: z.array(z.object({ content: z.string().min(1) })).min(1),
@@ -587,6 +588,33 @@ const ResolveActionSchema = z.object({
   resolved_by: z.string().default("web"),
 });
 
+/**
+ * POST /api/cron/tick — external cron runner entry point.
+ *
+ * Drains due reminders, fires due schedules, and runs maintenance in one
+ * atomic pass. Auth'd with INTERNAL_API_SECRET. Safe to call in any mode:
+ * in `in_process` mode the CAS guards on reminders and schedules prevent
+ * double-fire if both this endpoint and the LocalCronRunner tick in the
+ * same second.
+ *
+ * Use from:
+ *   - Railway Cron Jobs → `node apps/server/dist/cron-client.js`
+ *   - pg_cron → pg_net HTTP post (see migration 014)
+ *   - GitHub Actions / Cloud Scheduler / Fly machine cron
+ *   - Manual curl for debugging
+ */
+async function handleCronTick(res: ServerResponse) {
+  try {
+    const result = await runCronTick();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result));
+  } catch (err) {
+    getLogger().error({ err }, "Cron tick failed");
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Cron tick failed" }));
+  }
+}
+
 async function handleResolveAction(actionId: string, req: IncomingMessage, res: ServerResponse) {
   try {
     const raw = await readBody(req);
@@ -658,6 +686,8 @@ export async function startHealthServer(port: number): Promise<void> {
 
     if (urlPath === "/api/stream" && req.method === "POST") {
       await handleStream(req, res);
+    } else if (urlPath === "/api/cron/tick" && req.method === "POST") {
+      await handleCronTick(res);
     } else if (urlPath === "/api/threads" && req.method === "GET") {
       await handleThreadList(req, res);
     } else if (threadDetailMatch && req.method === "GET") {

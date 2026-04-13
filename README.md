@@ -271,11 +271,54 @@ Link your GitHub repo. Railway detects the monorepo and creates two services:
 
 Set `CORS_ORIGIN` to your web service URL. Migrations run automatically on every deploy.
 
+### 4. (Optional) Scale-to-zero via Railway Cron Jobs
+
+For scale-to-zero pricing on the server, add a third Railway service using `apps/server/railway-cron.toml` as its config-as-code path. That service uses the same Dockerfile but starts `node apps/server/dist/cron-client.js` on a `* * * * *` [Railway Cron Job](https://docs.railway.com/cron-jobs) schedule — it posts to the main server's `/api/cron/tick` and exits.
+
+Then flip the main server to http_trigger mode (web UI Settings page, or `UPDATE settings SET cron_runner = 'http_trigger'`) so it stops running its own timer. On the cron service, set:
+
+```
+SERVER_URL           → https://<your-server-service>.up.railway.app
+INTERNAL_API_SECRET  → (same value as the main server)
+```
+
+Now the main server only runs when there's a chat request, a channel event, or a cron tick — and suspends in between. See [Scheduling architecture](#scheduling-architecture) for the full story.
+
 ## Scheduling
 
 The cron runner reads `agent_schedules` and triggers agent runs via [node-cron](https://github.com/node-cron/node-cron). Each run creates a `task_run` record tracking duration, token usage, and output.
 
 Concurrency capped at 3 parallel runs by default (`task_max_concurrency` setting). Schedules sync every 5 minutes — no restart needed for changes.
+
+### Scheduling architecture
+
+Edda supports two cron runner modes, controlled by `settings.cron_runner`:
+
+| Mode | Who holds the timer | Best for |
+|------|---------------------|----------|
+| `in_process` (default) | Server process itself (node-cron + 60s reminder poll) | Local dev, VPS, home server, single-instance Fly/Railway |
+| `http_trigger` | External scheduler posts to `/api/cron/tick` | Scale-to-zero hosts (Railway Cron Jobs, pg_cron, Cloud Run, Azure Container Apps) |
+
+Both modes share the same inner code (`drainReminders`, `fireDueSchedules`, `runScheduleOnce`). Schedule fires are CAS-guarded via `agent_schedules.last_fired_at`, and reminders use `FOR UPDATE SKIP LOCKED` — so it's always safe to call `/api/cron/tick` even when the in-process runner is also active.
+
+Switch modes via the web UI Settings page or:
+
+```sql
+UPDATE settings SET cron_runner = 'http_trigger';
+```
+
+#### External scheduler options
+
+**Railway Cron Jobs** — see `apps/server/railway-cron.toml`. Deploy a second Railway service pointing at that config; it runs `node apps/server/dist/cron-client.js` on a `* * * * *` schedule, which posts to `/api/cron/tick`. Flip `cron_runner` to `http_trigger` on the main server so it stops running its own timer.
+
+**pg_cron** — migration `014_pg_cron_setup.sql` sets up a DB-native cron on Postgres installs that support `pg_cron` + `pg_net` (Supabase, Neon, RDS, Azure Flexible Server, Cloud SQL, self-hosted). The migration is a graceful no-op on hosts without pg_cron. After the migration runs, set the two config values once:
+
+```sql
+ALTER DATABASE edda SET edda.cron_endpoint   = 'https://your-server/api/cron/tick';
+ALTER DATABASE edda SET edda.internal_secret = '<your INTERNAL_API_SECRET>';
+```
+
+**Anything else that can make an authenticated HTTP POST every minute** — GitHub Actions cron, Fly machine cron, Cloud Scheduler, Azure Logic Apps, a cron entry on any box you own. The endpoint accepts an empty JSON body and returns `{ remindersFired, schedulesFired, durationMs }`. Auth with `Authorization: Bearer $INTERNAL_API_SECRET`.
 
 ## Development
 

@@ -6,3 +6,9 @@ startCommand = "node apps/server/dist/index.js"
 healthcheckPath = "/api/health"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+
+# Scale-to-zero is unlocked when `settings.cron_runner = "http_trigger"`
+# (set via the web UI or `updateSettings`). In that mode the in-process
+# cron timer is disabled and an external scheduler — the Cron Job service
+# defined in `railway-cron.toml` — pokes `/api/cron/tick` on a schedule.
+# See README "Scheduling architecture" for details.

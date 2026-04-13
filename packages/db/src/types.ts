@@ -32,7 +32,7 @@ export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 export type EmbeddingProvider = "voyage" | "openai" | "google";
 export type SearchProvider = "tavily" | "brave" | "serper" | "serpapi" | "duckduckgo";
 export type CheckpointerBackend = "postgres" | "sqlite" | "memory";
-export type CronRunner = "local" | "langgraph";
+export type CronRunner = "in_process" | "http_trigger" | "langgraph";
 export type ApprovalMode = "auto" | "confirm";
 export type SandboxProvider = "none" | "node-vfs";
 
@@ -448,6 +448,14 @@ export interface AgentSchedule {
   notify_expires_after: string | null;
   skip_when_empty_type: string | null;
   enabled: boolean;
+  /**
+   * Timestamp of the most recent successful fire of this schedule.
+   * Used by the http_trigger cron runner to compute "has the next scheduled
+   * cron time passed since this was last fired?" via cron-parser. The
+   * in_process runner also updates this column on every fire so the two
+   * modes stay consistent.
+   */
+  last_fired_at: string;
   created_at: string;
 }
 

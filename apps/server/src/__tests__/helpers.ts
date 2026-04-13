@@ -24,7 +24,7 @@ export const DEFAULT_TEST_SETTINGS: Settings = {
   agents_md_max_per_category: 10,
   agents_md_max_versions: 3,
   agents_md_max_entities: 10,
-  cron_runner: "local",
+  cron_runner: "in_process",
   langgraph_platform_url: null,
   approval_new_type: "confirm",
   approval_archive_stale: "confirm",

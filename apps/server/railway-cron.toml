@@ -1,0 +1,38 @@
+# Railway Cron Job service for the Edda backend.
+#
+# Deploy this as a *second* Railway service alongside the main server
+# (apps/server/railway.toml). On the cron service, set the config-as-code
+# path to `apps/server/railway-cron.toml` in the Railway dashboard.
+#
+# How it works:
+#   1. Railway starts the container on the cron schedule below.
+#   2. The container runs `node apps/server/dist/cron-client.js`, which
+#      posts to the main server's /api/cron/tick endpoint with the shared
+#      INTERNAL_API_SECRET.
+#   3. The server drains due reminders, fires due schedules, and runs
+#      maintenance in one pass. The cron-client exits.
+#
+# Required env vars on the cron service:
+#   SERVER_URL           — full URL of the main server service, e.g.
+#                          https://edda-server.up.railway.app
+#   INTERNAL_API_SECRET  — same value as the main server (use a shared
+#                          Railway variable or the Reference Variables
+#                          feature).
+#
+# Also ensure the main server has `settings.cron_runner = "http_trigger"`
+# so it doesn't also run its in-process timer. (The CAS guards in the
+# schedule and reminder claim paths make it safe either way, but
+# http_trigger is what actually unlocks scale-to-zero.)
+
+[build]
+dockerfilePath = "../../Dockerfile"
+
+[deploy]
+startCommand = "node apps/server/dist/cron-client.js"
+# Every minute, on the minute. Pair with a short container runtime — the
+# cron-client exits after posting, so Railway only bills the few seconds
+# each tick takes to complete.
+cronSchedule = "* * * * *"
+# Cron services must not restart on failure (Railway would re-run the
+# container before the next scheduled tick, defeating the schedule).
+restartPolicyType = "NEVER"

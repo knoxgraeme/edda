@@ -349,8 +349,9 @@ export function SettingsClient({
                         update("cron_runner", e.target.value as Settings["cron_runner"])
                       }
                     >
-                      <option value="local">Local (node-cron)</option>
-                      <option value="platform">LangGraph Platform</option>
+                      <option value="in_process">In-process (node-cron)</option>
+                      <option value="http_trigger">HTTP trigger (external scheduler)</option>
+                      <option value="langgraph">LangGraph Platform</option>
                     </Select>
                   </FieldGroup>
                 </CardContent>

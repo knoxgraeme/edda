@@ -81,8 +81,8 @@ const SEARCH_PROVIDERS = [
 ];
 
 const CRON_RUNNERS = [
-  { value: "local", label: "Local (node-cron)", hint: "self-hosted" },
-  { value: "platform", label: "LangGraph Platform", hint: "managed" },
+  { value: "in_process", label: "In-process (node-cron)", hint: "default — self-hosted / VPS / local dev" },
+  { value: "http_trigger", label: "HTTP trigger (external scheduler)", hint: "scale-to-zero — Railway Cron / pg_cron" },
 ];
 
 export async function init(options: { nonInteractive?: boolean }) {

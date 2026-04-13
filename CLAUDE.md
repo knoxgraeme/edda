@@ -152,7 +152,7 @@ Notable DB settings (in `settings` table):
 - `default_agent` — Name of the agent to use as the default conversational agent (default: `edda`)
 - `task_max_concurrency` — Max parallel agent executions (default: 3)
 - `checkpointer_backend` — `postgres`, `sqlite`, or `memory` (server uses this directly)
-- `cron_runner` — `local` or `langgraph` (server currently runs local; logs fallback when set to `langgraph`)
+- `cron_runner` — `in_process`, `http_trigger`, or `langgraph`. `in_process` (default) runs node-cron + a 60s reminder poller inside the server process. `http_trigger` disables the in-process timer and expects an external scheduler (pg_cron, Railway Cron Jobs, GitHub Actions, etc.) to POST to `/api/cron/tick` — see README "Scheduling architecture". `langgraph` is reserved and logs a fallback to `in_process`.
 - `sandbox_provider` — `none`, `node-vfs`, `daytona`, or `deno` (only `node-vfs` implemented; default: `node-vfs`)
 - `embedding_provider` / `embedding_model` / `embedding_dimensions` — configurable embedding backend
 - `agents_md_token_budget` — max token budget for AGENTS.md content (default: 4000)
