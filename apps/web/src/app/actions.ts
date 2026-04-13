@@ -278,6 +278,17 @@ export async function createAgentAction(data: {
   model_provider?: string | null;
   model?: string | null;
   metadata?: Record<string, unknown>;
+  /**
+   * Optional initial schedule, created immediately after the agent.
+   * Use when trigger = "schedule" so new agents don't land in the
+   * broken "scheduled trigger with zero schedules" state.
+   */
+  schedule?: {
+    name: string;
+    cron: string;
+    prompt: string;
+    notify?: string[];
+  };
 }) {
   validateAgentName(data.name);
 
@@ -302,6 +313,24 @@ export async function createAgentAction(data: {
     throw new Error("Model must be a string (max 100 chars)");
   }
 
+  // Validate the optional schedule up-front so we don't create an agent
+  // with no schedule when the schedule payload is bad.
+  if (data.schedule) {
+    const s = data.schedule;
+    if (!s.name || s.name.length > 100) {
+      throw new Error("Schedule name is required (max 100 chars)");
+    }
+    if (!s.cron || !isValidCron(s.cron)) {
+      throw new Error(
+        "Invalid cron expression — expected 5 fields: minute hour day month weekday",
+      );
+    }
+    if (!s.prompt || s.prompt.length > 5000) {
+      throw new Error("Schedule prompt is required (max 5000 chars)");
+    }
+    if (s.notify) validateNotifyTargets(s.notify);
+  }
+
   try {
     const agent = await createAgent({
       name: data.name,
@@ -316,6 +345,15 @@ export async function createAgentAction(data: {
       model: data.model || null,
       metadata: data.metadata,
     });
+    if (data.schedule) {
+      await createScheduleDb({
+        agent_id: agent.id,
+        name: data.schedule.name,
+        cron: data.schedule.cron,
+        prompt: data.schedule.prompt,
+        notify: data.schedule.notify ?? [],
+      });
+    }
     revalidatePath("/agents");
     redirect(`/agents/${agent.name}`);
   } catch (err: unknown) {

@@ -1,7 +1,11 @@
-import { getAgentNames } from "@edda/db";
-import { NewAgentClient } from "./new-agent-client";
+import { redirect } from "next/navigation";
 
-export default async function NewAgentPage() {
-  const agentNames = await getAgentNames();
-  return <NewAgentClient availableAgents={agentNames} />;
+/**
+ * Legacy route. The new-agent compose page has been replaced by an
+ * in-place modal on the fleet list (`NewAgentModal`). Deep links and
+ * bookmarks to /agents/new are redirected to /agents where the user
+ * can hit "+ New agent" to open the modal.
+ */
+export default function NewAgentRedirect(): never {
+  redirect("/agents");
 }

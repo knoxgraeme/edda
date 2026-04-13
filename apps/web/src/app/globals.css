@@ -1,48 +1,67 @@
 @import "tailwindcss";
 
+/* ─── Warm-light default (Mission Control) ─────────────────────────
+ *
+ * Editorial / control-room palette. Warm paper background, near-black
+ * ink, hairline warm-grey borders, single signal accent (warm-orange
+ * — already present as `--accent-warm`, now promoted to primary accent).
+ *
+ * Signal colors are used for run statuses only (ok / running / fail).
+ * ────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --card: #ffffff;
-  --card-foreground: #0a0a0a;
-  --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #171717;
-  --primary-foreground: #fafafa;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #171717;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --accent: #f5f5f5;
-  --accent-foreground: #171717;
-  --destructive: #ef4444;
+  --background: #f5f2eb;
+  --foreground: #0b0b0c;
+  --card: #f5f2eb;
+  --card-foreground: #0b0b0c;
+  --popover: #f5f2eb;
+  --popover-foreground: #0b0b0c;
+  --primary: #0b0b0c;
+  --primary-foreground: #f5f2eb;
+  --secondary: #ece8dd;
+  --secondary-foreground: #0b0b0c;
+  --muted: #ece8dd;
+  --muted-foreground: #6b675e;
+  --accent: #ece8dd;
+  --accent-foreground: #0b0b0c;
   --accent-warm: #b45309;
-  --border: #ebebeb;
-  --input: #e5e5e5;
-  --ring: #171717;
+  --accent-warm-foreground: #fff7ed;
+  --destructive: #b91c1c;
+  --border: #d9d3c4;
+  --input: #d9d3c4;
+  --ring: #b45309;
+
+  --signal-ok: #15803d;
+  --signal-run: #c2410c;
+  --signal-fail: #b91c1c;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #fafafa;
-    --card: #0a0a0a;
-    --card-foreground: #fafafa;
-    --popover: #0a0a0a;
-    --popover-foreground: #fafafa;
-    --primary: #fafafa;
-    --primary-foreground: #171717;
-    --secondary: #262626;
-    --secondary-foreground: #fafafa;
-    --muted: #262626;
-    --muted-foreground: #a3a3a3;
-    --accent: #262626;
-    --accent-foreground: #fafafa;
-    --accent-warm: #b45309;
-    --destructive: #dc2626;
-    --border: #2a2a2a;
-    --input: #262626;
-    --ring: #d4d4d4;
+    --background: #0b0b0c;
+    --foreground: #f2ede2;
+    --card: #0b0b0c;
+    --card-foreground: #f2ede2;
+    --popover: #0b0b0c;
+    --popover-foreground: #f2ede2;
+    --primary: #f2ede2;
+    --primary-foreground: #0b0b0c;
+    --secondary: #171512;
+    --secondary-foreground: #f2ede2;
+    --muted: #171512;
+    --muted-foreground: #9b968a;
+    --accent: #1f1c17;
+    --accent-foreground: #f2ede2;
+    --accent-warm: #f59e0b;
+    --accent-warm-foreground: #1a140b;
+    --destructive: #ef4444;
+    --border: #2a2520;
+    --input: #2a2520;
+    --ring: #f59e0b;
+
+    --signal-ok: #22c55e;
+    --signal-run: #f97316;
+    --signal-fail: #ef4444;
   }
 }
 
@@ -62,15 +81,93 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-warm: var(--accent-warm);
+  --color-accent-warm-foreground: var(--accent-warm-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-signal-ok: var(--signal-ok);
+  --color-signal-run: var(--signal-run);
+  --color-signal-fail: var(--signal-fail);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Note: Fraunces is intentionally NOT registered as a Tailwind theme
+     token. When added via `@theme inline`, Tailwind v4 emits a
+     `.font-display` utility that wins over the custom class below and
+     points at an empty variable, collapsing to ui-sans-serif. The
+     `.font-display` class below references `--font-fraunces` directly
+     via next/font's injected body variable. */
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Display utility — use Fraunces for agent names and section headings.
+   References next/font's --font-fraunces variable directly (not via a
+   Tailwind theme token, which would generate a colliding utility). */
+.font-display {
+  font-family: var(--font-fraunces), ui-serif, Georgia, serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+/* Section heading: small-caps style marker used across panels */
+.section-eyebrow {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Signal dot — pulsing for in-flight runs */
+@keyframes pulse-run {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+}
+.signal-dot-run {
+  animation: pulse-run 1.4s ease-in-out infinite;
+}
+
+/* Staggered page-load reveal */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise-in {
+  animation: rise-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Sparkline path draw-in */
+@keyframes sparkline-draw {
+  from {
+    stroke-dashoffset: var(--sparkline-length, 200);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.sparkline-path {
+  stroke-dasharray: var(--sparkline-length, 200);
+  stroke-dashoffset: var(--sparkline-length, 200);
+  animation: sparkline-draw 900ms ease-out 120ms forwards;
 }
