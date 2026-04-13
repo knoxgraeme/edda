@@ -604,15 +604,17 @@ const ResolveActionSchema = z.object({
  *   - Manual curl for debugging
  */
 async function handleCronTick(res: ServerResponse) {
-  try {
-    const result = await runCronTick();
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(result));
-  } catch (err) {
-    getLogger().error({ err }, "Cron tick failed");
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Cron tick failed" }));
-  }
+  return withTraceId({ module: "cron-tick" }, async () => {
+    try {
+      const result = await runCronTick();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      getLogger().error({ err }, "Cron tick failed");
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Cron tick failed" }));
+    }
+  });
 }
 
 async function handleResolveAction(actionId: string, req: IncomingMessage, res: ServerResponse) {

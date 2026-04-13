@@ -311,12 +311,16 @@ UPDATE settings SET cron_runner = 'http_trigger';
 
 **Railway Cron Jobs** — see `apps/server/railway-cron.toml`. Deploy a second Railway service pointing at that config; it runs `node apps/server/dist/cron-client.js` on a `* * * * *` schedule, which posts to `/api/cron/tick`. Flip `cron_runner` to `http_trigger` on the main server so it stops running its own timer.
 
-**pg_cron** — migration `014_pg_cron_setup.sql` sets up a DB-native cron on Postgres installs that support `pg_cron` + `pg_net` (Supabase, Neon, RDS, Azure Flexible Server, Cloud SQL, self-hosted). The migration is a graceful no-op on hosts without pg_cron. After the migration runs, set the two config values once:
+**pg_cron** — on Postgres installs that support `pg_cron` + `pg_net` (self-hosted, Supabase, Neon, RDS, Azure Flexible Server, Cloud SQL), run `packages/db/pg_cron_setup.sql` once as a superuser. The script is re-runnable and idempotent. It isn't part of the migration sequence on purpose: `CREATE EXTENSION pg_cron` requires superuser and cluster-level `shared_preload_libraries`, which the migration runner shouldn't assume.
+
+Before running the script, set the endpoint and secret on the database so the cron job has something to POST to:
 
 ```sql
 ALTER DATABASE edda SET edda.cron_endpoint   = 'https://your-server/api/cron/tick';
 ALTER DATABASE edda SET edda.internal_secret = '<your INTERNAL_API_SECRET>';
 ```
+
+Then run the script (`psql -f packages/db/pg_cron_setup.sql`) and verify with `SELECT jobname, schedule FROM cron.job`.
 
 **Anything else that can make an authenticated HTTP POST every minute** — GitHub Actions cron, Fly machine cron, Cloud Scheduler, Azure Logic Apps, a cron entry on any box you own. The endpoint accepts an empty JSON body and returns `{ remindersFired, schedulesFired, durationMs }`. Auth with `Authorization: Bearer $INTERNAL_API_SECRET`.
 

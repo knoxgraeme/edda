@@ -251,9 +251,11 @@ describe("fireDueSchedules()", () => {
     expect(mockCreateTaskRun).toHaveBeenCalledOnce();
   });
 
-  it("does NOT run when claimScheduleFire returns false (lost race)", async () => {
+  it("does NOT run or count as fired when claimScheduleFire returns false", async () => {
     // Same setup as above, but the CAS claim fails — another runner got
-    // there first. Must not call getScheduleById or createTaskRun.
+    // there first. Must not call getScheduleById or createTaskRun, and
+    // must NOT increment the fired counter (which tracks actual runs,
+    // not attempts).
     mockGetEnabledSchedules.mockResolvedValueOnce([
       {
         id: "s1",
@@ -273,14 +275,58 @@ describe("fireDueSchedules()", () => {
     ]);
     mockClaimScheduleFire.mockResolvedValueOnce(false);
 
-    // fireDueSchedules still counts this as "fired" from its own
-    // perspective — the counter tracks "attempted to fire" not "actually
-    // executed". The important assertion is that downstream work
-    // (getScheduleById, createTaskRun) was skipped.
     const fired = await fireDueSchedules(new Date("2026-01-01T12:01:30Z"));
-    expect(fired).toBe(1);
+    expect(fired).toBe(0);
     expect(mockClaimScheduleFire).toHaveBeenCalledOnce();
     expect(mockGetScheduleById).not.toHaveBeenCalled();
+    expect(mockCreateTaskRun).not.toHaveBeenCalled();
+  });
+
+  it("does NOT count disabled agents as fired", async () => {
+    // CAS succeeds, schedule fetch succeeds, but the agent is disabled.
+    // fired counter must stay at 0.
+    mockGetEnabledSchedules.mockResolvedValueOnce([
+      {
+        id: "s1",
+        agent_id: "a1",
+        agent_name: "edda",
+        name: "every minute",
+        cron: "* * * * *",
+        prompt: "do the thing",
+        thread_lifetime: null,
+        notify: [],
+        notify_expires_after: null,
+        skip_when_empty_type: null,
+        enabled: true,
+        last_fired_at: "2026-01-01T12:00:00Z",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    mockGetScheduleById.mockResolvedValueOnce({
+      id: "s1",
+      agent_id: "a1",
+      name: "every minute",
+      cron: "* * * * *",
+      prompt: "do the thing",
+      thread_lifetime: null,
+      notify: [],
+      notify_expires_after: null,
+      skip_when_empty_type: null,
+      enabled: true,
+      last_fired_at: "2026-01-01T12:01:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+    });
+    mockGetAgentByName.mockResolvedValueOnce({
+      id: "a1",
+      name: "edda",
+      enabled: false,
+      model: null,
+      thread_lifetime: "persistent",
+      metadata: {},
+    });
+
+    const fired = await fireDueSchedules(new Date("2026-01-01T12:01:30Z"));
+    expect(fired).toBe(0);
     expect(mockCreateTaskRun).not.toHaveBeenCalled();
   });
 

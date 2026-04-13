@@ -178,7 +178,9 @@ async function fireReminder(reminder: Notification): Promise<void> {
  * each enabled schedule; the DB column is the source of truth for what's
  * been fired. Called by the http_trigger path from runCronTick().
  *
- * Returns the number of schedules that were actually fired.
+ * Returns the number of schedules that actually ran (i.e. an agent run
+ * was initiated). CAS-lost races, disabled schedules, disabled agents,
+ * and skip_when_empty hits are excluded from the count.
  */
 export async function fireDueSchedules(now: Date): Promise<number> {
   const log = getLogger();
@@ -204,9 +206,10 @@ export async function fireDueSchedules(now: Date): Promise<number> {
       const lastFiredAt = new Date(schedule.last_fired_at);
       if (prev <= lastFiredAt) continue;
 
-      // Due — fire via shared path. runScheduleOnce does its own CAS claim.
-      await runScheduleOnce(schedule.id, schedule.agent_name, prev);
-      fired++;
+      // Due — fire via shared path. runScheduleOnce does its own CAS claim
+      // and returns true only when the agent run was actually initiated.
+      const didFire = await runScheduleOnce(schedule.id, schedule.agent_name, prev);
+      if (didFire) fired++;
     } catch (err) {
       log.warn(
         { scheduleId: schedule.id, err },
@@ -224,31 +227,35 @@ export async function fireDueSchedules(now: Date): Promise<number> {
  * on `last_fired_at`) before doing any work, so concurrent callers never
  * double-fire the same schedule. Shared by both the LocalCronRunner
  * node-cron callback and the http_trigger path.
+ *
+ * Returns `true` only when the agent run was actually initiated. Returns
+ * `false` when the CAS claim was lost, the schedule or agent is disabled,
+ * or the skip_when_empty optimization fired.
  */
 async function runScheduleOnce(
   scheduleId: string,
   agentNameHint: string,
   fireTime: Date,
-): Promise<void> {
+): Promise<boolean> {
   const claimed = await claimScheduleFire(scheduleId, fireTime);
   if (!claimed) {
     getLogger().debug(
       { scheduleId, fireTime: fireTime.toISOString() },
       "Schedule already fired — another runner won the claim",
     );
-    return;
+    return false;
   }
 
   const freshSchedule = await getScheduleById(scheduleId);
   if (!freshSchedule || !freshSchedule.enabled) {
     getLogger().info({ scheduleId }, "Skipping schedule — not found or disabled");
-    return;
+    return false;
   }
 
   const freshDef = await getAgentByName(agentNameHint);
   if (!freshDef || !freshDef.enabled) {
     getLogger().info({ agent: agentNameHint }, "Skipping agent — not found or disabled");
-    return;
+    return false;
   }
 
   // Skip optimization: schedules with skip_when_empty_type are skipped when no
@@ -268,7 +275,7 @@ async function runScheduleOnce(
           },
           "Skipping schedule — no new items since last run",
         );
-        return;
+        return false;
       }
     } catch (err) {
       getLogger().warn(
@@ -365,6 +372,11 @@ async function runScheduleOnce(
       },
     );
   });
+
+  // Reached the end of the work path — the agent run was initiated.
+  // Failures inside `executeAgentRun` still count as a fire, since the
+  // task_run row was created and the notify path delivered the error.
+  return true;
 }
 
 // ---------------------------------------------------------------------------
