@@ -64,3 +64,32 @@ export async function getAgentsMdContent(agentName = "edda"): Promise<string> {
   const latest = await getLatestAgentsMd(agentName);
   return latest?.content ?? "";
 }
+
+/** List AGENTS.md versions for an agent, newest first. */
+export async function listAgentsMdVersions(
+  agentName = "edda",
+  limit = 50,
+): Promise<AgentsMdVersion[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT id, content, agent_name, created_at
+     FROM agents_md_versions
+     WHERE agent_name = $1
+     ORDER BY id DESC
+     LIMIT $2`,
+    [agentName, limit],
+  );
+  return rows as AgentsMdVersion[];
+}
+
+/** Get a specific AGENTS.md version by its numeric ID. */
+export async function getAgentsMdVersionById(id: number): Promise<AgentsMdVersion | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT id, content, agent_name, created_at
+     FROM agents_md_versions
+     WHERE id = $1`,
+    [id],
+  );
+  return (rows[0] as AgentsMdVersion) ?? null;
+}

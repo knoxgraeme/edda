@@ -2,7 +2,7 @@
 
 /**
  * Edda CLI — setup wizard, deployment helpers, and terminal-first
- * knowledge / inbox browsing.
+ * knowledge / inbox browsing, agent authoring, and memory editing.
  *
  * Usage:
  *   edda init                           — interactive setup wizard
@@ -20,6 +20,19 @@
  *   edda tasks recent                  — recent agent task runs
  *   edda types list                    — item types
  *   edda skills list                   — available skills
+ *
+ *   edda agents list                   — list agents
+ *   edda agents show <name>            — agent config + schedules + channels + runs
+ *   edda agents create                 — interactive agent creator
+ *   edda agents edit <name>            — interactive field picker + $EDITOR
+ *   edda agents prompt <name>          — print system_prompt
+ *   edda agents delete <name>          — delete an agent
+ *   edda agents run <name> "<prompt>"  — trigger an on-demand run
+ *   edda agents runs <name>            — recent task runs for an agent
+ *   edda memory show <agent>           — print latest AGENTS.md
+ *   edda memory edit <agent>           — open AGENTS.md in $EDITOR
+ *   edda memory versions <agent>       — list AGENTS.md versions
+ *   edda memory diff <agent> <v1> <v2> — diff two versions
  */
 
 import { Command } from "commander";
@@ -32,6 +45,8 @@ import { registerInboxCommand } from "./commands/inbox.js";
 import { registerThreadsCommands } from "./commands/threads.js";
 import { registerTasksCommands } from "./commands/tasks.js";
 import { registerCatalogCommands } from "./commands/catalog.js";
+import { registerAgentsCommands } from "./commands/agents.js";
+import { registerMemoryCommands } from "./commands/memory.js";
 
 const program = new Command();
 
@@ -65,6 +80,10 @@ registerInboxCommand(program);
 registerThreadsCommands(program);
 registerTasksCommands(program);
 registerCatalogCommands(program);
+
+// ─── Agent + memory authoring ──────────────────────────────────────
+registerAgentsCommands(program);
+registerMemoryCommands(program);
 
 program.parseAsync().catch((err) => {
   console.error(err);
