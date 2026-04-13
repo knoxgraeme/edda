@@ -354,6 +354,43 @@ export async function getAgentKnowledge(
   return rows as Item[];
 }
 
+/**
+ * List the most recently created items, optionally filtered by type or status.
+ * Used by the CLI (`edda items recent`) and any other caller that needs a
+ * time-ordered listing across item types without supplying a specific type.
+ */
+export async function listRecentItems(opts?: {
+  type?: string;
+  status?: string;
+  limit?: number;
+}): Promise<Item[]> {
+  const pool = getPool();
+  const conditions: string[] = ["confirmed = true"];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (opts?.type) {
+    conditions.push(`type = $${idx++}`);
+    params.push(opts.type);
+  }
+  if (opts?.status) {
+    conditions.push(`status = $${idx++}`);
+    params.push(opts.status);
+  }
+
+  const limit = opts?.limit ?? 50;
+  params.push(limit);
+
+  const { rows } = await pool.query(
+    `SELECT ${ITEM_COLS}
+     FROM items WHERE ${conditions.join(" AND ")}
+     ORDER BY created_at DESC
+     LIMIT $${idx}`,
+    params,
+  );
+  return rows as Item[];
+}
+
 export async function getItemsByType(
   type: string,
   status?: string,
