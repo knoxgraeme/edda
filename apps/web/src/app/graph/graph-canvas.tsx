@@ -11,8 +11,15 @@ import {
   NODE_REL_SIZE,
   colorFor,
   nodeRadius,
-  nodeVal,
+  nodeVal as computeNodeVal,
 } from "./graph-types";
+
+/** Max characters for an entity's canvas label before truncation. */
+const LABEL_MAX_CHARS = 32;
+
+function truncateLabel(label: string): string {
+  return label.length > LABEL_MAX_CHARS ? label.slice(0, LABEL_MAX_CHARS - 1) + "…" : label;
+}
 
 // ──────────────────────────────────────────────
 // Typed wrapper around the dynamically-imported component
@@ -95,7 +102,7 @@ export const GraphCanvas = forwardRef<
       height={height}
       backgroundColor="transparent"
       nodeRelSize={NODE_REL_SIZE}
-      nodeVal={(n) => nodeVal(n)}
+      nodeVal={computeNodeVal}
       nodeColor={(n) => {
         const base = colorFor(n);
         if (!selected) return base;
@@ -138,11 +145,12 @@ export const GraphCanvas = forwardRef<
         ctx.textBaseline = "top";
         // Dark outline under a light fill so labels read against both the
         // dark background and any graph edges they cross.
+        const text = truncateLabel(node.label);
         ctx.lineWidth = 3 / globalScale;
         ctx.strokeStyle = "rgba(10, 10, 15, 0.85)";
-        ctx.strokeText(node.label, x, y + radius + 2);
+        ctx.strokeText(text, x, y + radius + 2);
         ctx.fillStyle = "rgba(235, 235, 240, 0.95)";
-        ctx.fillText(node.label, x, y + radius + 2);
+        ctx.fillText(text, x, y + radius + 2);
       }}
     />
   );

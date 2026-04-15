@@ -307,19 +307,49 @@ interface GraphItemLinkRow {
  * "Linked to N entities".
  */
 export async function getGraphData(
-  options: { entityLimit?: number; itemsPerEntity?: number } = {},
+  options: {
+    entityLimit?: number;
+    itemsPerEntity?: number;
+    types?: EntityType[];
+    search?: string;
+    /**
+     * Drop item nodes whose *true* total link count is below this threshold.
+     * Defaults to 1 (no culling). Setting to 2+ hides leaf items that only
+     * connect to a single entity — useful for de-noising dense graphs.
+     */
+    minItemLinks?: number;
+  } = {},
 ): Promise<GraphData> {
   const pool = getPool();
   const entityLimit = options.entityLimit ?? 60;
   const itemsPerEntity = options.itemsPerEntity ?? 8;
+  const minItemLinks = Math.max(1, options.minItemLinks ?? 1);
+
+  // ── Build WHERE dynamically so filters compose with the base limit query.
+  // Parameter order: $1 = entityLimit (always), $2+ = dynamic filters.
+  const conditions: string[] = ["confirmed = true"];
+  const params: unknown[] = [entityLimit];
+  let idx = 2;
+
+  if (options.types && options.types.length > 0) {
+    conditions.push(`type = ANY($${idx++}::text[])`);
+    params.push(options.types);
+  }
+
+  const trimmedSearch = options.search?.trim();
+  if (trimmedSearch) {
+    conditions.push(`(name ILIKE $${idx} OR $${idx} ILIKE ANY(aliases))`);
+    params.push(`%${trimmedSearch}%`);
+    idx++;
+  }
 
   const { rows: entityRows } = await pool.query<GraphEntityRow>(
     `SELECT id, name, type, aliases, description, mention_count, last_seen_at, created_at
      FROM entities
-     WHERE confirmed = true
+     WHERE ${conditions.join(" AND ")}
      ORDER BY mention_count DESC
      LIMIT $1`,
-    [entityLimit],
+    params,
   );
 
   if (entityRows.length === 0) return { nodes: [], links: [] };
@@ -391,6 +421,11 @@ export async function getGraphData(
 
   for (const row of linkRows) {
     const itemId = row.item_id;
+    // Degree-based culling: drop items whose true total link count is below
+    // the threshold. Also drops their links so we don't leave orphan edges.
+    const totalLinks = totalLinksByItem.get(itemId) ?? 1;
+    if (totalLinks < minItemLinks) continue;
+
     if (!itemMap.has(itemId)) {
       const summary = row.item_summary ?? "";
       const content = row.item_content ?? "";
@@ -400,7 +435,7 @@ export async function getGraphData(
         label: label.length > 80 ? label.slice(0, 77) + "..." : label,
         kind: "item",
         group: row.item_type,
-        weight: totalLinksByItem.get(itemId) ?? 1,
+        weight: totalLinks,
         content,
         created_at: row.item_created_at?.toISOString() ?? null,
         last_reinforced_at: row.item_last_reinforced_at?.toISOString() ?? null,

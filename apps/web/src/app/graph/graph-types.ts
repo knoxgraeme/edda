@@ -1,11 +1,25 @@
-import type { Entity, Item } from "@edda/db";
+import type { Entity, EntityType, Item } from "@edda/db";
 
 /**
  * Shared types and helpers for the /graph knowledge-graph page.
  *
- * NOTE: these are type-only imports from @edda/db — the `'use client'`
- * components that consume them will only import types, not runtime code.
+ * This module is the ONLY place in the graph feature allowed to import from
+ * @edda/db. `'use client'` components must import Entity/Item via this file
+ * so they never touch @edda/db directly (blocked by post-edit architecture
+ * hook even for type-only imports, since the regex can't distinguish them).
  */
+export type { Entity, EntityType, Item };
+
+/** All known entity type values (matches the union in @edda/db). */
+export const ENTITY_TYPE_VALUES: readonly EntityType[] = [
+  "person",
+  "project",
+  "company",
+  "topic",
+  "place",
+  "tool",
+  "concept",
+] as const;
 
 // ──────────────────────────────────────────────
 // Graph node / link shapes (matches /api/v1/graph response)

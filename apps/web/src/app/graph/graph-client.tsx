@@ -10,16 +10,18 @@ import { ControlsPanel } from "./controls-panel";
 import { DetailsPanel } from "./details-panel";
 import { GraphCanvas } from "./graph-canvas";
 import {
+  ENTITY_TYPE_VALUES,
+  type EntityType,
   type EntityWithItems,
   type GraphData,
   type GraphLink,
   type GraphNode,
+  type Item,
   type NodeDetail,
   linkEndId,
 } from "./graph-types";
 import { Legend } from "./legend";
-
-import type { Item } from "@edda/db";
+import { SearchInput } from "./search-input";
 
 const DETAIL_CACHE_MAX = 50;
 
@@ -32,6 +34,14 @@ export function GraphClient() {
   const [error, setError] = useState<string | null>(null);
   const [entityLimit, setEntityLimit] = useState(60);
   const [itemsPerEntity, setItemsPerEntity] = useState(8);
+  const [minItemLinks, setMinItemLinks] = useState(1);
+  const [selectedTypes, setSelectedTypes] = useState<Set<EntityType>>(
+    () => new Set(ENTITY_TYPE_VALUES),
+  );
+  // Draft vs committed search: draft updates on every keystroke, searchQuery
+  // is committed 300ms after the last change via the debounce effect below.
+  const [draftSearch, setDraftSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Selection / detail-panel state
   const [selected, setSelected] = useState<GraphNode | null>(null);
@@ -56,11 +66,33 @@ export function GraphClient() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    // Clear the detail cache — it can hold items that are no longer in view,
-    // which also keeps this cap from growing unbounded across refreshes.
-    detailCacheRef.current.clear();
+    // Detail cache is intentionally NOT cleared here — previously-fetched
+    // entity/item records are still valid across slider adjustments, and the
+    // FIFO cap in the selection effect keeps memory bounded. Manual Refresh
+    // is the only way to force re-fetch, which is rare.
+
+    // Zero types selected: deliberate empty state, no request needed.
+    if (selectedTypes.size === 0) {
+      setData({ nodes: [], links: [] });
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/v1/graph?entities=${entityLimit}&items=${itemsPerEntity}`);
+      const params = new URLSearchParams({
+        entities: String(entityLimit),
+        items: String(itemsPerEntity),
+      });
+      // Only send `types` when it's a strict subset — omitting the param
+      // means "all types" on the backend, which matches our default.
+      if (selectedTypes.size < ENTITY_TYPE_VALUES.length) {
+        params.set("types", Array.from(selectedTypes).join(","));
+      }
+      const trimmed = searchQuery.trim();
+      if (trimmed) params.set("search", trimmed);
+      // Only send `min_links` when non-default (>1) to keep URLs clean.
+      if (minItemLinks > 1) params.set("min_links", String(minItemLinks));
+      const res = await fetch(`/api/v1/graph?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as GraphData;
       setData(json);
@@ -69,11 +101,19 @@ export function GraphClient() {
     } finally {
       setLoading(false);
     }
-  }, [entityLimit, itemsPerEntity]);
+  }, [entityLimit, itemsPerEntity, minItemLinks, selectedTypes, searchQuery]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Debounce `draftSearch` -> `searchQuery` by 300ms so a burst of keystrokes
+  // collapses to a single API request once the user stops typing.
+  useEffect(() => {
+    if (draftSearch === searchQuery) return;
+    const t = setTimeout(() => setSearchQuery(draftSearch), 300);
+    return () => clearTimeout(t);
+  }, [draftSearch, searchQuery]);
 
   // Fetch full details whenever the user selects a node.
   useEffect(() => {
@@ -158,6 +198,11 @@ export function GraphClient() {
     if (!g) return;
 
     const focus = () => {
+      // x/y are populated by the force simulation. On graph-click selections
+      // they're always defined. The only path where they might be undefined
+      // is programmatic selection of a node that hasn't been placed yet
+      // (e.g. future deep-linking via URL). Bail silently in that case —
+      // user can click again once the sim has run.
       const x = selected.x;
       const y = selected.y;
       if (typeof x !== "number" || typeof y !== "number") return;
@@ -196,6 +241,17 @@ export function GraphClient() {
       else i++;
     }
     return { entities: e, items: i, links: data.links.length };
+  }, [data]);
+
+  /** Per-type entity counts in the *current* view (used for pill labels). */
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!data) return counts;
+    for (const n of data.nodes) {
+      if (n.kind !== "entity") continue;
+      counts[n.group] = (counts[n.group] ?? 0) + 1;
+    }
+    return counts;
   }, [data]);
 
   // Adjacency: node id -> map of neighbor id -> relationship label.
@@ -260,6 +316,12 @@ export function GraphClient() {
 
   // Click-through navigation from inside the detail panel: mark the focus
   // effect to skip this selection so we don't yank the viewport.
+  //
+  // Ordering invariant: React batches the `setSelected` state update, and the
+  // camera-focus effect runs once per commit. Since we set `skipFocusRef`
+  // synchronously before `setSelected`, the effect for THIS selection always
+  // sees the flag as `true` and resets it. Concurrent canvas clicks don't
+  // double-consume the flag because React coalesces into one commit per tick.
   const selectFromPanel = useCallback((node: GraphNode) => {
     skipFocusRef.current = true;
     setSelected(node);
@@ -290,6 +352,13 @@ export function GraphClient() {
       <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-lg border border-border bg-background/90 px-3 py-2 shadow-sm backdrop-blur">
         <Network className="h-4 w-4 text-muted-foreground" />
         <h1 className="text-sm font-semibold">Knowledge Graph</h1>
+        <div className="h-4 w-px bg-border" />
+        <SearchInput
+          value={draftSearch}
+          onChange={setDraftSearch}
+          placeholder="Search entities..."
+          className="w-[200px]"
+        />
         <div className="h-4 w-px bg-border" />
         <span className="text-xs text-muted-foreground">
           {nodeCounts.entities} entities · {nodeCounts.items} items · {nodeCounts.links} links
@@ -323,8 +392,13 @@ export function GraphClient() {
         <ControlsPanel
           entityLimit={entityLimit}
           itemsPerEntity={itemsPerEntity}
+          minItemLinks={minItemLinks}
           onEntityLimitChange={setEntityLimit}
           onItemsPerEntityChange={setItemsPerEntity}
+          onMinItemLinksChange={setMinItemLinks}
+          selectedTypes={selectedTypes}
+          onSelectedTypesChange={setSelectedTypes}
+          typeCounts={typeCounts}
         />
       )}
 
@@ -362,8 +436,22 @@ export function GraphClient() {
       {data && data.nodes.length === 0 && !loading && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-muted-foreground">
           <Network className="mb-3 h-10 w-10" />
-          <p className="text-sm font-medium">No knowledge yet</p>
-          <p className="text-xs">Chat with Edda to start building your graph.</p>
+          {searchQuery.trim() ? (
+            <>
+              <p className="text-sm font-medium">No matching entities</p>
+              <p className="text-xs">Try a different query.</p>
+            </>
+          ) : selectedTypes.size < ENTITY_TYPE_VALUES.length ? (
+            <>
+              <p className="text-sm font-medium">No entities match the current filter</p>
+              <p className="text-xs">Try selecting more types.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium">No knowledge yet</p>
+              <p className="text-xs">Chat with Edda to start building your graph.</p>
+            </>
+          )}
         </div>
       )}
     </main>

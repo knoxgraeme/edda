@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import {
+  type EntityWithItems,
   type GraphNode,
+  type Item,
   type NodeDetail,
   colorFor,
   formatDateTime,
@@ -102,7 +104,7 @@ function EntityDetailBody({
   nodesById,
   onSelect,
 }: {
-  data: import("./graph-types").EntityWithItems;
+  data: EntityWithItems;
   nodesById: Map<string, GraphNode>;
   onSelect: (node: GraphNode) => void;
 }) {
@@ -192,7 +194,7 @@ function ItemDetailBody({
   selectedNeighbors,
   onSelect,
 }: {
-  data: import("@edda/db").Item;
+  data: Item;
   selectedNeighbors: Array<{ node: GraphNode; relationship?: string }> | null;
   onSelect: (node: GraphNode) => void;
 }) {
