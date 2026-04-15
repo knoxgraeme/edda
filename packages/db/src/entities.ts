@@ -5,7 +5,15 @@
 import { getPool } from "./connection.js";
 import { DECAY_HALF_LIFE_DAYS, LN2, RERANK_MULTIPLIER } from "./items.js";
 
-import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
+import type {
+  Entity,
+  EntitySearchResult,
+  EntityType,
+  GraphData,
+  GraphLink,
+  GraphNode,
+  Item,
+} from "./types.js";
 
 /** All entity columns except embedding */
 export const ENTITY_COLS = `id, name, type, aliases, description, mention_count,
@@ -266,34 +274,37 @@ export async function getTopEntities(limit: number = 15): Promise<Entity[]> {
 
 // ── Graph data (knowledge-graph visualization) ────────────────────
 
-export interface GraphNode {
+/** Shape of the entity row fetched for graph rendering. Query-internal. */
+interface GraphEntityRow {
   id: string;
-  label: string;
-  kind: "entity" | "item";
-  group: string;
-  weight: number;
-  description?: string | null;
-  aliases?: string[];
-  content?: string | null;
-  created_at?: string | null;
-  last_seen_at?: string | null;
-  last_reinforced_at?: string | null;
+  name: string;
+  type: EntityType;
+  aliases: string[] | null;
+  description: string | null;
+  mention_count: number;
+  last_seen_at: Date | null;
+  created_at: Date;
 }
 
-export interface GraphLink {
-  source: string;
-  target: string;
-  relationship?: string;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  links: GraphLink[];
+/** Shape of the item/link row fetched for graph rendering. Query-internal. */
+interface GraphItemLinkRow {
+  item_id: string;
+  entity_id: string;
+  relationship: string | null;
+  item_type: string;
+  item_content: string | null;
+  item_summary: string | null;
+  item_created_at: Date | null;
+  item_last_reinforced_at: Date | null;
 }
 
 /**
  * Returns a bipartite graph of the top-N entities (by mention_count) and the
  * items linked to them. Used by the /graph visualization page.
+ *
+ * Item `weight` is the item's *true* total link count across the entire DB
+ * (not just links within the returned view), so the UI can accurately say
+ * "Linked to N entities".
  */
 export async function getGraphData(
   options: { entityLimit?: number; itemsPerEntity?: number } = {},
@@ -302,7 +313,7 @@ export async function getGraphData(
   const entityLimit = options.entityLimit ?? 60;
   const itemsPerEntity = options.itemsPerEntity ?? 8;
 
-  const { rows: entityRows } = await pool.query(
+  const { rows: entityRows } = await pool.query<GraphEntityRow>(
     `SELECT id, name, type, aliases, description, mention_count, last_seen_at, created_at
      FROM entities
      WHERE confirmed = true
@@ -313,9 +324,27 @@ export async function getGraphData(
 
   if (entityRows.length === 0) return { nodes: [], links: [] };
 
-  const entityIds = entityRows.map((r) => r.id as string);
+  const entityNodes: GraphNode[] = entityRows.map((r) => ({
+    id: r.id,
+    label: r.name,
+    kind: "entity" as const,
+    group: r.type,
+    weight: Math.max(1, Number(r.mention_count) || 1),
+    description: r.description,
+    aliases: r.aliases ?? [],
+    created_at: r.created_at?.toISOString() ?? undefined,
+    last_seen_at: r.last_seen_at?.toISOString() ?? null,
+  }));
 
-  const { rows: linkRows } = await pool.query(
+  // Short-circuit: when the caller asks for zero items per entity, there's
+  // nothing to join and no reason to hit the DB again.
+  if (itemsPerEntity === 0) {
+    return { nodes: entityNodes, links: [] };
+  }
+
+  const entityIds = entityRows.map((r) => r.id);
+
+  const { rows: linkRows } = await pool.query<GraphItemLinkRow>(
     `WITH ranked AS (
        SELECT ie.item_id, ie.entity_id, ie.relationship,
               i.type AS item_type,
@@ -340,49 +369,51 @@ export async function getGraphData(
     [entityIds, itemsPerEntity],
   );
 
+  // Compute the *true* total link count per item across the entire DB, so
+  // item weight reflects real connectivity and not just in-view links.
+  const itemIds = Array.from(new Set(linkRows.map((r) => r.item_id)));
+  const totalLinksByItem = new Map<string, number>();
+  if (itemIds.length > 0) {
+    const { rows: totalRows } = await pool.query<{ item_id: string; total_links: number }>(
+      `SELECT item_id, COUNT(*)::int AS total_links
+       FROM item_entities
+       WHERE item_id = ANY($1::uuid[])
+       GROUP BY item_id`,
+      [itemIds],
+    );
+    for (const row of totalRows) {
+      totalLinksByItem.set(row.item_id, row.total_links);
+    }
+  }
+
   const itemMap = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
 
   for (const row of linkRows) {
-    const itemId = row.item_id as string;
+    const itemId = row.item_id;
     if (!itemMap.has(itemId)) {
-      const summary = (row.item_summary as string | null) ?? "";
-      const content = (row.item_content as string | null) ?? "";
+      const summary = row.item_summary ?? "";
+      const content = row.item_content ?? "";
       const label = summary || content;
       itemMap.set(itemId, {
         id: itemId,
         label: label.length > 80 ? label.slice(0, 77) + "..." : label,
         kind: "item",
-        group: row.item_type as string,
-        weight: 1,
+        group: row.item_type,
+        weight: totalLinksByItem.get(itemId) ?? 1,
         content,
-        created_at: (row.item_created_at as Date | null)?.toISOString?.() ?? null,
-        last_reinforced_at: (row.item_last_reinforced_at as Date | null)?.toISOString?.() ?? null,
+        created_at: row.item_created_at?.toISOString() ?? null,
+        last_reinforced_at: row.item_last_reinforced_at?.toISOString() ?? null,
       });
-    } else {
-      itemMap.get(itemId)!.weight += 1;
     }
     links.push({
-      source: row.entity_id as string,
+      source: row.entity_id,
       target: itemId,
-      relationship: (row.relationship as string | null) ?? undefined,
+      relationship: row.relationship ?? undefined,
     });
   }
 
-  const nodes: GraphNode[] = [
-    ...entityRows.map((r) => ({
-      id: r.id as string,
-      label: r.name as string,
-      kind: "entity" as const,
-      group: r.type as string,
-      weight: Math.max(1, Number(r.mention_count) || 1),
-      description: (r.description as string | null) ?? null,
-      aliases: (r.aliases as string[] | null) ?? [],
-      created_at: (r.created_at as Date | null)?.toISOString?.() ?? undefined,
-      last_seen_at: (r.last_seen_at as Date | null)?.toISOString?.() ?? null,
-    })),
-    ...itemMap.values(),
-  ];
+  const nodes: GraphNode[] = [...entityNodes, ...itemMap.values()];
 
   return { nodes, links };
 }

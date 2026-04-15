@@ -12,6 +12,12 @@ export async function GET(request: Request) {
     50,
   );
 
-  const data = await getGraphData({ entityLimit, itemsPerEntity });
-  return NextResponse.json(data);
+  try {
+    const data = await getGraphData({ entityLimit, itemsPerEntity });
+    return NextResponse.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load graph data";
+    console.error("[api/v1/graph] getGraphData failed:", err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

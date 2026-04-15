@@ -314,6 +314,35 @@ export interface EntitySearchResult extends Entity {
 }
 
 // ──────────────────────────────────────────────
+// Knowledge Graph (bipartite entity/item visualization)
+// ──────────────────────────────────────────────
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: "entity" | "item";
+  group: string;
+  weight: number;
+  description?: string | null;
+  aliases?: string[];
+  content?: string | null;
+  created_at?: string | null;
+  last_seen_at?: string | null;
+  last_reinforced_at?: string | null;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relationship?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+// ──────────────────────────────────────────────
 // Pending Items (inbox)
 // ──────────────────────────────────────────────
 

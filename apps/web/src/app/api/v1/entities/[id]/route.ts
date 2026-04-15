@@ -40,14 +40,12 @@ export async function PATCH(
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
 
-  let updates;
-  try {
-    updates = UpdateEntitySchema.parse(body);
-  } catch {
+  const parsed = UpdateEntitySchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json({ error: "Invalid update fields" }, { status: 400 });
   }
 
-  const entity = await updateEntity(id, updates);
+  const entity = await updateEntity(id, parsed.data);
   if (!entity) return notFound("Entity");
   return NextResponse.json(entity);
 }
