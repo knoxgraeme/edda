@@ -1,4 +1,4 @@
-import type { Entity, EntityType, Item } from "@edda/db";
+import type { Entity, EntityType, GraphStats, Item } from "@edda/db";
 
 /**
  * Shared types and helpers for the /graph knowledge-graph page.
@@ -8,7 +8,7 @@ import type { Entity, EntityType, Item } from "@edda/db";
  * so they never touch @edda/db directly (blocked by post-edit architecture
  * hook even for type-only imports, since the regex can't distinguish them).
  */
-export type { Entity, EntityType, Item };
+export type { Entity, EntityType, GraphStats, Item };
 
 /** All known entity type values (matches the union in @edda/db). */
 export const ENTITY_TYPE_VALUES: readonly EntityType[] = [
@@ -51,6 +51,7 @@ export interface GraphLink {
 export interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
+  stats?: GraphStats;
 }
 
 // ──────────────────────────────────────────────

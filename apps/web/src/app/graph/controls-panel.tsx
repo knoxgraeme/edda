@@ -9,9 +9,15 @@ interface ControlsPanelProps {
   entityLimit: number;
   itemsPerEntity: number;
   minItemLinks: number;
+  /** d3-force charge strength. More negative = more node repulsion. */
+  chargeStrength: number;
+  /** d3-force link distance in graph units. Higher = longer edges. */
+  linkDistance: number;
   onEntityLimitChange: (value: number) => void;
   onItemsPerEntityChange: (value: number) => void;
   onMinItemLinksChange: (value: number) => void;
+  onChargeStrengthChange: (value: number) => void;
+  onLinkDistanceChange: (value: number) => void;
   // Type-filter state
   selectedTypes: Set<EntityType>;
   onSelectedTypesChange: (next: Set<EntityType>) => void;
@@ -45,9 +51,13 @@ export function ControlsPanel({
   entityLimit,
   itemsPerEntity,
   minItemLinks,
+  chargeStrength,
+  linkDistance,
   onEntityLimitChange,
   onItemsPerEntityChange,
   onMinItemLinksChange,
+  onChargeStrengthChange,
+  onLinkDistanceChange,
   selectedTypes,
   onSelectedTypesChange,
   typeCounts,
@@ -55,6 +65,8 @@ export function ControlsPanel({
   const [draftEntities, setDraftEntities] = useState(entityLimit);
   const [draftItems, setDraftItems] = useState(itemsPerEntity);
   const [draftMinLinks, setDraftMinLinks] = useState(minItemLinks);
+  const [draftCharge, setDraftCharge] = useState(chargeStrength);
+  const [draftLinkDist, setDraftLinkDist] = useState(linkDistance);
 
   // Keep local draft in sync when the parent value changes externally
   // (e.g. on initial mount or a programmatic reset).
@@ -67,6 +79,12 @@ export function ControlsPanel({
   useEffect(() => {
     setDraftMinLinks(minItemLinks);
   }, [minItemLinks]);
+  useEffect(() => {
+    setDraftCharge(chargeStrength);
+  }, [chargeStrength]);
+  useEffect(() => {
+    setDraftLinkDist(linkDistance);
+  }, [linkDistance]);
 
   const commitEntities = () => {
     if (draftEntities !== entityLimit) onEntityLimitChange(draftEntities);
@@ -76,6 +94,12 @@ export function ControlsPanel({
   };
   const commitMinLinks = () => {
     if (draftMinLinks !== minItemLinks) onMinItemLinksChange(draftMinLinks);
+  };
+  const commitCharge = () => {
+    if (draftCharge !== chargeStrength) onChargeStrengthChange(draftCharge);
+  };
+  const commitLinkDist = () => {
+    if (draftLinkDist !== linkDistance) onLinkDistanceChange(draftLinkDist);
   };
 
   const allSelected = selectedTypes.size === ENTITY_TYPE_VALUES.length;
@@ -221,6 +245,66 @@ export function ControlsPanel({
           <p className="mt-1 text-[10px] text-muted-foreground">
             Hide items with fewer than N total entity links
           </p>
+        </div>
+
+        <div className="border-t border-border pt-3">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Layout forces
+          </p>
+
+          <div className="mb-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="graph-charge" className="text-xs font-medium">
+                Repel strength
+              </label>
+              <span className="text-xs text-muted-foreground">{draftCharge}</span>
+            </div>
+            <input
+              id="graph-charge"
+              type="range"
+              min={-200}
+              max={-5}
+              step={5}
+              value={draftCharge}
+              onChange={(e) => setDraftCharge(Number(e.target.value))}
+              onPointerUp={commitCharge}
+              onMouseUp={commitCharge}
+              onTouchEnd={commitCharge}
+              onKeyUp={commitCharge}
+              onBlur={commitCharge}
+              className="w-full"
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              More negative = nodes push apart harder
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="graph-link-distance" className="text-xs font-medium">
+                Link distance
+              </label>
+              <span className="text-xs text-muted-foreground">{draftLinkDist}</span>
+            </div>
+            <input
+              id="graph-link-distance"
+              type="range"
+              min={10}
+              max={200}
+              step={5}
+              value={draftLinkDist}
+              onChange={(e) => setDraftLinkDist(Number(e.target.value))}
+              onPointerUp={commitLinkDist}
+              onMouseUp={commitLinkDist}
+              onTouchEnd={commitLinkDist}
+              onKeyUp={commitLinkDist}
+              onBlur={commitLinkDist}
+              className="w-full"
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Preferred edge length between connected nodes
+            </p>
+          </div>
         </div>
       </div>
     </div>

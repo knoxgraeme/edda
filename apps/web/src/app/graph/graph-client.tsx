@@ -38,6 +38,10 @@ export function GraphClient() {
   const [selectedTypes, setSelectedTypes] = useState<Set<EntityType>>(
     () => new Set(ENTITY_TYPE_VALUES),
   );
+  // Force-simulation tuning knobs. d3-force defaults: charge=-30, linkDistance=30.
+  // More negative charge → stronger node repulsion → more spread.
+  const [chargeStrength, setChargeStrength] = useState(-30);
+  const [linkDistance, setLinkDistance] = useState(30);
   // Draft vs committed search: draft updates on every keystroke, searchQuery
   // is committed 300ms after the last change via the debounce effect below.
   const [draftSearch, setDraftSearch] = useState("");
@@ -184,6 +188,29 @@ export function GraphClient() {
   }, []);
 
   // ──────────────────────────────────────────────
+  // Force tuning: apply charge/link parameters to d3-force and reheat the
+  // simulation. Runs on every change OR when the graph is rebuilt (so new
+  // nodes pick up the current settings).
+  // ──────────────────────────────────────────────
+  useEffect(() => {
+    const g = graphRef.current;
+    if (!g || !data || data.nodes.length === 0) return;
+    // react-force-graph's `d3Force(name)` returns the underlying d3-force
+    // instance; we use the fluent setters to tune.
+    const charge = g.d3Force("charge") as
+      | { strength: (v: number) => unknown }
+      | null
+      | undefined;
+    charge?.strength(chargeStrength);
+    const link = g.d3Force("link") as
+      | { distance: (v: number) => unknown }
+      | null
+      | undefined;
+    link?.distance(linkDistance);
+    g.d3ReheatSimulation();
+  }, [chargeStrength, linkDistance, data]);
+
+  // ──────────────────────────────────────────────
   // Camera focus: center + zoom on the selected node once the sim has a
   // chance to place it. Skipped for click-through navigation from the
   // detail panel, because that would yank the viewport unexpectedly.
@@ -233,15 +260,33 @@ export function GraphClient() {
   }, [data]);
 
   const nodeCounts = useMemo(() => {
-    if (!data) return { entities: 0, items: 0, links: 0 };
+    if (!data) return { entities: 0, items: 0, links: 0, hidden: 0 };
     let e = 0;
     let i = 0;
     for (const n of data.nodes) {
       if (n.kind === "entity") e++;
       else i++;
     }
-    return { entities: e, items: i, links: data.links.length };
+    return {
+      entities: e,
+      items: i,
+      links: data.links.length,
+      hidden: data.stats?.itemsHiddenByMinLinks ?? 0,
+    };
   }, [data]);
+
+  /** Any non-default filter active? Used to indicate "viewing a slice". */
+  const filterActive =
+    minItemLinks > 1 ||
+    searchQuery.trim() !== "" ||
+    selectedTypes.size < ENTITY_TYPE_VALUES.length;
+
+  const resetFilters = useCallback(() => {
+    setMinItemLinks(1);
+    setDraftSearch("");
+    setSearchQuery("");
+    setSelectedTypes(new Set(ENTITY_TYPE_VALUES));
+  }, []);
 
   /** Per-type entity counts in the *current* view (used for pill labels). */
   const typeCounts = useMemo(() => {
@@ -361,8 +406,32 @@ export function GraphClient() {
         />
         <div className="h-4 w-px bg-border" />
         <span className="text-xs text-muted-foreground">
-          {nodeCounts.entities} entities · {nodeCounts.items} items · {nodeCounts.links} links
+          {nodeCounts.entities} entities · {nodeCounts.items} items
+          {nodeCounts.hidden > 0 && (
+            <span
+              className="text-amber-500/80"
+              title={`${nodeCounts.hidden} items hidden by the "min item connections" filter. Lower it to show them.`}
+            >
+              {" "}
+              ({nodeCounts.hidden} hidden)
+            </span>
+          )}{" "}
+          · {nodeCounts.links} links
         </span>
+        {filterActive && (
+          <>
+            <div className="h-4 w-px bg-border" />
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:bg-amber-500/20"
+              title="One or more filters are active. Click to reset."
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              Filtered · reset
+            </button>
+          </>
+        )}
       </div>
 
       {/* Top-right toolbar */}
@@ -393,9 +462,13 @@ export function GraphClient() {
           entityLimit={entityLimit}
           itemsPerEntity={itemsPerEntity}
           minItemLinks={minItemLinks}
+          chargeStrength={chargeStrength}
+          linkDistance={linkDistance}
           onEntityLimitChange={setEntityLimit}
           onItemsPerEntityChange={setItemsPerEntity}
           onMinItemLinksChange={setMinItemLinks}
+          onChargeStrengthChange={setChargeStrength}
+          onLinkDistanceChange={setLinkDistance}
           selectedTypes={selectedTypes}
           onSelectedTypesChange={setSelectedTypes}
           typeCounts={typeCounts}

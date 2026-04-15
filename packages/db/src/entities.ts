@@ -418,13 +418,19 @@ export async function getGraphData(
 
   const itemMap = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
+  const consideredItems = new Set<string>();
+  const hiddenItems = new Set<string>();
 
   for (const row of linkRows) {
     const itemId = row.item_id;
+    consideredItems.add(itemId);
     // Degree-based culling: drop items whose true total link count is below
     // the threshold. Also drops their links so we don't leave orphan edges.
     const totalLinks = totalLinksByItem.get(itemId) ?? 1;
-    if (totalLinks < minItemLinks) continue;
+    if (totalLinks < minItemLinks) {
+      hiddenItems.add(itemId);
+      continue;
+    }
 
     if (!itemMap.has(itemId)) {
       const summary = row.item_summary ?? "";
@@ -450,5 +456,12 @@ export async function getGraphData(
 
   const nodes: GraphNode[] = [...entityNodes, ...itemMap.values()];
 
-  return { nodes, links };
+  return {
+    nodes,
+    links,
+    stats: {
+      itemsConsidered: consideredItems.size,
+      itemsHiddenByMinLinks: hiddenItems.size,
+    },
+  };
 }

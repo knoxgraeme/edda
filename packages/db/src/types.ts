@@ -337,9 +337,17 @@ export interface GraphLink {
   relationship?: string;
 }
 
+export interface GraphStats {
+  /** Unique items that matched the entity partition before min_links culling. */
+  itemsConsidered: number;
+  /** Unique items dropped by the min_links threshold (0 when threshold=1). */
+  itemsHiddenByMinLinks: number;
+}
+
 export interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
+  stats?: GraphStats;
 }
 
 // ──────────────────────────────────────────────
