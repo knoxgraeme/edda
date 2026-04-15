@@ -16,8 +16,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createDeepAgent } from "deepagents";
-import type { SandboxBackendProtocol } from "deepagents";
-import type { LanguageModelLike } from "@langchain/core/language_models/base";
+import type { SandboxBackendProtocol, SubAgent } from "deepagents";
 import type { StructuredTool } from "@langchain/core/tools";
 import type { BaseStore } from "@langchain/langgraph";
 import type { Agent, Settings } from "@edda/db";
@@ -159,25 +158,18 @@ import { writeSkillsToStore } from "./skill-utils.js";
 // Subagent resolution
 // ---------------------------------------------------------------------------
 
-interface SubagentSpec {
-  name: string;
-  description: string;
-  systemPrompt: string;
-  tools: StructuredTool[];
-  skills: string[];
-  model?: LanguageModelLike | string;
-}
-
 /**
- * Resolve subagent specs from the DB. Each subagent gets its own scoped
- * tools, skills, system prompt (with AGENTS.md context), and model.
+ * Resolve subagents from the DB into deepagents' SubAgent shape. Each subagent
+ * gets its own scoped tools, skills, system prompt (with AGENTS.md context),
+ * model, and interrupt wrapping — mirroring how the main agent is built so
+ * destructive tools can't bypass approval via sync delegation.
  */
 async function resolveSubagents(
   names: string[],
   available: StructuredTool[],
   store: BaseStore,
   settings: Settings,
-): Promise<SubagentSpec[]> {
+): Promise<SubAgent[]> {
   if (names.length === 0) return [];
 
   const rows = await getAgentsByNames(names);
@@ -194,7 +186,7 @@ async function resolveSubagents(
   // Write all subagent skills + build prompts + resolve models in parallel
   const [, ...specs] = await Promise.all([
     Promise.all(enabled.map((row) => writeSkillsToStore(getRowSkills(row), store))),
-    ...enabled.map(async (row) => {
+    ...enabled.map(async (row): Promise<SubAgent> => {
       const modelString = getModelString(row.model_provider, row.model);
       const model = await resolveModel(row.model_provider, row.model);
       getLogger().info(
@@ -214,7 +206,22 @@ async function resolveSubagents(
       declared.add("list_my_runs");
       const scoped = scopeTools(available, declared);
       ensureObjectSchemas(scoped);
-      const subTools = isGeminiModel(modelString) ? scoped.map(normalizeToolForGemini) : scoped;
+      let subTools = isGeminiModel(modelString) ? scoped.map(normalizeToolForGemini) : scoped;
+
+      // Wrap interruptible tools for the subagent, using its own metadata
+      // overrides. Without this, the main agent's delete_item (etc.) would
+      // require approval but a subagent calling the same tool would not.
+      const subInterruptOverrides = (row.metadata?.interrupt_overrides ?? {}) as Record<
+        string,
+        InterruptLevel
+      >;
+      const subInterruptTtl = (row.metadata?.interrupt_ttl as string) ?? "1 hour";
+      subTools = wrapInterruptibleTools(subTools, {
+        defaults: toolInterruptDefaults,
+        overrides: subInterruptOverrides,
+        agentName: row.name,
+        ttl: subInterruptTtl,
+      });
 
       return {
         name: row.name,
@@ -223,7 +230,7 @@ async function resolveSubagents(
         tools: subTools,
         skills: row.skills.length > 0 ? ["/skills/"] : [],
         model,
-      } satisfies SubagentSpec;
+      } satisfies SubAgent;
     }),
   ]);
 
