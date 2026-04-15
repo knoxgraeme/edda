@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
   // Parse `search` and trim. Empty string = no filter.
   const searchRaw = url.searchParams.get("search");
-  const search = searchRaw?.trim() ? searchRaw.trim() : undefined;
+  const search = searchRaw?.trim() ? searchRaw.trim().slice(0, 200) : undefined;
 
   // Parse `min_links` (degree-based culling threshold). Clamped to [1, 10].
   const minItemLinks = Math.min(
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load graph data";
+    const message = "Failed to load graph data";
     console.error("[api/v1/graph] getGraphData failed:", err);
     return NextResponse.json({ error: message }, { status: 500 });
   }

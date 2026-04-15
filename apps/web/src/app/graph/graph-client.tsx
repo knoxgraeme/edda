@@ -139,7 +139,7 @@ export function GraphClient() {
     setDetailLoading(true);
     const url =
       selected.kind === "entity"
-        ? `/api/v1/entities/${selected.id}?expand=items&items_limit=500`
+        ? `/api/v1/entities/${selected.id}?expand=items&items_limit=20`
         : `/api/v1/items/${selected.id}`;
     fetch(url)
       .then(async (res) => {
@@ -271,7 +271,7 @@ export function GraphClient() {
       entities: e,
       items: i,
       links: data.links.length,
-      hidden: data.stats?.itemsHiddenByMinLinks ?? 0,
+      hidden: data.stats?.items_hidden_by_min_links ?? 0,
     };
   }, [data]);
 

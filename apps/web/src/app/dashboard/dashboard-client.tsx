@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 
 import type {
-  AgentSchedule,
   DashboardData,
+  EnabledSchedule,
   Item,
   TaskRun,
 } from "../types/db";
@@ -27,9 +27,6 @@ import { formatDuration } from "@/lib/format";
 import { updateItemStatusAction } from "../actions";
 import { RunSparkline } from "../agents/[name]/_components/run-sparkline";
 
-interface EnabledScheduleLike extends AgentSchedule {
-  agent_name: string;
-}
 
 // ─── Signal dot ─────────────────────────────────────────────────
 
@@ -167,7 +164,7 @@ function ScheduleForecastRow({
   schedule,
   now,
 }: {
-  schedule: EnabledScheduleLike;
+  schedule: EnabledSchedule;
   now: number;
 }) {
   const next = useMemo(
@@ -248,7 +245,7 @@ export function DashboardClient({
   pendingCount: number;
   recentRuns: TaskRun[];
   activeCount: number;
-  schedules: EnabledScheduleLike[];
+  schedules: EnabledSchedule[];
   latestRunPerAgent: Record<string, TaskRun>;
 }) {
   const router = useRouter();
@@ -310,7 +307,7 @@ export function DashboardClient({
         const next = nextRunAt(s.cron, new Date(now));
         return next ? { schedule: s, nextAt: next.getTime() } : null;
       })
-      .filter((x): x is { schedule: EnabledScheduleLike; nextAt: number } => !!x)
+      .filter((x): x is { schedule: EnabledSchedule; nextAt: number } => !!x)
       .filter((x) => x.nextAt <= horizon)
       .sort((a, b) => a.nextAt - b.nextAt)
       .map((x) => x.schedule);

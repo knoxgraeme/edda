@@ -17,8 +17,8 @@ import { cn } from "@/lib/utils";
  * eyebrow header pins to the top of its scroll container as you scroll
  * past.
  *
- * Used by /agents/[name] (Mission Control), /agents/new (Compose), and
- * /inbox. Shared primitive — keep app-wide.
+ * Used by /agents/[name] (Mission Control) and /inbox.
+ * Shared primitive — keep app-wide.
  */
 export function Section({
   eyebrow,

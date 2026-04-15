@@ -339,9 +339,9 @@ export interface GraphLink {
 
 export interface GraphStats {
   /** Unique items that matched the entity partition before min_links culling. */
-  itemsConsidered: number;
+  items_considered: number;
   /** Unique items dropped by the min_links threshold (0 when threshold=1). */
-  itemsHiddenByMinLinks: number;
+  items_hidden_by_min_links: number;
 }
 
 export interface GraphData {

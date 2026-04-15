@@ -139,7 +139,7 @@ export const GraphCanvas = forwardRef<
         // at any zoom), with a floor to prevent hair-thin text when zoomed in.
         // Item labels stay off — tooltip via `nodeLabel` shows them on hover.
         if (node.kind !== "entity") return;
-        const fontSize = Math.max(3, 9 / globalScale);
+        const fontSize = Math.max(3, Math.round(9 / globalScale));
         ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";

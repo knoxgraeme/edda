@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { Bot, Play, AlertCircle } from "lucide-react";
 
-import type { Agent, AgentSchedule, TaskRun } from "../types/db";
+import type { Agent, AgentSchedule, EnabledSchedule, TaskRun } from "../types/db";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,14 +22,10 @@ import { cn } from "@/lib/utils";
 import { formatCountdown, humanizeCron, nextRunAt } from "@/lib/cron";
 import { NewAgentModal } from "./_components/new-agent-modal";
 
-interface EnabledScheduleLike extends AgentSchedule {
-  agent_name: string;
-}
-
 interface Props {
   agents: Agent[];
   lastRuns: Record<string, TaskRun | null>;
-  schedules: EnabledScheduleLike[];
+  schedules: EnabledSchedule[];
   defaultAgent: string;
 }
 
@@ -175,13 +171,11 @@ function AgentRow({
   agent,
   lastRun,
   schedules,
-  isDefault,
   onRun,
 }: {
   agent: Agent;
   lastRun: TaskRun | null | undefined;
   schedules: AgentSchedule[];
-  isDefault: boolean;
   onRun: (name: string) => void;
 }) {
   const dot = statusDot(lastRun);
@@ -199,9 +193,6 @@ function AgentRow({
         {/* Name column */}
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            {isDefault && (
-              <span className="section-eyebrow !text-accent-warm">default</span>
-            )}
             {!agent.enabled && (
               <span className="section-eyebrow text-muted-foreground">
                 disabled
@@ -444,7 +435,6 @@ export function AgentsClient({
                 agent={agent}
                 lastRun={lastRuns[agent.name]}
                 schedules={schedulesByAgent[agent.name] ?? []}
-                isDefault={false}
                 onRun={openRunDialog}
               />
             ))}
