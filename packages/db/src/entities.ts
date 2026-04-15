@@ -15,6 +15,11 @@ import type {
   Item,
 } from "./types.js";
 
+/** Escape SQL ILIKE metacharacters so they match literally. */
+function escapeLike(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 /** All entity columns except embedding */
 export const ENTITY_COLS = `id, name, type, aliases, description, mention_count,
   last_seen_at, confirmed, pending_action, metadata, created_at, updated_at`;
@@ -98,7 +103,7 @@ export async function getEntitiesByName(name: string): Promise<Entity[]> {
   const pool = getPool();
   const { rows } = await pool.query(
     `SELECT ${ENTITY_COLS} FROM entities WHERE name ILIKE $1 OR $1 = ANY(aliases)`,
-    [`%${name}%`],
+    [`%${escapeLike(name)}%`],
   );
   return rows as Entity[];
 }
@@ -212,7 +217,7 @@ export async function listEntities(
   }
   if (options.search) {
     conditions.push(`(name ILIKE $${idx} OR $${idx} ILIKE ANY(aliases))`);
-    params.push(`%${options.search}%`);
+    params.push(`%${escapeLike(options.search)}%`);
     idx++;
   }
 
@@ -339,7 +344,7 @@ export async function getGraphData(
   const trimmedSearch = options.search?.trim();
   if (trimmedSearch) {
     conditions.push(`(name ILIKE $${idx} OR $${idx} ILIKE ANY(aliases))`);
-    params.push(`%${trimmedSearch}%`);
+    params.push(`%${escapeLike(trimmedSearch)}%`);
     idx++;
   }
 
@@ -352,7 +357,9 @@ export async function getGraphData(
     params,
   );
 
-  if (entityRows.length === 0) return { nodes: [], links: [] };
+  if (entityRows.length === 0) {
+    return { nodes: [], links: [], stats: { items_considered: 0, items_hidden_by_min_links: 0 } };
+  }
 
   const entityNodes: GraphNode[] = entityRows.map((r) => ({
     id: r.id,
@@ -369,7 +376,7 @@ export async function getGraphData(
   // Short-circuit: when the caller asks for zero items per entity, there's
   // nothing to join and no reason to hit the DB again.
   if (itemsPerEntity === 0) {
-    return { nodes: entityNodes, links: [] };
+    return { nodes: entityNodes, links: [], stats: { items_considered: 0, items_hidden_by_min_links: 0 } };
   }
 
   const entityIds = entityRows.map((r) => r.id);
@@ -460,8 +467,8 @@ export async function getGraphData(
     nodes,
     links,
     stats: {
-      itemsConsidered: consideredItems.size,
-      itemsHiddenByMinLinks: hiddenItems.size,
+      items_considered: consideredItems.size,
+      items_hidden_by_min_links: hiddenItems.size,
     },
   };
 }

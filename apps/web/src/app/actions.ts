@@ -346,13 +346,19 @@ export async function createAgentAction(data: {
       metadata: data.metadata,
     });
     if (data.schedule) {
-      await createScheduleDb({
-        agent_id: agent.id,
-        name: data.schedule.name,
-        cron: data.schedule.cron,
-        prompt: data.schedule.prompt,
-        notify: data.schedule.notify ?? [],
-      });
+      try {
+        await createScheduleDb({
+          agent_id: agent.id,
+          name: data.schedule.name,
+          cron: data.schedule.cron,
+          prompt: data.schedule.prompt,
+          notify: data.schedule.notify ?? [],
+        });
+      } catch (scheduleErr) {
+        // Roll back the orphaned agent row so a retry won't hit "already exists"
+        await deleteAgent(agent.name);
+        throw new Error("Failed to create agent schedule. Please try again.");
+      }
     }
     revalidatePath("/agents");
     redirect(`/agents/${agent.name}`);

@@ -24,8 +24,8 @@ const WEEKDAYS_LONG = [
 ] as const;
 
 export interface ParsedCron {
-  minutes: Set<number>;
-  hours: Set<number>;
+  minutes: Set<number> | "*";
+  hours: Set<number> | "*";
   daysOfMonth: Set<number> | "*";
   months: Set<number> | "*";
   daysOfWeek: Set<number> | "*";
@@ -82,8 +82,8 @@ export function parseCron(expression: string): ParsedCron | null {
   if (parts.length !== 5) return null;
   try {
     return {
-      minutes: parseField(parts[0], 0, 59) as Set<number>,
-      hours: parseField(parts[1], 0, 23) as Set<number>,
+      minutes: parseField(parts[0], 0, 59),
+      hours: parseField(parts[1], 0, 23),
       daysOfMonth: parseField(parts[2], 1, 31),
       months: parseField(parts[3], 1, 12),
       daysOfWeek: parseField(parts[4], 0, 6),
@@ -113,18 +113,18 @@ export function humanizeCron(expression: string): string {
   const { minutes, hours, daysOfMonth, months, daysOfWeek } = parsed;
 
   // Single specific minute + single specific hour is the common case.
-  const singleMinute = minutes.size === 1;
-  const singleHour = hours.size === 1;
-  const hour = singleHour ? [...hours][0] : null;
-  const minute = singleMinute ? [...minutes][0] : null;
+  const singleMinute = minutes !== "*" && minutes.size === 1;
+  const singleHour = hours !== "*" && hours.size === 1;
+  const hour = singleHour ? [...(hours as Set<number>)][0] : null;
+  const minute = singleMinute ? [...(minutes as Set<number>)][0] : null;
 
-  const allHours = hours.size === 24;
+  const allHours = hours !== "*" && hours.size === 24;
   const anyDay = daysOfMonth === "*";
   const anyMonth = months === "*";
   const anyDow = daysOfWeek === "*";
 
   // Every N minutes
-  if (allHours && anyDay && anyMonth && anyDow) {
+  if (allHours && anyDay && anyMonth && anyDow && minutes !== "*") {
     if (minutes.size === 60) return "Every minute";
     if (minutes.size === 1 && minute === 0) return "Every hour";
     // Detect stride (e.g., */15)
@@ -138,7 +138,7 @@ export function humanizeCron(expression: string): string {
   }
 
   // Every N hours, on the minute
-  if (singleMinute && minute === 0 && anyDay && anyMonth && anyDow) {
+  if (singleMinute && minute === 0 && anyDay && anyMonth && anyDow && hours !== "*") {
     if (allHours) return "Every hour";
     const sorted = [...hours].sort((a, b) => a - b);
     if (sorted.length >= 2) {
@@ -247,8 +247,8 @@ export function nextRunAt(
 
 function cronMatches(parsed: ParsedCron, date: Date): boolean {
   const { minutes, hours, daysOfMonth, months, daysOfWeek } = parsed;
-  if (!minutes.has(date.getMinutes())) return false;
-  if (!hours.has(date.getHours())) return false;
+  if (minutes !== "*" && !minutes.has(date.getMinutes())) return false;
+  if (hours !== "*" && !hours.has(date.getHours())) return false;
   // Cron semantics: if both DOM and DOW are restricted, either matching is
   // acceptable. If one is "*", only the restricted one must match.
   const dom = date.getDate();

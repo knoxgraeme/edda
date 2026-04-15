@@ -267,7 +267,7 @@ export function SchedulesPanel({
       try {
         await updateScheduleAction(sched.id, agentName, { enabled });
         toast.success(`Schedule ${enabled ? "enabled" : "disabled"}`);
-        refresh();
+        await refresh();
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Failed to toggle schedule",
@@ -282,7 +282,7 @@ export function SchedulesPanel({
       try {
         await deleteScheduleAction(sched.id, agentName);
         toast.success("Schedule deleted");
-        refresh();
+        await refresh();
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Failed to delete schedule",
