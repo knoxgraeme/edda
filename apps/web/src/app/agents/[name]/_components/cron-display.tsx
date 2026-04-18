@@ -12,13 +12,7 @@ import { cn } from "@/lib/utils";
  *
  * The countdown updates every 30 seconds via a shared ticker.
  */
-export function CronDisplay({
-  expression,
-  className,
-}: {
-  expression: string;
-  className?: string;
-}) {
+export function CronDisplay({ expression, className }: { expression: string; className?: string }) {
   const human = humanizeCron(expression);
   const isVerbatim = human === expression;
 
@@ -29,17 +23,12 @@ export function CronDisplay({
     return () => clearInterval(id);
   }, []);
 
-  const next = React.useMemo(
-    () => nextRunAt(expression, new Date(now)),
-    [expression, now],
-  );
+  const next = React.useMemo(() => nextRunAt(expression, new Date(now)), [expression, now]);
   const countdown = next ? formatCountdown(next.getTime() - now) : null;
 
   return (
     <div className={cn("flex flex-col gap-0.5", className)}>
-      {!isVerbatim && (
-        <span className="text-sm text-foreground">{human}</span>
-      )}
+      {!isVerbatim && <span className="text-sm text-foreground">{human}</span>}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {countdown && <span>{countdown}</span>}
         {countdown && <span aria-hidden>·</span>}

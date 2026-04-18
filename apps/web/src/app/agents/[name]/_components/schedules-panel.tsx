@@ -5,13 +5,9 @@ import { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Clock } from "lucide-react";
 import type { AgentSchedule, ThreadLifetime } from "../../../types/db";
-import {
-  createScheduleAction,
-  updateScheduleAction,
-  deleteScheduleAction,
-} from "../../../actions";
-import { Section } from "@/app/components/section";
+import { createScheduleAction, updateScheduleAction, deleteScheduleAction } from "../../../actions";
 import { CronDisplay } from "./cron-display";
+import { CollapsibleSection, SummaryText } from "./collapsible-section";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -26,6 +22,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { isValidCron } from "@/lib/cron";
+import { cn } from "@/lib/utils";
 
 const NOTIFY_EXPIRES_OPTIONS = [
   { value: "1 hour", label: "1 hour" },
@@ -54,9 +51,7 @@ function ScheduleDialogBody({
   const [name, setName] = useState(schedule?.name ?? "");
   const [cron, setCron] = useState(schedule?.cron ?? "");
   const [prompt, setPrompt] = useState(schedule?.prompt ?? "");
-  const [threadLifetime, setThreadLifetime] = useState(
-    schedule?.thread_lifetime ?? "",
-  );
+  const [threadLifetime, setThreadLifetime] = useState(schedule?.thread_lifetime ?? "");
   const [notify, setNotify] = useState<string[]>(schedule?.notify ?? []);
   const [notifyExpiresAfter, setNotifyExpiresAfter] = useState(
     schedule?.notify_expires_after === null
@@ -65,8 +60,7 @@ function ScheduleDialogBody({
   );
 
   const cronValid = cron.length > 0 && isValidCron(cron);
-  const canSubmit =
-    (isEdit || name.length > 0) && cronValid && prompt.length > 0;
+  const canSubmit = (isEdit || name.length > 0) && cronValid && prompt.length > 0;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -87,9 +81,7 @@ function ScheduleDialogBody({
             name,
             cron,
             prompt,
-            thread_lifetime: threadLifetime
-              ? (threadLifetime as ThreadLifetime)
-              : undefined,
+            thread_lifetime: threadLifetime ? (threadLifetime as ThreadLifetime) : undefined,
             notify,
             notify_expires_after:
               notifyExpiresAfter !== "72 hours" ? notifyExpiresAfter : undefined,
@@ -99,18 +91,14 @@ function ScheduleDialogBody({
         onSaved();
         onClose();
       } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to save schedule",
-        );
+        toast.error(err instanceof Error ? err.message : "Failed to save schedule");
       }
     });
   };
 
   const toggleNotify = (target: string) => {
     setNotify((prev) =>
-      prev.includes(target)
-        ? prev.filter((t) => t !== target)
-        : [...prev, target],
+      prev.includes(target) ? prev.filter((t) => t !== target) : [...prev, target],
     );
   };
 
@@ -120,11 +108,9 @@ function ScheduleDialogBody({
         <DialogTitle className="text-2xl font-semibold tracking-tight">
           {isEdit ? "Edit schedule" : "New schedule"}
         </DialogTitle>
-        <DialogDescription>
-          Cron schedules trigger this agent automatically.
-        </DialogDescription>
+        <DialogDescription>Cron schedules trigger this agent automatically.</DialogDescription>
       </DialogHeader>
-      <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto pr-1">
+      <div className="grid max-h-[60vh] gap-4 overflow-y-auto py-2 pr-1">
         <div className="grid gap-1.5">
           <Label htmlFor="sched-name">Name</Label>
           <Input
@@ -184,25 +170,28 @@ function ScheduleDialogBody({
         <div className="grid gap-1.5">
           <Label>Notify on completion</Label>
           <div className="flex flex-wrap gap-1.5">
-            {["inbox", ...availableAgents.map((a) => `agent:${a}`), ...availableAgents.map((a) => `announce:${a}`)].map(
-              (target) => {
-                const active = notify.includes(target);
-                return (
-                  <button
-                    key={target}
-                    type="button"
-                    onClick={() => toggleNotify(target)}
-                    className={`rounded-sm px-2 py-0.5 text-xs border transition-colors ${
-                      active
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {target}
-                  </button>
-                );
-              },
-            )}
+            {[
+              "inbox",
+              ...availableAgents.map((a) => `agent:${a}`),
+              ...availableAgents.map((a) => `announce:${a}`),
+            ].map((target) => {
+              const active = notify.includes(target);
+              return (
+                <button
+                  key={target}
+                  type="button"
+                  onClick={() => toggleNotify(target)}
+                  className={cn(
+                    "rounded-sm border px-2 py-0.5 text-xs transition-colors",
+                    active
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
+                  )}
+                >
+                  {target}
+                </button>
+              );
+            })}
           </div>
         </div>
         {notify.length > 0 && (
@@ -252,13 +241,10 @@ export function SchedulesPanel({
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(
-        `/api/v1/agents/${encodeURIComponent(agentName)}/schedules`,
-      );
+      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentName)}/schedules`);
       if (res.ok) setSchedules(await res.json());
-    } catch (err) {
-      if (process.env.NODE_ENV === "development")
-        console.warn("Schedule refresh failed:", err);
+    } catch {
+      /* silent */
     }
   }, [agentName]);
 
@@ -269,9 +255,7 @@ export function SchedulesPanel({
         toast.success(`Schedule ${enabled ? "enabled" : "disabled"}`);
         await refresh();
       } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to toggle schedule",
-        );
+        toast.error(err instanceof Error ? err.message : "Failed to toggle schedule");
       }
     });
   };
@@ -284,23 +268,37 @@ export function SchedulesPanel({
         toast.success("Schedule deleted");
         await refresh();
       } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to delete schedule",
-        );
+        toast.error(err instanceof Error ? err.message : "Failed to delete schedule");
       }
     });
   };
 
+  const activeCount = schedules.filter((s) => s.enabled).length;
+  const summary =
+    schedules.length === 0 ? (
+      <SummaryText>on-demand only</SummaryText>
+    ) : (
+      <>
+        <SummaryText status={activeCount > 0 ? "ok" : "muted"}>{activeCount} active</SummaryText>
+        {schedules.length - activeCount > 0 && (
+          <SummaryText>{schedules.length - activeCount} disabled</SummaryText>
+        )}
+      </>
+    );
+
   return (
     <>
-      <Section
+      <CollapsibleSection
         eyebrow="Schedules"
+        count={schedules.length}
+        defaultOpen
+        summary={summary}
         delay={delay}
         action={
           <Button
             variant="outline"
             size="sm"
-            className="h-7 gap-1 text-xs"
+            className="h-7 gap-1 px-2 text-xs"
             onClick={() => {
               setEditing(undefined);
               setDialogOpen(true);
@@ -317,18 +315,16 @@ export function SchedulesPanel({
             No schedules — this agent runs on demand.
           </div>
         ) : (
-          <ul className="space-y-3">
+          <ul className="divide-y divide-border/60">
             {schedules.map((sched) => (
               <li
                 key={sched.id}
-                className="flex items-start justify-between gap-3"
+                className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-base font-semibold leading-snug">
-                    {sched.name}
-                  </div>
+                  <div className="font-mono text-[13.5px] font-semibold">{sched.name}</div>
                   <CronDisplay expression={sched.cron} className="mt-0.5" />
-                  <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">
+                  <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
                     {sched.prompt}
                   </p>
                   {sched.notify && sched.notify.length > 0 && (
@@ -336,7 +332,7 @@ export function SchedulesPanel({
                       {sched.notify.map((t, i) => (
                         <code
                           key={i}
-                          className="rounded-sm bg-muted px-1 py-0.5 text-[0.65rem] font-mono text-muted-foreground"
+                          className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.65rem] text-muted-foreground"
                         >
                           {t}
                         </code>
@@ -344,7 +340,7 @@ export function SchedulesPanel({
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex shrink-0 items-center gap-1.5">
                   <Switch
                     checked={sched.enabled}
                     onCheckedChange={(v) => toggle(sched, v)}
@@ -378,7 +374,7 @@ export function SchedulesPanel({
             ))}
           </ul>
         )}
-      </Section>
+      </CollapsibleSection>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <ScheduleDialogBody
