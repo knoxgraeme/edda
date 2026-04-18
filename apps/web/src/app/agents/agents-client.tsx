@@ -77,7 +77,7 @@ function RunDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">
+          <DialogTitle className="text-2xl font-semibold tracking-tight">
             Run {agentName}
           </DialogTitle>
           <DialogDescription>
@@ -199,7 +199,7 @@ function AgentRow({
               </span>
             )}
           </div>
-          <div className="font-display text-2xl leading-tight tracking-tight text-foreground">
+          <div className="text-2xl font-semibold leading-tight tracking-tight text-foreground">
             {agent.name}
           </div>
           <div className="mt-0.5 text-sm text-muted-foreground truncate">
@@ -293,7 +293,7 @@ function DefaultHero({
       </div>
       <div className="mt-1 flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-4xl leading-none tracking-tight text-foreground">
+          <h1 className="text-4xl font-bold leading-none tracking-tight text-foreground">
             {agent.name}
           </h1>
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
@@ -389,7 +389,7 @@ export function AgentsClient({
       <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-6">
         <div>
           <div className="section-eyebrow">Fleet</div>
-          <h1 className="font-display text-4xl leading-none tracking-tight">
+          <h1 className="text-4xl font-bold leading-none tracking-tight">
             Agents
           </h1>
         </div>
@@ -415,7 +415,7 @@ export function AgentsClient({
       {agents.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center p-16 text-muted-foreground">
           <Bot className="h-12 w-12 mb-4" />
-          <p className="font-display text-xl">No agents yet</p>
+          <p className="text-xl font-semibold tracking-tight">No agents yet</p>
           <p className="mt-1 text-sm">Create your first agent to get started.</p>
         </div>
       ) : (

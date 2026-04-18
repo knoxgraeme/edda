@@ -26,4 +26,5 @@ export type {
   AgentChannel,
   ChannelPlatform,
   LlmProvider,
+  EntityConnection,
 } from "@edda/db";

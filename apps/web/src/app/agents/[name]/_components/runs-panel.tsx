@@ -144,7 +144,7 @@ export function RunsPanel({
           <div className="flex items-end justify-between gap-3 mb-3">
             <RunSparkline runs={runs} />
             <div className="text-right">
-              <div className="font-display text-lg leading-none">
+              <div className="text-lg font-semibold leading-none tabular-nums">
                 {recent.length}
               </div>
               <div className="section-eyebrow !tracking-tight">

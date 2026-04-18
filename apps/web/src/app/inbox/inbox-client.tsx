@@ -565,7 +565,7 @@ export function InboxClient({
       <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-6">
         <div>
           <div className="section-eyebrow">inbox</div>
-          <h1 className="font-display text-4xl leading-none tracking-tight">
+          <h1 className="text-4xl font-bold leading-none tracking-tight">
             Unread
           </h1>
         </div>

@@ -133,7 +133,7 @@ export function NewAgentModal({
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">
+            <DialogTitle className="text-2xl font-semibold tracking-tight">
               New agent
             </DialogTitle>
             <DialogDescription>

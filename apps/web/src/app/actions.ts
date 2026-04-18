@@ -7,6 +7,8 @@ import {
   updateItem,
   updateEntity,
   getEntityItems,
+  getEntityConnections,
+  type EntityConnection,
   updateSettings,
   getSettings,
   getAgentByName,
@@ -191,6 +193,13 @@ export async function updateEntityAction(
 export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
   if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
   return getEntityItems(entityId);
+}
+
+export async function getEntityConnectionsAction(
+  entityId: string,
+): Promise<EntityConnection[]> {
+  if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
+  return getEntityConnections(entityId, 8);
 }
 
 // ─── Agents ─────────────────────────────────────────────────────────

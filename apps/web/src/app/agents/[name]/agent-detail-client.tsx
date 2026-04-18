@@ -90,7 +90,7 @@ function RunNowDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">
+          <DialogTitle className="text-2xl font-semibold tracking-tight">
             Run {agentName}
           </DialogTitle>
           <DialogDescription>
@@ -263,7 +263,7 @@ export function AgentDetailClient({
           </Button>
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-3xl leading-none tracking-tight">
+          <h1 className="text-3xl font-bold leading-none tracking-tight">
             {agent.name}
           </h1>
           <div className="mt-1.5 flex items-center gap-2 text-[0.7rem] font-mono text-muted-foreground">

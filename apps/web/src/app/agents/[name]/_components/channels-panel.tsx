@@ -103,7 +103,7 @@ function LinkDialogBody({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="font-display text-2xl">Link channel</DialogTitle>
+        <DialogTitle className="text-2xl font-semibold tracking-tight">Link channel</DialogTitle>
         <DialogDescription>
           Link a chat channel to this agent for bidirectional messaging.
         </DialogDescription>

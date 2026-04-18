@@ -50,7 +50,7 @@ export function Section({
         <div className="min-w-0">
           <div className="section-eyebrow">{eyebrow}</div>
           {title && (
-            <h2 className="font-display text-xl leading-tight text-foreground mt-0.5">
+            <h2 className="mt-0.5 text-xl font-semibold leading-tight tracking-tight text-foreground">
               {title}
             </h2>
           )}

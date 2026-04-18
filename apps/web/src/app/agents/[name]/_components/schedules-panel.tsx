@@ -117,7 +117,7 @@ function ScheduleDialogBody({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="font-display text-2xl">
+        <DialogTitle className="text-2xl font-semibold tracking-tight">
           {isEdit ? "Edit schedule" : "New schedule"}
         </DialogTitle>
         <DialogDescription>
@@ -324,7 +324,7 @@ export function SchedulesPanel({
                 className="flex items-start justify-between gap-3"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="font-display text-base leading-snug">
+                  <div className="text-base font-semibold leading-snug">
                     {sched.name}
                   </div>
                   <CronDisplay expression={sched.cron} className="mt-0.5" />

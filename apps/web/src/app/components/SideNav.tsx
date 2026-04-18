@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Inbox, Users, Bot, Puzzle, Settings, Network } from "lucide-react";
+import {
+  LayoutDashboard,
+  Inbox,
+  UserRound,
+  Bot,
+  Sparkles,
+  Settings,
+  Network,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -21,13 +29,13 @@ const navGroups = [
   {
     items: [
       { href: "/inbox", label: "Inbox", icon: Inbox },
-      { href: "/entities", label: "Entities", icon: Users },
+      { href: "/entities", label: "Entities", icon: UserRound },
       { href: "/graph", label: "Graph", icon: Network },
     ],
   },
   {
     items: [
-      { href: "/skills", label: "Skills & Tools", icon: Puzzle },
+      { href: "/skills", label: "Skills & Tools", icon: Sparkles },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -62,7 +70,7 @@ export function SideNav() {
                       {isActive && (
                         <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-accent-warm" />
                       )}
-                      <Icon size={20} />
+                      <Icon size={18} strokeWidth={1.75} />
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={6}>

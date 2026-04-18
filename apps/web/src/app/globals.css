@@ -1,66 +1,98 @@
 @import "tailwindcss";
 
-/* ─── Warm-light default (Mission Control) ─────────────────────────
+/* ─── Edda design system — neutral + amber accent ──────────────────
  *
- * Editorial / control-room palette. Warm paper background, near-black
- * ink, hairline warm-grey borders, single signal accent (warm-orange
- * — already present as `--accent-warm`, now promoted to primary accent).
+ * Mirrors colors_and_type.css from the handoff bundle. Two visual worlds:
+ *   (1) PRODUCT UI — neutral, minimal, Geist sans, warm amber accent
+ *   (2) BRAND / MARKETING — saga blue + cream (reserved for hero surfaces)
  *
- * Signal colors are used for run statuses only (ok / running / fail).
- * ────────────────────────────────────────────────────────────────── */
+ * Amber-700 (#b45309) is the single spot of color in product UI — used for
+ * focus ring, active row accent bar, and status "running".
+ * ──────────────────────────────────────────────────────────────── */
 
 :root {
-  --background: #f5f2eb;
-  --foreground: #0b0b0c;
-  --card: #f5f2eb;
-  --card-foreground: #0b0b0c;
-  --popover: #f5f2eb;
-  --popover-foreground: #0b0b0c;
-  --primary: #0b0b0c;
-  --primary-foreground: #f5f2eb;
-  --secondary: #ece8dd;
-  --secondary-foreground: #0b0b0c;
-  --muted: #ece8dd;
-  --muted-foreground: #6b675e;
-  --accent: #ece8dd;
-  --accent-foreground: #0b0b0c;
+  /* Neutral palette */
+  --neutral-0: #ffffff;
+  --neutral-50: #fafafa;
+  --neutral-100: #f5f5f5;
+  --neutral-150: #ebebeb;
+  --neutral-200: #e5e5e5;
+  --neutral-300: #d4d4d4;
+  --neutral-400: #a3a3a3;
+  --neutral-500: #737373;
+  --neutral-600: #525252;
+  --neutral-700: #404040;
+  --neutral-800: #262626;
+  --neutral-900: #171717;
+  --neutral-950: #0a0a0a;
+
+  /* Semantic (light) */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #171717;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --accent: #f5f5f5;
+  --accent-foreground: #171717;
   --accent-warm: #b45309;
   --accent-warm-foreground: #fff7ed;
-  --destructive: #b91c1c;
-  --border: #d9d3c4;
-  --input: #d9d3c4;
+  --accent-warm-soft: #f0efea;
+  --destructive: #ef4444;
+  --border: #ebebeb;
+  --input: #e5e5e5;
   --ring: #b45309;
 
-  --signal-ok: #15803d;
-  --signal-run: #c2410c;
-  --signal-fail: #b91c1c;
+  /* Signal colors — used for run statuses (completed / running / failed) */
+  --signal-ok: #22c55e;
+  --signal-run: #f59e0b;
+  --signal-fail: #ef4444;
+
+  /* Saga / brand tokens (marketing surfaces only) */
+  --saga-ink: #0f3455;
+  --saga-blue: #213f5b;
+  --saga-parchment: #f6f3cb;
+
+  /* Radii */
+  --radius-sm: 2px;
+  --radius: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b0b0c;
-    --foreground: #f2ede2;
-    --card: #0b0b0c;
-    --card-foreground: #f2ede2;
-    --popover: #0b0b0c;
-    --popover-foreground: #f2ede2;
-    --primary: #f2ede2;
-    --primary-foreground: #0b0b0c;
-    --secondary: #171512;
-    --secondary-foreground: #f2ede2;
-    --muted: #171512;
-    --muted-foreground: #9b968a;
-    --accent: #1f1c17;
-    --accent-foreground: #f2ede2;
-    --accent-warm: #f59e0b;
-    --accent-warm-foreground: #1a140b;
-    --destructive: #ef4444;
-    --border: #2a2520;
-    --input: #2a2520;
-    --ring: #f59e0b;
+    --background: #0a0a0a;
+    --foreground: #fafafa;
+    --card: #0a0a0a;
+    --card-foreground: #fafafa;
+    --popover: #0a0a0a;
+    --popover-foreground: #fafafa;
+    --primary: #fafafa;
+    --primary-foreground: #171717;
+    --secondary: #262626;
+    --secondary-foreground: #fafafa;
+    --muted: #262626;
+    --muted-foreground: #a3a3a3;
+    --accent: #262626;
+    --accent-foreground: #fafafa;
+    --accent-warm: #b45309;
+    --accent-warm-foreground: #fff7ed;
+    --accent-warm-soft: #1f1811;
+    --destructive: #dc2626;
+    --border: #2a2a2a;
+    --input: #262626;
+    --ring: #b45309;
 
     --signal-ok: #22c55e;
-    --signal-run: #f97316;
+    --signal-run: #f59e0b;
     --signal-fail: #ef4444;
   }
 }
@@ -82,6 +114,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-warm: var(--accent-warm);
   --color-accent-warm-foreground: var(--accent-warm-foreground);
+  --color-accent-warm-soft: var(--accent-warm-soft);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -93,35 +126,37 @@
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  /* Note: Fraunces is intentionally NOT registered as a Tailwind theme
-     token. When added via `@theme inline`, Tailwind v4 emits a
-     `.font-display` utility that wins over the custom class below and
-     points at an empty variable, collapsing to ui-sans-serif. The
-     `.font-display` class below references `--font-fraunces` directly
-     via next/font's injected body variable. */
+  /* Fraunces intentionally NOT registered as a theme token — Tailwind v4
+     would emit a colliding `.font-display` utility. Use the class below
+     which references --font-fraunces directly via next/font's injected
+     variable. */
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Display utility — use Fraunces for agent names and section headings.
-   References next/font's --font-fraunces variable directly (not via a
-   Tailwind theme token, which would generate a colliding utility). */
+/* Display serif — preserved for select editorial moments; most headings
+   now use the neutral sans stack per the refreshed design system. */
 .font-display {
   font-family: var(--font-fraunces), ui-serif, Georgia, serif;
   font-optical-sizing: auto;
   letter-spacing: -0.01em;
 }
 
-/* Section heading: small-caps style marker used across panels */
-.section-eyebrow {
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+/* Uppercase small-caps label — "Arguments", "Linked items", etc. */
+.section-eyebrow,
+.eyebrow,
+.label-upper {
+  font-family: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }

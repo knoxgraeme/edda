@@ -65,7 +65,7 @@ function HeroStat({
     >
       <div
         className={cn(
-          "font-display text-5xl leading-none tracking-tight",
+          "text-5xl font-semibold leading-none tracking-tight",
           accent && value > 0 ? "text-accent-warm" : "text-foreground",
           value === 0 && "text-muted-foreground",
         )}
@@ -180,7 +180,7 @@ function ScheduleForecastRow({
         href={`/agents/${schedule.agent_name}`}
         className="flex items-baseline gap-3 border-b border-border/60 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/30 -mx-6 px-6"
       >
-        <span className="font-display text-base text-foreground">
+        <span className="text-base font-medium text-foreground">
           {schedule.agent_name}
         </span>
         <span className="text-muted-foreground">·</span>
@@ -341,7 +341,7 @@ export function DashboardClient({
       <header className="flex shrink-0 items-baseline justify-between border-b border-border px-6 py-5">
         <div>
           <div className="section-eyebrow">overview</div>
-          <h1 className="font-display text-4xl leading-none tracking-tight">
+          <h1 className="text-4xl font-bold leading-none tracking-tight">
             Today
           </h1>
         </div>
@@ -437,7 +437,7 @@ export function DashboardClient({
             <div className="mb-3 flex items-end justify-between gap-3">
               <RunSparkline runs={recentRuns} />
               <div className="text-right">
-                <div className="font-display text-lg leading-none">
+                <div className="text-lg font-semibold leading-none tabular-nums">
                   {recentRuns7d.length}
                 </div>
                 <div className="section-eyebrow !tracking-tight">
@@ -535,7 +535,7 @@ export function DashboardClient({
           pendingCount === 0 &&
           failingAgents.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-              <p className="font-display text-2xl text-muted-foreground">
+              <p className="text-2xl font-medium text-muted-foreground tracking-tight">
                 All caught up.
               </p>
               <p className="text-xs text-muted-foreground">
