@@ -7,17 +7,17 @@ import {
   Wrench,
   Bot,
   Search,
-  ChevronDown,
-  Layers,
   ArrowRight,
+  FileText,
+  FileCode,
+  Folder,
+  ChevronDown,
 } from "lucide-react";
 import type { Skill } from "../types/db";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
-/** Parse allowed-tools from SKILL.md YAML frontmatter */
+/** Parse allowed-tools from SKILL.md YAML frontmatter. */
 function parseAllowedTools(content: string): string[] {
   const parts = content.split("---");
   if (parts.length < 3) return [];
@@ -37,173 +37,363 @@ function parseBody(content: string): string {
   return parts.slice(2).join("---").trim();
 }
 
-/** Extract the first meaningful paragraph from the body */
-function extractSummary(body: string): string {
-  const lines = body.split("\n").filter((l) => l.trim() && !l.startsWith("#"));
-  return lines.slice(0, 2).join(" ").slice(0, 200);
+/** Minimal markdown renderer for SKILL.md previews. */
+function MdPreview({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const out: React.ReactNode[] = [];
+  let listBuf: string[] | null = null;
+  let inCode = false;
+
+  const flushList = () => {
+    if (listBuf) {
+      const buf = listBuf;
+      out.push(
+        <ul
+          key={`ul-${out.length}`}
+          className="ml-5 mb-2.5 list-disc text-[13px] leading-[1.65] text-foreground"
+        >
+          {buf.map((li, i) => (
+            <li key={i} className="mb-0.5">
+              {inline(li)}
+            </li>
+          ))}
+        </ul>,
+      );
+      listBuf = null;
+    }
+  };
+
+  function inline(s: string): React.ReactNode {
+    const parts: React.ReactNode[] = [];
+    let i = 0;
+    let key = 0;
+    const matches = Array.from(
+      s.matchAll(/(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g),
+    );
+    for (const m of matches) {
+      const idx = m.index ?? 0;
+      if (idx > i) parts.push(s.slice(i, idx));
+      if (m[2])
+        parts.push(
+          <strong key={key++} className="font-semibold">
+            {m[2]}
+          </strong>,
+        );
+      else if (m[3])
+        parts.push(
+          <code
+            key={key++}
+            className="rounded-sm bg-muted px-1.5 py-[1px] font-mono text-[12px]"
+          >
+            {m[3]}
+          </code>,
+        );
+      else if (m[4])
+        parts.push(
+          <a
+            key={key++}
+            href={m[5]}
+            className="text-[color:var(--accent-warm)] underline"
+          >
+            {m[4]}
+          </a>,
+        );
+      i = idx + m[0].length;
+    }
+    if (i < s.length) parts.push(s.slice(i));
+    return parts;
+  }
+
+  lines.forEach((l, idx) => {
+    if (l.startsWith("```")) {
+      flushList();
+      inCode = !inCode;
+      return;
+    }
+    if (inCode) {
+      out.push(
+        <div
+          key={idx}
+          className="bg-muted/40 px-2.5 font-mono text-[12px] text-foreground"
+        >
+          {l || "\u00A0"}
+        </div>,
+      );
+      return;
+    }
+    if (l.startsWith("# ")) {
+      flushList();
+      out.push(
+        <h1 key={idx} className="mt-1 mb-2 text-[17px] font-semibold">
+          {inline(l.slice(2))}
+        </h1>,
+      );
+      return;
+    }
+    if (l.startsWith("## ")) {
+      flushList();
+      out.push(
+        <h2 key={idx} className="mt-3.5 mb-1.5 text-[14px] font-semibold">
+          {inline(l.slice(3))}
+        </h2>,
+      );
+      return;
+    }
+    if (l.startsWith("### ")) {
+      flushList();
+      out.push(
+        <h3
+          key={idx}
+          className="mt-3 mb-1 text-[13px] font-semibold text-neutral-600 dark:text-neutral-300"
+        >
+          {inline(l.slice(4))}
+        </h3>,
+      );
+      return;
+    }
+    if (/^\s*-\s+/.test(l)) {
+      (listBuf ||= []).push(l.replace(/^\s*-\s+/, ""));
+      return;
+    }
+    flushList();
+    if (!l.trim()) {
+      out.push(<div key={idx} className="h-2" />);
+      return;
+    }
+    out.push(
+      <p
+        key={idx}
+        className="mb-2 text-[13px] leading-[1.65] text-foreground"
+      >
+        {inline(l)}
+      </p>,
+    );
+  });
+  flushList();
+  return <div>{out}</div>;
 }
 
-function SkillCard({
+function FilePreview({ path, text }: { path: string; text: string }) {
+  const isMd = path.endsWith(".md");
+  const lineCount = text.split("\n").length;
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-background">
+      <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-1.5">
+        <div className="flex items-center gap-1.5 font-mono text-[12px] text-neutral-600 dark:text-neutral-300">
+          {isMd ? (
+            <FileText className="h-3 w-3 text-muted-foreground" />
+          ) : (
+            <FileCode className="h-3 w-3 text-muted-foreground" />
+          )}
+          {path}
+        </div>
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {lineCount} lines
+        </span>
+      </div>
+      <div className={isMd ? "p-4" : "p-0"}>
+        {isMd ? (
+          <MdPreview text={text} />
+        ) : (
+          <pre className="m-0 overflow-x-auto bg-muted/40 p-3.5 font-mono text-[12.5px] leading-[1.65] text-foreground">
+            {text}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FileTree({
+  files,
+  skillName,
+  active,
+  onPick,
+}: {
+  files: { path: string; primary?: boolean }[];
+  skillName: string;
+  active: string;
+  onPick: (path: string) => void;
+}) {
+  if (files.length <= 1) return null;
+  const byDir: Record<string, { path: string; primary?: boolean }[]> = {};
+  for (const f of files) {
+    const parts = f.path.split("/");
+    const dir = parts.length > 1 ? parts[0] : "";
+    (byDir[dir] ||= []).push(f);
+  }
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-background font-mono text-[12.5px]">
+      <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5">
+        <Folder className="h-3 w-3 text-muted-foreground" />
+        <span className="text-[11.5px] text-neutral-600 dark:text-neutral-300">
+          {skillName}/
+        </span>
+        <span className="ml-auto text-[11px] text-muted-foreground">
+          {files.length} files
+        </span>
+      </div>
+      <div className="py-1">
+        {Object.entries(byDir).map(([dir, dirFiles]) => (
+          <div key={dir || "_root"}>
+            {dir && (
+              <div className="flex items-center gap-1 px-3 pt-1 pb-0.5 pl-5 text-[11.5px] text-neutral-600 dark:text-neutral-300">
+                <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
+                <Folder className="h-2.5 w-2.5 text-muted-foreground" />
+                {dir}/
+              </div>
+            )}
+            {dirFiles.map((f) => {
+              const name = f.path.split("/").pop() ?? f.path;
+              const on = active === f.path;
+              return (
+                <button
+                  key={f.path}
+                  onClick={() => onPick(f.path)}
+                  className={cn(
+                    "flex w-full items-center gap-1.5 border-l-2 text-left text-[12.5px]",
+                    on
+                      ? "border-foreground bg-muted text-foreground"
+                      : "border-transparent text-neutral-600 dark:text-neutral-300 hover:bg-muted/50",
+                    dir ? "py-1 pr-3 pl-10" : "py-1 pr-3 pl-6",
+                  )}
+                >
+                  {f.path.endsWith(".md") ? (
+                    <FileText className="h-2.5 w-2.5 text-muted-foreground" />
+                  ) : (
+                    <FileCode className="h-2.5 w-2.5 text-muted-foreground" />
+                  )}
+                  <span className={f.primary ? "font-semibold" : ""}>
+                    {name}
+                  </span>
+                  {f.primary && (
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      primary
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SkillBody({ skill }: { skill: Skill }) {
+  const files = useMemo(
+    () => [
+      { path: "SKILL.md", primary: true },
+      ...Object.keys(skill.files ?? {}).map((p) => ({ path: p })),
+    ],
+    [skill],
+  );
+  const [active, setActive] = useState("SKILL.md");
+  const [lastKey, setLastKey] = useState(skill.name);
+  if (lastKey !== skill.name) {
+    setLastKey(skill.name);
+    setActive("SKILL.md");
+  }
+  const getContent = (path: string) => {
+    if (path === "SKILL.md") return parseBody(skill.content);
+    return skill.files?.[path] ?? "";
+  };
+  const multi = files.length > 1;
+  return (
+    <div className={cn("grid gap-3.5", multi ? "grid-cols-[220px_1fr]" : "")}>
+      {multi && (
+        <FileTree
+          files={files}
+          skillName={skill.name}
+          active={active}
+          onPick={setActive}
+        />
+      )}
+      <FilePreview path={active} text={getContent(active)} />
+    </div>
+  );
+}
+
+function SkillRow({
   skill,
   tools,
   agents,
-  isExpanded,
-  onToggle,
+  fileCount,
+  active,
+  onClick,
 }: {
   skill: Skill;
   tools: string[];
   agents: string[];
-  isExpanded: boolean;
-  onToggle: () => void;
+  fileCount: number;
+  active: boolean;
+  onClick: () => void;
 }) {
-  const body = parseBody(skill.content);
-  const summary = extractSummary(body);
-
   return (
-    <Card
-      className={`transition-all duration-200 ${isExpanded ? "ring-1 ring-accent-warm/30" : "hover:border-muted-foreground/20"}`}
-    >
-      <button className="w-full text-left p-5" onClick={onToggle}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            {/* Header row */}
-            <div className="flex items-center gap-2.5 mb-1.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted">
-                <Puzzle className="h-3.5 w-3.5 text-muted-foreground" />
-              </div>
-              <span className="font-medium text-sm">{skill.name}</span>
-              {skill.is_system && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">
-                  system
-                </Badge>
-              )}
-            </div>
-
-            {/* Description */}
-            <p className="text-sm text-muted-foreground ml-[38px] line-clamp-2">
-              {String(skill.description ?? summary)}
-            </p>
-          </div>
-
-          {/* Right-side metadata */}
-          <div className="flex items-center gap-3 shrink-0 pt-0.5">
-            {tools.length > 0 && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Wrench className="h-3 w-3" />
-                <span>{tools.length}</span>
-              </div>
-            )}
-            {agents.length > 0 && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Bot className="h-3 w-3" />
-                <span>{agents.length}</span>
-              </div>
-            )}
-            <ChevronDown
-              className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-            />
-          </div>
-        </div>
-      </button>
-
-      {/* Expanded detail panel */}
-      {isExpanded && (
-        <CardContent className="pt-0 pb-5 px-5">
-          <div className="border-t pt-4 space-y-4 ml-[38px]">
-            {/* Tools section */}
-            {tools.length > 0 && (
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Wrench className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Tools
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {tools.map((t) => (
-                    <code
-                      key={t}
-                      className="text-xs font-mono bg-muted px-2 py-0.5 rounded-md text-foreground/80"
-                    >
-                      {t}
-                    </code>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Agents section */}
-            {agents.length > 0 && (
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Bot className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Used by
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {agents.map((a) => (
-                    <Link key={a} href={`/agents/${a}`} onClick={(e) => e.stopPropagation()}>
-                      <Badge
-                        variant="secondary"
-                        className="text-xs gap-1 cursor-pointer hover:bg-secondary/80 font-normal"
-                      >
-                        <Bot className="h-3 w-3" />
-                        {a}
-                        <ArrowRight className="h-2.5 w-2.5 ml-0.5 opacity-50" />
-                      </Badge>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Skill content preview */}
-            {body && (
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Layers className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Skill definition
-                  </span>
-                </div>
-                <div className="bg-muted/50 rounded-lg p-3 max-h-48 overflow-auto">
-                  <pre className="text-xs font-mono whitespace-pre-wrap text-foreground/70 leading-relaxed">
-                    {body}
-                  </pre>
-                </div>
-              </div>
-            )}
-          </div>
-        </CardContent>
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-start gap-2.5 border-l-2 border-b border-neutral-100 px-4 py-3 text-left dark:border-neutral-900",
+        active
+          ? "border-l-foreground bg-muted"
+          : "border-l-transparent hover:bg-muted/50",
       )}
-    </Card>
+    >
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] bg-muted">
+        <Puzzle className="h-3 w-3 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 flex items-center gap-1.5">
+          <span className="font-mono text-[13px] font-medium">
+            {skill.name}
+          </span>
+          {skill.is_system && (
+            <span className="rounded-sm border border-border px-1 py-[1px] font-mono text-[10px] text-muted-foreground">
+              system
+            </span>
+          )}
+        </div>
+        <div className="line-clamp-2 text-[12.5px] leading-[1.45] text-muted-foreground">
+          {skill.description}
+        </div>
+        <div className="mt-1.5 flex gap-3 font-mono text-[11px] text-neutral-400">
+          <span className="inline-flex items-center gap-0.5">
+            <Wrench className="h-2.5 w-2.5" />
+            {tools.length}
+          </span>
+          <span className="inline-flex items-center gap-0.5">
+            <Bot className="h-2.5 w-2.5" />
+            {agents.length}
+          </span>
+          {fileCount > 1 && (
+            <span className="inline-flex items-center gap-0.5">
+              <FileText className="h-2.5 w-2.5" />
+              {fileCount}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
   );
 }
 
-function ToolRow({
-  tool,
-  skills,
+function SDLRow({
+  term,
+  children,
 }: {
-  tool: string;
-  skills: string[];
+  term: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between py-2.5 group">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-muted shrink-0">
-          <Wrench className="h-3 w-3 text-muted-foreground" />
-        </div>
-        <code className="text-sm font-mono truncate">{tool}</code>
-      </div>
-      <div className="flex gap-1.5 shrink-0">
-        {skills.map((s) => (
-          <Badge key={s} variant="outline" className="text-[10px] font-normal px-1.5 py-0">
-            {s}
-          </Badge>
-        ))}
-      </div>
-    </div>
+    <>
+      <dt className="border-t border-neutral-100 py-3 text-[13px] text-muted-foreground dark:border-neutral-900">
+        {term}
+      </dt>
+      <dd className="m-0 border-t border-neutral-100 py-3 text-[13px] text-foreground dark:border-neutral-900">
+        {children}
+      </dd>
+    </>
   );
 }
 
@@ -214,26 +404,20 @@ export function SkillsClient({
   skills: Skill[];
   skillAgentMap: Record<string, string[]>;
 }) {
-  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<string | null>(
+    skills[0]?.name ?? null,
+  );
+  const [query, setQuery] = useState("");
 
-  // Build tool maps
-  const skillToolsMap: Record<string, string[]> = {};
-  const toolSkillMap: Record<string, string[]> = {};
-  for (const skill of skills) {
-    const tools = parseAllowedTools(skill.content);
-    skillToolsMap[skill.name] = tools;
-    for (const t of tools) {
-      if (!toolSkillMap[t]) toolSkillMap[t] = [];
-      toolSkillMap[t].push(skill.name);
-    }
-  }
-
-  const allToolsSorted = useMemo(() => Object.keys(toolSkillMap).sort(), [toolSkillMap]);
+  const skillToolsMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const s of skills) map[s.name] = parseAllowedTools(s.content);
+    return map;
+  }, [skills]);
 
   const filteredSkills = useMemo(() => {
-    if (!filter.trim()) return skills;
-    const q = filter.toLowerCase();
+    if (!query.trim()) return skills;
+    const q = query.toLowerCase();
     return skills.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
@@ -241,126 +425,159 @@ export function SkillsClient({
           .toLowerCase()
           .includes(q),
     );
-  }, [skills, filter]);
+  }, [skills, query]);
 
-  const filteredTools = useMemo(() => {
-    if (!filter.trim()) return allToolsSorted;
-    const q = filter.toLowerCase();
-    return allToolsSorted.filter(
-      (t) => t.toLowerCase().includes(q) || toolSkillMap[t]?.some((s) => s.toLowerCase().includes(q)),
+  const currentSkill = skills.find((s) => s.name === selected) ?? skills[0];
+  const tools = currentSkill ? (skillToolsMap[currentSkill.name] ?? []) : [];
+  const agents = currentSkill ? (skillAgentMap[currentSkill.name] ?? []) : [];
+  const fileCount = currentSkill
+    ? 1 + Object.keys(currentSkill.files ?? {}).length
+    : 0;
+
+  if (skills.length === 0) {
+    return (
+      <main className="flex h-full flex-col items-center justify-center p-10 text-muted-foreground">
+        <Puzzle className="mb-3 h-8 w-8 opacity-40" />
+        <p className="text-sm font-medium">No skills found</p>
+        <p className="mt-1 text-xs">Run the server to seed default skills.</p>
+      </main>
     );
-  }, [allToolsSorted, filter, toolSkillMap]);
-
-  const toggleExpand = (name: string) => {
-    setExpandedSkill((prev) => (prev === name ? null : name));
-  };
+  }
 
   return (
-    <main className="max-w-4xl mx-auto p-6">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Skills & Tools</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {skills.length} skills and {allToolsSorted.length} tools powering your agents
-        </p>
-      </div>
-
-      <Tabs defaultValue="skills">
-        {/* Tab bar + search in a unified row */}
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <TabsList>
-            <TabsTrigger value="skills" className="gap-1.5">
-              <Puzzle className="h-3.5 w-3.5" />
-              Skills
-              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 font-normal">
-                {skills.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="tools" className="gap-1.5">
-              <Wrench className="h-3.5 w-3.5" />
-              Tools
-              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 font-normal">
-                {allToolsSorted.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-
-          <div className="relative w-64">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Filter..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="pl-8 h-9 text-sm"
-            />
-          </div>
+      <header className="flex shrink-0 items-center justify-between border-b border-border px-5 py-2.5">
+        <div className="flex items-baseline gap-2.5">
+          <h1 className="font-mono text-[17px] font-semibold">skills</h1>
+          <span className="font-mono text-[12px] text-muted-foreground">
+            {skills.length} skills
+          </span>
         </div>
+      </header>
 
-        {/* Skills tab */}
-        <TabsContent value="skills">
-          {skills.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Puzzle className="h-8 w-8 mb-3 opacity-40" />
-                <p className="text-sm font-medium">No skills found</p>
-                <p className="text-xs mt-1">Run the server to seed default skills.</p>
-              </CardContent>
-            </Card>
-          ) : filteredSkills.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Search className="h-6 w-6 mb-2 opacity-40" />
-                <p className="text-sm">
-                  No skills match &quot;{filter}&quot;
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              {filteredSkills.map((skill) => (
-                <SkillCard
-                  key={skill.name}
-                  skill={skill}
-                  tools={skillToolsMap[skill.name] ?? []}
-                  agents={skillAgentMap[skill.name] ?? []}
-                  isExpanded={expandedSkill === skill.name}
-                  onToggle={() => toggleExpand(skill.name)}
-                />
-              ))}
+      <div className="flex min-h-0 flex-1">
+        {/* Left rail */}
+        <aside className="flex w-80 shrink-0 flex-col border-r border-border">
+          <div className="border-b border-border p-2.5">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute top-2 left-2.5 h-3.5 w-3.5 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                placeholder="Filter skills…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="h-8 pl-8 text-[13px]"
+              />
             </div>
-          )}
-        </TabsContent>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {filteredSkills.length === 0 ? (
+              <div className="p-10 text-center text-[12.5px] text-muted-foreground">
+                No skills match &quot;{query}&quot;
+              </div>
+            ) : (
+              filteredSkills.map((s) => (
+                <SkillRow
+                  key={s.name}
+                  skill={s}
+                  tools={skillToolsMap[s.name] ?? []}
+                  agents={skillAgentMap[s.name] ?? []}
+                  fileCount={1 + Object.keys(s.files ?? {}).length}
+                  active={currentSkill?.name === s.name}
+                  onClick={() => setSelected(s.name)}
+                />
+              ))
+            )}
+          </div>
+        </aside>
 
-        {/* Tools tab */}
-        <TabsContent value="tools">
-          {allToolsSorted.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Wrench className="h-8 w-8 mb-3 opacity-40" />
-                <p className="text-sm font-medium">No tools found</p>
-                <p className="text-xs mt-1">Tools are declared by skills.</p>
-              </CardContent>
-            </Card>
-          ) : filteredTools.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Search className="h-6 w-6 mb-2 opacity-40" />
-                <p className="text-sm">
-                  No tools match &quot;{filter}&quot;
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="pt-2 pb-2 divide-y divide-border">
-                {filteredTools.map((tool) => (
-                  <ToolRow key={tool} tool={tool} skills={toolSkillMap[tool] ?? []} />
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-      </Tabs>
-    </main>
+        {/* Detail pane */}
+        {currentSkill && (
+          <section className="flex min-w-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-6 py-3">
+              <div className="flex min-w-0 items-baseline gap-2.5">
+                <h2 className="font-mono text-[15px] font-semibold">
+                  {currentSkill.name}
+                </h2>
+                <span className="font-mono text-[12px] text-muted-foreground">
+                  {currentSkill.is_system ? "system" : "user"} · {tools.length}{" "}
+                  tool{tools.length === 1 ? "" : "s"} · {fileCount} file
+                  {fileCount === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <dl className="m-0 grid grid-cols-[140px_1fr] gap-x-4 px-6 py-4">
+                <SDLRow term="Name">
+                  <span className="font-mono">{currentSkill.name}</span>
+                </SDLRow>
+
+                <SDLRow term="Source">
+                  <span className="inline-flex items-center rounded-sm border border-border bg-background px-1.5 py-[1px] font-mono text-[11.5px] text-neutral-600 dark:text-neutral-300">
+                    {currentSkill.is_system ? "system" : "user"}
+                  </span>
+                  <span className="ml-2 font-mono text-[12px] text-muted-foreground italic">
+                    {currentSkill.is_system
+                      ? "edits require admin"
+                      : "freely editable"}
+                  </span>
+                </SDLRow>
+
+                <SDLRow term="Description">{currentSkill.description}</SDLRow>
+
+                <SDLRow term="Allowed tools">
+                  {tools.length === 0 ? (
+                    <span className="text-[12.5px] text-muted-foreground italic">
+                      No tools declared in frontmatter.
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {tools.map((t) => (
+                        <code
+                          key={t}
+                          className="rounded-sm bg-foreground px-1.5 py-[3px] font-mono text-[11.5px] text-background"
+                        >
+                          {t}
+                        </code>
+                      ))}
+                    </div>
+                  )}
+                </SDLRow>
+
+                <SDLRow term="Used by">
+                  {agents.length === 0 ? (
+                    <span className="text-[12.5px] text-muted-foreground italic">
+                      Not yet attached to any agent.
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {agents.map((a) => (
+                        <Link
+                          key={a}
+                          href={`/agents/${a}`}
+                          className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-background px-2 py-[3px] font-mono text-[12px] font-medium text-foreground no-underline hover:bg-muted"
+                        >
+                          <Bot className="h-2.5 w-2.5 text-muted-foreground" />
+                          {a}
+                          <ArrowRight className="h-2.5 w-2.5 text-neutral-400" />
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </SDLRow>
+
+                <SDLRow term="Definition">
+                  <SkillBody skill={currentSkill} />
+                </SDLRow>
+              </dl>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
   );
 }
