@@ -58,21 +58,20 @@ function HeroStat({
   const body = (
     <div
       className={cn(
-        "flex flex-col items-start gap-1 border-r border-border px-6 py-5 last:border-r-0",
-        "transition-colors",
+        "flex items-baseline gap-2 border-r border-border px-5 py-3 transition-colors last:border-r-0",
         href && "hover:bg-muted/30",
       )}
     >
-      <div
+      <span
         className={cn(
-          "text-5xl font-semibold leading-none tracking-tight",
+          "text-2xl font-semibold leading-none tracking-tight tabular-nums",
           accent && value > 0 ? "text-accent-warm" : "text-foreground",
           value === 0 && "text-muted-foreground",
         )}
       >
         {value}
-      </div>
-      <div className="section-eyebrow">{label}</div>
+      </span>
+      <span className="section-eyebrow truncate">{label}</span>
     </div>
   );
   return href ? (
@@ -180,7 +179,7 @@ function ScheduleForecastRow({
         href={`/agents/${schedule.agent_name}`}
         className="flex items-baseline gap-3 border-b border-border/60 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/30 -mx-6 px-6"
       >
-        <span className="text-base font-medium text-foreground">
+        <span className="font-mono text-sm font-medium text-foreground">
           {schedule.agent_name}
         </span>
         <span className="text-muted-foreground">·</span>
@@ -209,7 +208,7 @@ function RunRow({ run }: { run: TaskRun }) {
       />
       <Link
         href={`/agents/${run.agent_name}`}
-        className="font-medium text-foreground hover:underline underline-offset-2"
+        className="font-mono font-medium text-foreground hover:underline underline-offset-2"
       >
         {run.agent_name}
       </Link>
@@ -338,14 +337,15 @@ export function DashboardClient({
   return (
     <main className="flex h-full flex-col overflow-hidden">
       {/* ── Header ─────────────────────────────────────────── */}
-      <header className="flex shrink-0 items-baseline justify-between border-b border-border px-6 py-5">
-        <div>
-          <div className="section-eyebrow">overview</div>
-          <h1 className="text-4xl font-bold leading-none tracking-tight">
+      <header className="flex shrink-0 items-center justify-between border-b border-border px-6 pt-5 pb-3.5">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h1 className="text-xl font-semibold tracking-tight whitespace-nowrap">
             Today
           </h1>
+          <span className="font-mono text-[12.5px] text-muted-foreground whitespace-nowrap">
+            {today}
+          </span>
         </div>
-        <p className="font-mono text-xs text-muted-foreground">{today}</p>
       </header>
 
       {/* ── Hero stat grid ─────────────────────────────────── */}

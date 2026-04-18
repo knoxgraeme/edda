@@ -22,8 +22,8 @@ import {
 const navGroups = [
   {
     items: [
-      { href: "/agents", label: "Agents", icon: Bot },
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/agents", label: "Agents", icon: Bot },
     ],
   },
   {

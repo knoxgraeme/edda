@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { useCallback, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { Bot, Play, AlertCircle } from "lucide-react";
+import { Bot, Play, Plus, Search } from "lucide-react";
 
 import type { Agent, AgentSchedule, EnabledSchedule, TaskRun } from "../types/db";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatCountdown, humanizeCron, nextRunAt } from "@/lib/cron";
@@ -26,8 +27,18 @@ interface Props {
   agents: Agent[];
   lastRuns: Record<string, TaskRun | null>;
   schedules: EnabledSchedule[];
+  sparklines: Record<string, number[]>;
   defaultAgent: string;
 }
+
+type Filter = "all" | "scheduled" | "on-demand" | "disabled";
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "scheduled", label: "Scheduled" },
+  { id: "on-demand", label: "On-demand" },
+  { id: "disabled", label: "Disabled" },
+];
 
 // ─── Run-now dialog ────────────────────────────────────────────────
 
@@ -119,19 +130,37 @@ function RunDialog({
   );
 }
 
-// ─── Row (used for default + list) ────────────────────────────────
+// ─── Cells ────────────────────────────────────────────────────────
 
-function statusDot(run: TaskRun | null | undefined) {
-  if (!run) return { color: "bg-border", label: "never run" };
-  switch (run.status) {
+function statusColor(status: TaskRun["status"] | undefined) {
+  switch (status) {
     case "completed":
-      return { color: "bg-signal-ok", label: "ok" };
+      return "bg-signal-ok";
     case "running":
     case "pending":
-      return { color: "bg-signal-run signal-dot-run", label: run.status };
+      return "bg-signal-run signal-dot-run";
+    case "failed":
+      return "bg-signal-fail";
     default:
-      return { color: "bg-signal-fail", label: "failed" };
+      return "bg-border";
   }
+}
+
+function LastRunCell({ lastRun }: { lastRun: TaskRun | null | undefined }) {
+  if (!lastRun?.started_at) {
+    return <span className="font-mono text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <span
+        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusColor(lastRun.status))}
+        aria-hidden
+      />
+      <span className="truncate text-[12.5px] text-foreground">
+        {formatDistanceToNow(new Date(lastRun.started_at), { addSuffix: true })}
+      </span>
+    </div>
+  );
 }
 
 function NextRunCell({ schedules }: { schedules: AgentSchedule[] }) {
@@ -154,212 +183,241 @@ function NextRunCell({ schedules }: { schedules: AgentSchedule[] }) {
   }, [schedules, now]);
 
   if (!next) {
-    return <span className="text-muted-foreground">on demand</span>;
+    return <span className="text-[12.5px] text-muted-foreground">On demand</span>;
   }
 
   return (
-    <div className="flex flex-col leading-tight">
-      <span className="text-foreground">{humanizeCron(next.sched.cron)}</span>
-      <span className="text-muted-foreground text-[0.7rem]">
-        {formatCountdown(next.at.getTime() - now)}
+    <div className="min-w-0 truncate text-[12.5px] text-foreground">
+      {humanizeCron(next.sched.cron)}{" "}
+      <span className="font-mono text-[11.5px] text-muted-foreground">
+        · {formatCountdown(next.at.getTime() - now)}
       </span>
     </div>
   );
 }
 
-function AgentRow({
-  agent,
-  lastRun,
-  schedules,
-  onRun,
-}: {
-  agent: Agent;
-  lastRun: TaskRun | null | undefined;
-  schedules: AgentSchedule[];
-  onRun: (name: string) => void;
-}) {
-  const dot = statusDot(lastRun);
-  const model =
-    agent.model_provider && agent.model
-      ? `${agent.model_provider}:${agent.model}`
-      : agent.model || "default";
-
+function Sparkline({ runs, enabled }: { runs: number[]; enabled: boolean }) {
+  const max = Math.max(1, ...runs);
   return (
-    <li className="group rise-in relative border-b border-border">
-      <Link
-        href={`/agents/${agent.name}`}
-        className="flex items-center gap-4 px-6 py-4 pr-28 hover:bg-muted/40 transition-colors"
-      >
-        {/* Name column */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            {!agent.enabled && (
-              <span className="section-eyebrow text-muted-foreground">
-                disabled
-              </span>
-            )}
-          </div>
-          <div className="text-2xl font-semibold leading-tight tracking-tight text-foreground">
-            {agent.name}
-          </div>
-          <div className="mt-0.5 text-sm text-muted-foreground truncate">
-            {agent.description}
-          </div>
-        </div>
+    <div className="flex h-4 items-end gap-[2px]" aria-hidden>
+      {runs.map((v, i) => {
+        const h = v === 0 ? 2 : Math.max(3, Math.round((v / max) * 14));
+        const bg =
+          v === 0
+            ? "bg-border"
+            : enabled
+              ? "bg-neutral-700 dark:bg-neutral-300"
+              : "bg-neutral-300 dark:bg-neutral-600";
+        return (
+          <div
+            key={i}
+            className={cn("w-[3px] rounded-[1px]", bg)}
+            style={{ height: `${h}px` }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
-        {/* Model */}
-        <div className="hidden md:flex w-40 flex-col text-xs leading-tight">
-          <div className="section-eyebrow">model</div>
-          <div className="font-mono text-foreground truncate">{model}</div>
-        </div>
+// ─── Header ───────────────────────────────────────────────────────
 
-        {/* Next run */}
-        <div className="hidden lg:flex w-48 flex-col text-xs leading-tight">
-          <div className="section-eyebrow">next</div>
-          <NextRunCell schedules={schedules} />
+function PageHeader({
+  total,
+  enabledCount,
+  query,
+  setQuery,
+  filter,
+  setFilter,
+  onNew,
+}: {
+  total: number;
+  enabledCount: number;
+  query: string;
+  setQuery: (v: string) => void;
+  filter: Filter;
+  setFilter: (v: Filter) => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="border-b border-border px-6 pt-5 pb-3">
+      <div className="mb-3.5 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h1 className="text-xl font-semibold tracking-tight whitespace-nowrap">
+            Agents
+          </h1>
+          <span className="font-mono text-[12.5px] text-muted-foreground whitespace-nowrap">
+            {enabledCount}/{total} enabled
+          </span>
         </div>
-
-        {/* Last run */}
-        <div className="hidden sm:flex w-40 flex-col text-xs leading-tight">
-          <div className="section-eyebrow">last run</div>
-          <div className="flex items-center gap-1.5 text-foreground">
-            <span
-              className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot.color)}
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute top-2.5 left-2.5 h-3.5 w-3.5 text-muted-foreground"
               aria-hidden
             />
-            <span className="truncate">
-              {lastRun?.started_at
-                ? formatDistanceToNow(new Date(lastRun.started_at), {
-                    addSuffix: true,
-                  })
-                : "never"}
-            </span>
+            <Input
+              placeholder="Search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-8 w-[180px] pl-8 text-[13px]"
+            />
           </div>
-          {lastRun?.status === "failed" && lastRun.error && (
-            <div className="text-destructive truncate text-[0.7rem] mt-0.5">
-              {lastRun.error.slice(0, 40)}
-              {lastRun.error.length > 40 ? "…" : ""}
-            </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 whitespace-nowrap"
+            onClick={onNew}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New agent
+          </Button>
+        </div>
+      </div>
+      <div className="flex items-center gap-0.5">
+        {FILTERS.map((f) => {
+          const on = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={cn(
+                "h-[26px] rounded px-2.5 text-xs whitespace-nowrap transition-colors",
+                on
+                  ? "bg-secondary font-medium text-foreground"
+                  : "font-normal text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Row ──────────────────────────────────────────────────────────
+
+const GRID_COLS =
+  "grid grid-cols-[minmax(180px,2fr)_minmax(130px,1.1fr)_minmax(120px,1fr)_44px_64px] items-center gap-3 px-5";
+
+function AgentRow({
+  agent,
+  isDefault,
+  lastRun,
+  schedules,
+  runs,
+  onRun,
+  onOpen,
+}: {
+  agent: Agent;
+  isDefault: boolean;
+  lastRun: TaskRun | null | undefined;
+  schedules: AgentSchedule[];
+  runs: number[];
+  onRun: (name: string) => void;
+  onOpen: (name: string) => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(agent.name)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(agent.name);
+        }
+      }}
+      className={cn(
+        GRID_COLS,
+        "cursor-pointer border-b border-border py-3.5 transition-colors hover:bg-muted/40",
+        !agent.enabled && "opacity-60",
+      )}
+    >
+      {/* Agent — name + description */}
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          {isDefault && (
+            <span
+              title="Default agent"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-warm"
+            />
+          )}
+          <span className="font-mono text-sm font-medium">{agent.name}</span>
+          {isDefault && (
+            <span className="rounded border border-accent-warm/30 px-1.5 py-px text-[10px] font-semibold tracking-[0.08em] text-accent-warm uppercase">
+              Default
+            </span>
+          )}
+          {!agent.enabled && (
+            <span className="rounded border border-border px-1.5 py-px text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Disabled
+            </span>
           )}
         </div>
-      </Link>
+        <div className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
+          {agent.description}
+        </div>
+      </div>
 
-      {/* Run button — absolute so it sits over the link without nesting */}
-      <div className="absolute right-6 top-1/2 -translate-y-1/2">
+      {/* Next run */}
+      <NextRunCell schedules={schedules} />
+
+      {/* Last run */}
+      <LastRunCell lastRun={lastRun} />
+
+      {/* 7d sparkline */}
+      <Sparkline runs={runs} enabled={agent.enabled} />
+
+      {/* Actions */}
+      <div
+        className="flex items-center justify-end"
+        onClick={(e) => e.stopPropagation()}
+      >
         <Button
           variant="outline"
           size="sm"
-          className="h-7 gap-1 text-xs"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRun(agent.name);
-          }}
+          disabled={!agent.enabled}
+          className="h-7 gap-1 px-2.5 text-xs"
+          onClick={() => onRun(agent.name)}
         >
           <Play className="h-3 w-3" />
           Run
         </Button>
       </div>
-    </li>
+    </div>
   );
 }
 
-// ─── Hero (default agent) ─────────────────────────────────────────
-
-function DefaultHero({
-  agent,
-  lastRun,
-  schedules,
-  onRun,
-}: {
-  agent: Agent;
-  lastRun: TaskRun | null | undefined;
-  schedules: AgentSchedule[];
-  onRun: (name: string) => void;
-}) {
-  const dot = statusDot(lastRun);
-  const model =
-    agent.model_provider && agent.model
-      ? `${agent.model_provider}:${agent.model}`
-      : agent.model || "default";
-
-  return (
-    <Link
-      href={`/agents/${agent.name}`}
-      className="rise-in relative block border-b border-border px-6 py-5 hover:bg-muted/30 transition-colors"
-    >
-      <div className="section-eyebrow !text-accent-warm">
-        ● default agent
-      </div>
-      <div className="mt-1 flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-4xl font-bold leading-none tracking-tight text-foreground">
-            {agent.name}
-          </h1>
-          <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
-            {agent.description}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 shrink-0"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRun(agent.name);
-          }}
-        >
-          <Play className="h-3.5 w-3.5" />
-          Run now
-        </Button>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-6 text-xs leading-tight">
-        <div>
-          <div className="section-eyebrow">model</div>
-          <div className="font-mono text-foreground truncate">{model}</div>
-        </div>
-        <div>
-          <div className="section-eyebrow">next</div>
-          <NextRunCell schedules={schedules} />
-        </div>
-        <div>
-          <div className="section-eyebrow">last run</div>
-          <div className="flex items-center gap-1.5 text-foreground">
-            <span
-              className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot.color)}
-              aria-hidden
-            />
-            <span className="truncate">
-              {lastRun?.started_at
-                ? formatDistanceToNow(new Date(lastRun.started_at), {
-                    addSuffix: true,
-                  })
-                : "never"}
-            </span>
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ─── Main ──────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────
 
 export function AgentsClient({
   agents,
   lastRuns,
   schedules,
+  sparklines,
   defaultAgent,
 }: Props) {
+  const router = useRouter();
   const [runTarget, setRunTarget] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newAgentOpen, setNewAgentOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
 
   const openRunDialog = useCallback((name: string) => {
     setRunTarget(name);
     setDialogOpen(true);
   }, []);
+
+  const openAgent = useCallback(
+    (name: string) => {
+      router.push(`/agents/${name}`);
+    },
+    [router],
+  );
 
   const schedulesByAgent = useMemo(() => {
     const map: Record<string, AgentSchedule[]> = {};
@@ -370,75 +428,83 @@ export function AgentsClient({
     return map;
   }, [schedules]);
 
-  const { hero, rest } = useMemo(() => {
-    const heroAgent = agents.find((a) => a.name === defaultAgent) ?? null;
-    const others = agents.filter((a) => a.name !== heroAgent?.name);
-    // Sort: enabled first, then by name
-    others.sort((a, b) => {
-      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    return { hero: heroAgent, rest: others };
-  }, [agents, defaultAgent]);
+  const filteredAgents = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return agents
+      .filter((a) => {
+        const hasSchedule = (schedulesByAgent[a.name] ?? []).length > 0;
+        if (filter === "scheduled" && !(a.enabled && hasSchedule)) return false;
+        if (filter === "on-demand" && !(a.enabled && !hasSchedule)) return false;
+        if (filter === "disabled" && a.enabled) return false;
+        if (!q) return true;
+        return (
+          a.name.toLowerCase().includes(q) ||
+          (a.description || "").toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        // Default agent first, then enabled, then alphabetical
+        if (a.name === defaultAgent) return -1;
+        if (b.name === defaultAgent) return 1;
+        if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [agents, query, filter, schedulesByAgent, defaultAgent]);
 
-  const anyFailing = agents.some((a) => lastRuns[a.name]?.status === "failed");
+  const enabledCount = agents.filter((a) => a.enabled).length;
+  const emptyRuns = useMemo(() => new Array(7).fill(0), []);
 
   return (
     <main className="flex h-full flex-col">
-      {/* ── Header ──────────────────────────────────────────── */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-6">
-        <div>
-          <div className="section-eyebrow">Fleet</div>
-          <h1 className="text-4xl font-bold leading-none tracking-tight">
-            Agents
-          </h1>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setNewAgentOpen(true)}
-        >
-          + New agent
-        </Button>
-      </header>
-
-      {anyFailing && (
-        <div className="flex items-center gap-2 border-b border-border bg-destructive/5 px-6 py-2.5 text-xs text-destructive">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            One or more agents have failing runs. Click a row to see the
-            error.
-          </span>
-        </div>
-      )}
+      <PageHeader
+        total={agents.length}
+        enabledCount={enabledCount}
+        query={query}
+        setQuery={setQuery}
+        filter={filter}
+        setFilter={setFilter}
+        onNew={() => setNewAgentOpen(true)}
+      />
 
       {agents.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center p-16 text-muted-foreground">
-          <Bot className="h-12 w-12 mb-4" />
+          <Bot className="mb-4 h-12 w-12" />
           <p className="text-xl font-semibold tracking-tight">No agents yet</p>
           <p className="mt-1 text-sm">Create your first agent to get started.</p>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          {hero && (
-            <DefaultHero
-              agent={hero}
-              lastRun={lastRuns[hero.name]}
-              schedules={schedulesByAgent[hero.name] ?? []}
-              onRun={openRunDialog}
-            />
-          )}
-          <ul>
-            {rest.map((agent) => (
+          <div
+            className={cn(
+              GRID_COLS,
+              "border-b border-border py-2.5 font-mono text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase",
+            )}
+          >
+            <div>Agent</div>
+            <div>Next run</div>
+            <div>Last run</div>
+            <div>7d</div>
+            <div />
+          </div>
+
+          {filteredAgents.length === 0 ? (
+            <div className="px-6 py-16 text-center text-sm text-muted-foreground">
+              No agents match.
+            </div>
+          ) : (
+            filteredAgents.map((agent) => (
               <AgentRow
                 key={agent.name}
                 agent={agent}
+                isDefault={agent.name === defaultAgent}
                 lastRun={lastRuns[agent.name]}
                 schedules={schedulesByAgent[agent.name] ?? []}
+                runs={sparklines[agent.name] ?? emptyRuns}
                 onRun={openRunDialog}
+                onOpen={openAgent}
               />
-            ))}
-          </ul>
+            ))
+          )}
         </div>
       )}
 
