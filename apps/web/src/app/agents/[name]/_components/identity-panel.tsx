@@ -2,16 +2,14 @@
 
 import * as React from "react";
 import { useTransition } from "react";
-import { ChevronDown } from "lucide-react";
+import { ArrowUpRight, FileText } from "lucide-react";
 import { toast } from "sonner";
 import type { Agent, LlmProvider, ThreadLifetime } from "../../../types/db";
 import { updateAgentAction } from "../../../actions";
-import { AVAILABLE_SKILLS, AVAILABLE_TOOL_GROUPS, AVAILABLE_TOOLS } from "../../constants";
 import { LLM_PROVIDER_OPTIONS, VALID_LLM_PROVIDERS } from "@/lib/providers";
-import { Section, DataRow } from "@/app/components/section";
 import { InlineText } from "./inline-edit";
 import { Select } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { CollapsibleSection, SummaryPill, SummaryText } from "./collapsible-section";
 
 function toProvider(value: string): LlmProvider | null {
   if (!value) return null;
@@ -20,26 +18,24 @@ function toProvider(value: string): LlmProvider | null {
 }
 
 /**
- * Identity section — name, description, model, skills, subagents.
- * All fields click-to-edit in place.
+ * Identity — description, thread lifetime, model, and an Instructions
+ * row that opens the system-prompt / AGENTS.md sheet.
+ *
+ * Skills, tools, and subagents moved to the Capabilities panel below.
  */
 export function IdentityPanel({
   agent,
-  availableAgents,
+  onOpenPrompt,
   delay = 0,
 }: {
   agent: Agent;
-  availableAgents: string[];
+  onOpenPrompt: () => void;
   delay?: number;
 }) {
   const [pending, startTransition] = useTransition();
-  const [toolsExpanded, setToolsExpanded] = React.useState(false);
 
   const save = React.useCallback(
-    async (
-      updates: Parameters<typeof updateAgentAction>[1],
-      successMsg = "Saved",
-    ) => {
+    async (updates: Parameters<typeof updateAgentAction>[1], successMsg = "Saved") => {
       return new Promise<void>((resolve, reject) => {
         startTransition(async () => {
           try {
@@ -56,51 +52,32 @@ export function IdentityPanel({
     [agent.name],
   );
 
-  const skillSet = new Set(agent.skills);
+  const modelLabel =
+    agent.model_provider && agent.model ? `${agent.model_provider}:${agent.model}` : "Default";
 
-  const toggleSkill = (skillName: string) => {
-    if (pending) return;
-    const next = new Set(skillSet);
-    if (next.has(skillName)) next.delete(skillName);
-    else next.add(skillName);
-    void save({ skills: Array.from(next) }, "Skills updated");
-  };
-
-  const toggleSubagent = (subagentName: string) => {
-    if (pending) return;
-    const next = new Set(agent.subagents);
-    if (next.has(subagentName)) next.delete(subagentName);
-    else next.add(subagentName);
-    void save({ subagents: Array.from(next) }, "Subagents updated");
-  };
-
-  const toolSet = React.useMemo(() => new Set(agent.tools), [agent.tools]);
-  const unknownTools = React.useMemo(
-    () => agent.tools.filter((t) => !AVAILABLE_TOOLS.has(t)),
-    [agent.tools],
+  const summary = (
+    <>
+      <SummaryPill>{agent.thread_lifetime}</SummaryPill>
+      <SummaryPill>{modelLabel.toLowerCase()}</SummaryPill>
+      <SummaryText status={agent.system_prompt ? "ok" : "muted"}>
+        {agent.system_prompt ? "custom prompt" : "no custom prompt"}
+      </SummaryText>
+    </>
   );
 
-  const toggleTool = (toolName: string) => {
-    if (pending) return;
-    const next = new Set(toolSet);
-    if (next.has(toolName)) next.delete(toolName);
-    else next.add(toolName);
-    void save({ tools: Array.from(next) }, "Tools updated");
-  };
-
   return (
-    <Section eyebrow="Identity" delay={delay}>
-      <div className="space-y-1">
-        <DataRow label="Description">
+    <CollapsibleSection eyebrow="Identity" defaultOpen summary={summary} delay={delay}>
+      <div className="divide-y divide-border/60">
+        <IdRow label="Description">
           <InlineText
             value={agent.description}
             placeholder="Describe what this agent does"
             ariaLabel="Description"
             onSave={(next) => save({ description: next }, "Description updated")}
           />
-        </DataRow>
+        </IdRow>
 
-        <DataRow label="Thread">
+        <IdRow label="Thread">
           <div className="flex items-center gap-2">
             <Select
               value={agent.thread_lifetime}
@@ -111,30 +88,27 @@ export function IdentityPanel({
                 )
               }
               disabled={pending}
-              className="h-7 text-xs w-32"
+              className="h-7 w-32 text-xs"
             >
               <option value="ephemeral">Ephemeral</option>
               <option value="daily">Daily</option>
               <option value="persistent">Persistent</option>
             </Select>
-            <span className="text-xs text-muted-foreground">
+            <span className="font-mono text-[11.5px] text-muted-foreground/70">
               scope: {agent.thread_scope}
             </span>
           </div>
-        </DataRow>
+        </IdRow>
 
-        <DataRow label="Model">
+        <IdRow label="Model">
           <div className="flex items-center gap-2">
             <Select
               value={agent.model_provider ?? ""}
               onChange={(e) =>
-                save(
-                  { model_provider: toProvider(e.target.value) },
-                  "Provider updated",
-                )
+                save({ model_provider: toProvider(e.target.value) }, "Provider updated")
               }
               disabled={pending}
-              className="h-7 text-xs w-36"
+              className="h-7 w-36 text-xs"
             >
               <option value="">Default</option>
               {LLM_PROVIDER_OPTIONS.map((p) => (
@@ -148,170 +122,51 @@ export function IdentityPanel({
               placeholder="click to override default"
               mono
               ariaLabel="Model"
-              className="flex-1 min-w-0"
-              onSave={(next) =>
-                save({ model: next || null }, "Model updated")
-              }
+              className="min-w-0 flex-1"
+              onSave={(next) => save({ model: next || null }, "Model updated")}
             />
           </div>
-        </DataRow>
-      </div>
+        </IdRow>
 
-      <div className="mt-4">
-        <div className="section-eyebrow mb-2">Skills</div>
-        <div className="flex flex-wrap gap-1.5">
-          {AVAILABLE_SKILLS.map((s) => {
-            const active = skillSet.has(s.name);
-            return (
-              <button
-                key={s.name}
-                type="button"
-                disabled={pending}
-                onClick={() => toggleSkill(s.name)}
-                title={s.description}
-                className={cn(
-                  "rounded-sm px-2 py-0.5 text-xs transition-colors border",
-                  active
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-muted-foreground/40 text-muted-foreground hover:border-foreground hover:text-foreground",
-                )}
-              >
-                {s.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="section-eyebrow">
-            Tools{toolSet.size > 0 ? ` · ${toolSet.size}` : ""}
-          </div>
+        <IdRow
+          label="Instructions"
+          trailing={
+            <span className="font-mono text-[11.5px] text-muted-foreground/70">
+              {(agent.system_prompt ?? "").length.toLocaleString()} chars
+            </span>
+          }
+        >
           <button
             type="button"
-            onClick={() => setToolsExpanded((v) => !v)}
-            className="flex items-center gap-1 text-[0.7rem] font-mono text-muted-foreground hover:text-foreground"
-            aria-expanded={toolsExpanded}
+            onClick={onOpenPrompt}
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-[12.5px] text-foreground/80 hover:bg-muted hover:text-foreground"
           >
-            {toolsExpanded ? "hide" : "show all"}
-            <ChevronDown
-              className={cn(
-                "h-3 w-3 transition-transform",
-                toolsExpanded && "rotate-180",
-              )}
-            />
+            <FileText className="h-3 w-3" />
+            <span>System prompt</span>
+            <span className="text-muted-foreground/50">·</span>
+            <span>AGENTS.md</span>
+            <ArrowUpRight className="h-3 w-3 text-muted-foreground/70" />
           </button>
-        </div>
-
-        <p className="mb-2 text-xs text-muted-foreground">
-          Extra tools granted on top of the ones your skills already expose.
-        </p>
-
-        {!toolsExpanded && (
-          <div className="flex flex-wrap gap-1">
-            {toolSet.size === 0 ? (
-              <span className="text-xs text-muted-foreground italic">
-                None — agent only uses tools from its selected skills.
-              </span>
-            ) : (
-              agent.tools.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  disabled={pending}
-                  onClick={() => toggleTool(t)}
-                  className="rounded-sm border border-foreground bg-foreground px-2 py-0.5 font-mono text-xs text-background transition-colors hover:opacity-80"
-                  title="Click to remove"
-                >
-                  {t}
-                </button>
-              ))
-            )}
-          </div>
-        )}
-
-        {toolsExpanded && (
-          <div className="space-y-3">
-            {AVAILABLE_TOOL_GROUPS.map((group) => (
-              <div key={group.group}>
-                <div className="mb-1 text-[0.65rem] font-mono uppercase tracking-wider text-muted-foreground">
-                  {group.group}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {group.tools.map((t) => {
-                    const active = toolSet.has(t);
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        disabled={pending}
-                        onClick={() => toggleTool(t)}
-                        className={cn(
-                          "rounded-sm border px-2 py-0.5 font-mono text-xs transition-colors",
-                          active
-                            ? "border-foreground bg-foreground text-background"
-                            : "border-muted-foreground/40 text-muted-foreground hover:border-foreground hover:text-foreground",
-                        )}
-                      >
-                        {t}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-            {unknownTools.length > 0 && (
-              <div>
-                <div className="mb-1 text-[0.65rem] font-mono uppercase tracking-wider text-muted-foreground">
-                  Other
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {unknownTools.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      disabled={pending}
-                      onClick={() => toggleTool(t)}
-                      className="rounded-sm border border-foreground bg-foreground px-2 py-0.5 font-mono text-xs text-background"
-                      title="Unknown tool — click to remove"
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        </IdRow>
       </div>
+    </CollapsibleSection>
+  );
+}
 
-      {availableAgents.length > 0 && (
-        <div className="mt-4">
-          <div className="section-eyebrow mb-2">Subagents</div>
-          <div className="flex flex-wrap gap-1.5">
-            {availableAgents.map((name) => {
-              const active = agent.subagents.includes(name);
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  disabled={pending}
-                  onClick={() => toggleSubagent(name)}
-                  className={cn(
-                    "rounded-sm px-2 py-0.5 text-xs transition-colors border",
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border text-muted-foreground hover:border-foreground hover:text-foreground",
-                  )}
-                >
-                  {name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </Section>
+function IdRow({
+  label,
+  trailing,
+  children,
+}: {
+  label: string;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[120px_1fr_auto] items-center gap-3 py-2 text-sm">
+      <div className="text-[13px] text-muted-foreground">{label}</div>
+      <div className="min-w-0">{children}</div>
+      <div className="justify-self-end">{trailing}</div>
+    </div>
   );
 }

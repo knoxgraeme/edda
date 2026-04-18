@@ -43,10 +43,7 @@ export function RunSparkline({
   if (series.length < 2) {
     return (
       <div
-        className={cn(
-          "flex items-center text-xs text-muted-foreground",
-          className,
-        )}
+        className={cn("flex items-center text-xs text-muted-foreground", className)}
         style={{ height }}
       >
         Not enough data

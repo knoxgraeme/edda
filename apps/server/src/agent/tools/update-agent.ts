@@ -44,6 +44,12 @@ export const updateAgentSchema = z.object({
       "Cannot set privileged metadata keys (stores, hooks) via tool",
     )
     .describe("Arbitrary metadata for the agent"),
+  subagents: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Agent names this agent may delegate to via the task tool. Pass a full list to replace the current set.",
+    ),
   add_tools: z
     .array(z.string())
     .optional()
@@ -89,7 +95,7 @@ export const updateAgentTool = tool(
   {
     name: "update_agent",
     description:
-      "Update an existing agent definition. Can change description, enabled status, skills, and more. Use add_tools/remove_tools to grant or revoke tool access (e.g. MCP tools).",
+      "Update an existing agent definition. Can change description, enabled status, skills, subagents, and more. Use add_tools/remove_tools to grant or revoke tool access (e.g. MCP tools).",
     schema: updateAgentSchema,
   },
 );

@@ -1,26 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Play, Trash2, History } from "lucide-react";
 import { toast } from "sonner";
 
-import type {
-  Agent,
-  AgentChannel,
-  AgentSchedule,
-  TaskRun,
-} from "../../types/db";
+import type { Agent, AgentChannel, AgentSchedule, TaskRun } from "../../types/db";
 import { deleteAgentAction, toggleAgentAction } from "../../actions";
 
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 import { ChatProvider, useChatContext } from "@/providers/ChatProvider";
 import { ChatInterface } from "@/app/components/ChatInterface";
@@ -37,15 +29,12 @@ import { ThreadList } from "@/app/components/ThreadList";
 
 import { IdentityPanel } from "./_components/identity-panel";
 import { SchedulesPanel } from "./_components/schedules-panel";
-import { ChannelsPanel } from "./_components/channels-panel";
+import { CapabilitiesPanel } from "./_components/capabilities-panel";
+import { ChannelStrip } from "./_components/channel-strip";
+import { ConfigHeader } from "./_components/config-header";
+import { PromptSheet } from "./_components/prompt-sheet";
+import { CapabilityEditorSheet, type CapabilityKind } from "./_components/capability-editor-sheet";
 import { RunsPanel } from "./_components/runs-panel";
-import { PromptPanel } from "./_components/prompt-panel";
-
-// ─── Run-now dialog ────────────────────────────────────────────────
-//
-// Kept in this file because it's a narrow header affordance and the
-// previous monolith's separate RunNowDialog was unused by the list
-// page (which bypassed it with a broken quick-run). This replaces both.
 
 function RunNowDialog({
   open,
@@ -63,17 +52,14 @@ function RunNowDialog({
     if (!prompt.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch(
-        `/api/v1/agents/${encodeURIComponent(agentName)}/run`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            notify: ["inbox"],
-          }),
-        },
-      );
+      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentName)}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          notify: ["inbox"],
+        }),
+      });
       if (res.ok) {
         toast.success(`${agentName} triggered`);
         onOpenChange(false);
@@ -94,8 +80,7 @@ function RunNowDialog({
             Run {agentName}
           </DialogTitle>
           <DialogDescription>
-            Runs the agent with an ephemeral thread. Result is delivered to the
-            inbox.
+            Runs the agent with an ephemeral thread. Result is delivered to the inbox.
           </DialogDescription>
         </DialogHeader>
         <div className="py-2">
@@ -112,18 +97,10 @@ function RunNowDialog({
           />
         </div>
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
-          <Button
-            onClick={submit}
-            disabled={submitting || !prompt.trim()}
-            className="gap-1"
-          >
+          <Button onClick={submit} disabled={submitting || !prompt.trim()} className="gap-1">
             <Play className="h-3.5 w-3.5" />
             {submitting ? "Running…" : "Run"}
           </Button>
@@ -133,16 +110,52 @@ function RunNowDialog({
   );
 }
 
-// ─── Chat pane (left) ──────────────────────────────────────────────
+// ─── Chat pane (left) with Test/Runs tabs ──────────────────────────
+
+function TabButton({
+  active,
+  onClick,
+  children,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  count?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "-mb-[11px] inline-flex items-center gap-1.5 border-b-2 px-2 pb-[10px] pt-1 font-mono text-[11px] font-medium uppercase tracking-[0.12em]",
+        active
+          ? "border-foreground text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+      {count !== undefined && <span className="text-[10px] text-muted-foreground/70">{count}</span>}
+    </button>
+  );
+}
 
 function ChatPaneInner({
   agentName,
   threadLifetime,
+  initialRuns,
+  onRunNow,
 }: {
   agentName: string;
   threadLifetime: Agent["thread_lifetime"];
+  initialRuns: TaskRun[];
+  onRunNow: () => void;
 }) {
+  const [tab, setTab] = useState<"test" | "runs">("test");
   const [showThreads, setShowThreads] = useState(false);
+  // Polling lives here so the Runs tab badge count stays live even while
+  // the user is on the Test tab. RunsPanel receives runs as a prop.
+  const [runs, setRuns] = useState<TaskRun[]>(initialRuns);
   const { threadId, loadThread } = useChatContext();
   const showThreadSidebar = threadLifetime === "daily";
 
@@ -154,9 +167,33 @@ function ChatPaneInner({
     [loadThread],
   );
 
+  useEffect(() => {
+    const fetchRuns = async () => {
+      try {
+        const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentName)}/runs?limit=20`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setRuns(Array.isArray(data) ? data : data.data);
+      } catch {
+        /* silent */
+      }
+    };
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchRuns();
+    }, 30_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void fetchRuns();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [agentName]);
+
   return (
     <div className="flex h-full min-h-0">
-      {showThreadSidebar && showThreads && (
+      {showThreadSidebar && showThreads && tab === "test" && (
         <div className="relative w-64 flex-shrink-0 border-r border-border bg-muted/30">
           <ThreadList
             agentName={agentName}
@@ -166,21 +203,44 @@ function ChatPaneInner({
           />
         </div>
       )}
-      <div className="flex flex-1 min-h-0 flex-col">
-        {showThreadSidebar && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowThreads((v) => !v)}
-              className="h-7 gap-1.5 px-2"
-            >
-              <History className="h-3.5 w-3.5" />
-              <span className="text-xs">History</span>
-            </Button>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-[9px]">
+          <div className="flex items-center gap-1">
+            <TabButton active={tab === "test"} onClick={() => setTab("test")}>
+              Test agent
+            </TabButton>
+            <TabButton active={tab === "runs"} onClick={() => setTab("runs")} count={runs.length}>
+              Runs
+            </TabButton>
           </div>
+          {tab === "test" && (
+            <div className="flex items-center gap-1">
+              <span className="mr-1 inline-flex items-center gap-1.5 font-mono text-[11.5px] text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-signal-ok" />
+                connected
+              </span>
+              <span className="mr-0.5 font-mono text-[11.5px] text-muted-foreground/70">
+                thread: {threadLifetime}
+              </span>
+              {showThreadSidebar && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setShowThreads((v) => !v)}
+                  aria-label="History"
+                >
+                  <History className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+        {tab === "test" ? (
+          <ChatInterface hideWelcome />
+        ) : (
+          <RunsPanel runs={runs} onRunNow={onRunNow} />
         )}
-        <ChatInterface hideWelcome />
       </div>
     </div>
   );
@@ -189,13 +249,22 @@ function ChatPaneInner({
 function ChatPane({
   agentName,
   threadLifetime,
+  initialRuns,
+  onRunNow,
 }: {
   agentName: string;
   threadLifetime: Agent["thread_lifetime"];
+  initialRuns: TaskRun[];
+  onRunNow: () => void;
 }) {
   return (
     <ChatProvider agentName={agentName}>
-      <ChatPaneInner agentName={agentName} threadLifetime={threadLifetime} />
+      <ChatPaneInner
+        agentName={agentName}
+        threadLifetime={threadLifetime}
+        initialRuns={initialRuns}
+        onRunNow={onRunNow}
+      />
     </ChatProvider>
   );
 }
@@ -218,6 +287,8 @@ export function AgentDetailClient({
   const [pending, startTransition] = useTransition();
   const [enabled, setEnabled] = useState(agent.enabled);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [editorKind, setEditorKind] = useState<CapabilityKind | null>(null);
 
   const handleToggle = (next: boolean) => {
     setEnabled(next);
@@ -226,24 +297,19 @@ export function AgentDetailClient({
         await toggleAgentAction(agent.name, next);
       } catch (err) {
         setEnabled(!next);
-        toast.error(
-          err instanceof Error ? err.message : "Failed to toggle agent",
-        );
+        toast.error(err instanceof Error ? err.message : "Failed to toggle agent");
       }
     });
   };
 
   const handleDelete = () => {
-    if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`))
-      return;
+    if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
     startTransition(async () => {
       try {
         await deleteAgentAction(agent.name);
       } catch (err) {
         if (err && typeof err === "object" && "digest" in err) throw err;
-        toast.error(
-          err instanceof Error ? err.message : "Failed to delete agent",
-        );
+        toast.error(err instanceof Error ? err.message : "Failed to delete agent");
       }
     });
   };
@@ -263,10 +329,10 @@ export function AgentDetailClient({
           </Button>
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="text-3xl font-bold leading-none tracking-tight">
+          <h1 className="font-mono text-[17px] font-semibold leading-none tracking-tight">
             {agent.name}
           </h1>
-          <div className="mt-1.5 flex items-center gap-2 text-[0.7rem] font-mono text-muted-foreground">
+          <div className="mt-1.5 flex items-center gap-2 font-mono text-[11.5px] text-muted-foreground">
             <span>{modelLabel}</span>
             <span aria-hidden>·</span>
             <span>{agent.thread_lifetime}</span>
@@ -281,6 +347,7 @@ export function AgentDetailClient({
           <Play className="h-3.5 w-3.5" />
           Run now
         </Button>
+        <div className="h-5 w-px bg-border" />
         <Button
           variant="ghost"
           size="icon"
@@ -290,7 +357,7 @@ export function AgentDetailClient({
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
-        <div className="flex items-center gap-2 pl-2 border-l border-border">
+        <div className="flex items-center gap-2 border-l border-border pl-2">
           <Label htmlFor="agent-enabled" className="text-xs text-muted-foreground">
             {enabled ? "enabled" : "disabled"}
           </Label>
@@ -303,50 +370,53 @@ export function AgentDetailClient({
         </div>
       </header>
 
-      {/* ── Split body: chat left, sectioned settings right ──── */}
-      {/* Explicit stable id avoids react-resizable-panels' useId() SSR
-          mismatch when ancestor tree shape differs between server/client
-          (ChatProvider hydration, etc). */}
+      {/* ── Split body: chat left, config right ─────────────────── */}
       <ResizablePanelGroup
         id="agent-detail-split"
         direction="horizontal"
-        className="flex-1 min-h-0"
+        className="min-h-0 flex-1"
       >
         <ResizablePanel defaultSize={42} minSize={28}>
           <ChatPane
             agentName={agent.name}
             threadLifetime={agent.thread_lifetime}
+            initialRuns={runs}
+            onRunNow={() => setRunDialogOpen(true)}
           />
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={58} minSize={36}>
-          <div className="h-full overflow-y-auto">
-            <IdentityPanel
-              agent={agent}
-              availableAgents={availableAgents}
-              delay={0}
-            />
-            <SchedulesPanel
-              agentName={agent.name}
-              schedules={schedules}
-              availableAgents={availableAgents}
-              delay={60}
-            />
-            <ChannelsPanel
-              agentName={agent.name}
-              channels={channels}
-              delay={120}
-            />
-            <RunsPanel agentName={agent.name} runs={runs} delay={180} />
-            <PromptPanel agent={agent} delay={240} />
+          <div className="flex h-full flex-col">
+            <ConfigHeader />
+            <ChannelStrip agentName={agent.name} channels={channels} />
+            <div className="flex-1 overflow-y-auto">
+              <IdentityPanel agent={agent} onOpenPrompt={() => setPromptOpen(true)} delay={0} />
+              <SchedulesPanel
+                agentName={agent.name}
+                schedules={schedules}
+                availableAgents={availableAgents}
+                delay={60}
+              />
+              <CapabilitiesPanel
+                agent={agent}
+                availableAgents={availableAgents}
+                onEdit={(k) => setEditorKind(k)}
+                delay={120}
+              />
+            </div>
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      <RunNowDialog
-        open={runDialogOpen}
-        onOpenChange={setRunDialogOpen}
-        agentName={agent.name}
+      <RunNowDialog open={runDialogOpen} onOpenChange={setRunDialogOpen} agentName={agent.name} />
+
+      <PromptSheet agent={agent} open={promptOpen} onOpenChange={setPromptOpen} />
+
+      <CapabilityEditorSheet
+        kind={editorKind}
+        agent={agent}
+        availableAgents={availableAgents}
+        onClose={() => setEditorKind(null)}
       />
     </main>
   );
