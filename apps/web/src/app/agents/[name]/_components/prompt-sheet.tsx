@@ -42,7 +42,8 @@ export function PromptSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        className="max-w-[900px] sm:max-w-[70vw] p-0 [&>button[data-slot=dialog-close]]:hidden"
+        className="max-w-[900px] sm:max-w-[70vw] p-0"
+        hideCloseButton
         onEscapeKeyDown={handleInterceptClose}
         onInteractOutside={handleInterceptClose}
       >

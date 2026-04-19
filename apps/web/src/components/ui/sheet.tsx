@@ -51,8 +51,11 @@ function SheetOverlay({
 function SheetContent({
   className,
   children,
+  hideCloseButton,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  hideCloseButton?: boolean;
+}) {
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -68,16 +71,18 @@ function SheetContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close
-          className={cn(
-            "absolute right-4 top-4 rounded-sm p-1 text-muted-foreground",
-            "transition-colors hover:bg-muted hover:text-foreground",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-        >
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
+        {!hideCloseButton && (
+          <DialogPrimitive.Close
+            className={cn(
+              "absolute right-4 top-4 rounded-sm p-1 text-muted-foreground",
+              "transition-colors hover:bg-muted hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </SheetPortal>
   );
