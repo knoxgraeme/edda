@@ -46,29 +46,30 @@ export function SideNav() {
 
   return (
     <TooltipProvider delayDuration={100}>
-      <nav className="flex h-screen w-14 flex-col items-center border-r border-border bg-muted/30 py-4 gap-1">
-        <div className="mb-4 text-lg font-bold text-primary">E</div>
+      <nav className="flex h-screen w-14 flex-col items-center gap-1 border-r border-border bg-background py-4">
+        <div className="mb-4 font-mono text-[15px] font-semibold tracking-tight text-foreground">
+          E
+        </div>
         {navGroups.map((group, groupIndex) => (
-          <div key={groupIndex} className="flex flex-col items-center gap-1 w-full">
-            {groupIndex > 0 && (
-              <div className="my-1.5 h-px w-6 bg-border" />
-            )}
+          <div key={groupIndex} className="flex w-full flex-col items-center gap-1">
+            {groupIndex > 0 && <div className="my-1.5 h-px w-6 bg-border" />}
             {group.items.map(({ href, label, icon: Icon }) => {
-              const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
+              const isActive =
+                href === "/" ? pathname === "/" : pathname.startsWith(href);
               return (
                 <Tooltip key={href}>
                   <TooltipTrigger asChild>
                     <Link
                       href={href}
                       className={cn(
-                        "relative flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+                        "relative flex h-10 w-10 items-center justify-center rounded-md transition-colors",
                         isActive
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          ? "bg-accent-warm/10 text-accent-warm"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
                       )}
                     >
                       {isActive && (
-                        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-accent-warm" />
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r-full bg-accent-warm" />
                       )}
                       <Icon size={18} strokeWidth={1.75} />
                     </Link>

@@ -73,7 +73,7 @@ export function CapabilityEditorSheet({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="max-w-[520px] p-0 [&>button[data-slot=dialog-close]]:hidden">
+      <SheetContent className="max-w-[520px] p-0" hideCloseButton>
         {kind && (
           <EditorBody
             key={kind}
