@@ -5,7 +5,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  ArrowRight,
   ChevronDown,
   ChevronRight,
   LogOut,
@@ -14,7 +13,6 @@ import {
 } from "lucide-react";
 import type { Settings } from "../types/db";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { saveSettingsAction, logoutAction } from "../actions";
@@ -120,6 +118,37 @@ function Row({
   return (
     <div className="grid gap-4" style={{ gridTemplateColumns: cols }}>
       {children}
+    </div>
+  );
+}
+
+// ── Settings-local select with handoff chevron ─────────────────────
+
+function SettingsSelect({
+  id,
+  value,
+  onChange,
+  children,
+}: {
+  id?: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        id={id}
+        value={value}
+        onChange={onChange}
+        className="flex h-9 w-full cursor-pointer appearance-none rounded-md border bg-background py-1 pl-3 pr-9 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {children}
+      </select>
+      <ChevronDown
+        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
+      />
     </div>
   );
 }
@@ -279,8 +308,8 @@ export function SettingsClient({
   return (
     <main className="min-h-full bg-background">
       <div
-        className="mx-auto grid max-w-[960px] items-start gap-10 px-8 pt-7 pb-24"
-        style={{ gridTemplateColumns: "180px 1fr" }}
+        className="grid items-start gap-10 px-6 pt-7 pb-24"
+        style={{ gridTemplateColumns: "180px minmax(0, 780px)" }}
       >
         {/* ── Side nav ───────────────────────────────────────── */}
         <aside className="sticky top-7 self-start">
@@ -362,7 +391,7 @@ export function SettingsClient({
                 htmlFor="user_timezone"
                 hint="Reminders and cron schedules fire in this timezone."
               >
-                <Select
+                <SettingsSelect
                   id="user_timezone"
                   value={form.user_timezone}
                   onChange={(e) => update("user_timezone", e.target.value)}
@@ -372,7 +401,7 @@ export function SettingsClient({
                       {tz}
                     </option>
                   ))}
-                </Select>
+                </SettingsSelect>
               </Field>
             </SettingsCard>
           </div>
@@ -396,7 +425,7 @@ export function SettingsClient({
             >
               <Row>
                 <Field label="Provider" htmlFor="llm_provider">
-                  <Select
+                  <SettingsSelect
                     id="llm_provider"
                     value={form.llm_provider}
                     onChange={(e) =>
@@ -411,7 +440,7 @@ export function SettingsClient({
                         {p.label}
                       </option>
                     ))}
-                  </Select>
+                  </SettingsSelect>
                 </Field>
                 <Field
                   label="Model"
@@ -437,7 +466,7 @@ export function SettingsClient({
             >
               <Row cols="1fr 1fr 120px">
                 <Field label="Provider" htmlFor="embedding_provider">
-                  <Select
+                  <SettingsSelect
                     id="embedding_provider"
                     value={form.embedding_provider}
                     onChange={(e) =>
@@ -450,7 +479,7 @@ export function SettingsClient({
                     <option value="voyage">Voyage</option>
                     <option value="openai">OpenAI</option>
                     <option value="google">Google</option>
-                  </Select>
+                  </SettingsSelect>
                 </Field>
                 <Field label="Model" htmlFor="embedding_model">
                   <Input
@@ -511,7 +540,7 @@ export function SettingsClient({
             >
               <Row cols="1fr 140px">
                 <Field label="Provider" htmlFor="search_provider">
-                  <Select
+                  <SettingsSelect
                     id="search_provider"
                     value={form.search_provider}
                     onChange={(e) =>
@@ -526,7 +555,7 @@ export function SettingsClient({
                     <option value="duckduckgo">DuckDuckGo (no key, unreliable)</option>
                     <option value="serper">Serper</option>
                     <option value="serpapi">SerpAPI</option>
-                  </Select>
+                  </SettingsSelect>
                 </Field>
                 <Field
                   label="Max results"
@@ -564,7 +593,7 @@ export function SettingsClient({
                   htmlFor="default_agent"
                   hint="The agent used as the primary conversational interface."
                 >
-                  <Select
+                  <SettingsSelect
                     id="default_agent"
                     value={form.default_agent}
                     onChange={(e) => update("default_agent", e.target.value)}
@@ -574,7 +603,7 @@ export function SettingsClient({
                         {name}
                       </option>
                     ))}
-                  </Select>
+                  </SettingsSelect>
                 </Field>
                 <Field
                   label="Max concurrent tasks"
@@ -593,7 +622,7 @@ export function SettingsClient({
                         update("task_max_concurrency", Number(e.target.value))
                       }
                       className="flex-1"
-                      style={{ accentColor: "var(--accent-warm)" }}
+                      style={{ accentColor: "var(--primary)" }}
                     />
                     <div className="min-w-9 rounded bg-[color:var(--neutral-100)] px-2 py-1 text-center font-mono text-[13px] font-semibold">
                       {form.task_max_concurrency}
@@ -614,17 +643,25 @@ export function SettingsClient({
                       <Link
                         key={name}
                         href={`/agents/${encodeURIComponent(name)}`}
-                        className="grid grid-cols-[160px_1fr_auto] items-center gap-3.5 border-b border-[color:var(--neutral-100)] px-1 py-2.5 text-left transition-colors last:border-b-0 hover:bg-[color:var(--neutral-50)]"
+                        className="grid grid-cols-[140px_1fr_auto] items-center gap-3.5 border-b border-[color:var(--neutral-100)] px-1 py-2.5 text-left transition-colors last:border-b-0 hover:bg-[color:var(--neutral-50)]"
                       >
-                        <div className="font-mono text-[13px] font-medium">
+                        <div className="truncate font-mono text-[13px] font-medium">
                           {name}
                         </div>
-                        <div className="text-[13px] text-muted-foreground">
+                        <div className="truncate text-[13px] text-muted-foreground">
                           {name === form.default_agent
                             ? "Default conversational agent"
                             : "Edit configuration, tools, schedules"}
                         </div>
-                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        {name === form.default_agent ? (
+                          <span className="rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                            default
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+                            edit
+                          </span>
+                        )}
                       </Link>
                     ))}
                   </div>
@@ -671,7 +708,7 @@ export function SettingsClient({
                         htmlFor="approval_new_type"
                         hint="Whether new item types require confirmation."
                       >
-                        <Select
+                        <SettingsSelect
                           id="approval_new_type"
                           value={form.approval_new_type}
                           onChange={(e) =>
@@ -683,14 +720,14 @@ export function SettingsClient({
                         >
                           <option value="auto">Auto-approve</option>
                           <option value="confirm">Require confirmation</option>
-                        </Select>
+                        </SettingsSelect>
                       </Field>
                       <Field
                         label="New entities"
                         htmlFor="approval_new_entity"
                         hint="Whether new entities require confirmation."
                       >
-                        <Select
+                        <SettingsSelect
                           id="approval_new_entity"
                           value={form.approval_new_entity}
                           onChange={(e) =>
@@ -702,7 +739,7 @@ export function SettingsClient({
                         >
                           <option value="auto">Auto-approve</option>
                           <option value="confirm">Require confirmation</option>
-                        </Select>
+                        </SettingsSelect>
                       </Field>
                     </Row>
                     <div className="mt-4">
@@ -711,7 +748,7 @@ export function SettingsClient({
                           label="Archive stale items"
                           htmlFor="approval_archive_stale"
                         >
-                          <Select
+                          <SettingsSelect
                             id="approval_archive_stale"
                             value={form.approval_archive_stale}
                             onChange={(e) =>
@@ -723,13 +760,13 @@ export function SettingsClient({
                           >
                             <option value="auto">Auto-approve</option>
                             <option value="confirm">Require confirmation</option>
-                          </Select>
+                          </SettingsSelect>
                         </Field>
                         <Field
                           label="Merge entities"
                           htmlFor="approval_merge_entity"
                         >
-                          <Select
+                          <SettingsSelect
                             id="approval_merge_entity"
                             value={form.approval_merge_entity}
                             onChange={(e) =>
@@ -741,7 +778,7 @@ export function SettingsClient({
                           >
                             <option value="auto">Auto-approve</option>
                             <option value="confirm">Require confirmation</option>
-                          </Select>
+                          </SettingsSelect>
                         </Field>
                       </Row>
                     </div>
@@ -756,7 +793,7 @@ export function SettingsClient({
                         htmlFor="cron_runner"
                         hint="Local node-cron or LangGraph platform triggers."
                       >
-                        <Select
+                        <SettingsSelect
                           id="cron_runner"
                           value={form.cron_runner}
                           onChange={(e) =>
@@ -768,14 +805,14 @@ export function SettingsClient({
                         >
                           <option value="local">Local (node-cron)</option>
                           <option value="langgraph">LangGraph Platform</option>
-                        </Select>
+                        </SettingsSelect>
                       </Field>
                       <Field
                         label="Sandbox provider"
                         htmlFor="sandbox_provider"
                         hint="Enables shell execution for agents with the coding skill."
                       >
-                        <Select
+                        <SettingsSelect
                           id="sandbox_provider"
                           value={form.sandbox_provider}
                           onChange={(e) =>
@@ -789,7 +826,7 @@ export function SettingsClient({
                           <option value="node-vfs">
                             Node VFS (in-memory, dev only)
                           </option>
-                        </Select>
+                        </SettingsSelect>
                       </Field>
                     </Row>
                   </div>
@@ -955,7 +992,7 @@ export function SettingsClient({
             : "pointer-events-none translate-y-full opacity-0",
         )}
       >
-        <div className="mx-auto flex max-w-[960px] items-center justify-between px-8 py-3">
+        <div className="flex items-center justify-between gap-3 px-6 py-3">
           <p className="text-sm text-muted-foreground">
             You have unsaved changes
           </p>
