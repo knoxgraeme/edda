@@ -125,7 +125,9 @@ allowed-tools:
 "change my timezone", "set approval mode to auto", "enable sandbox execution"
 - update_settings: Modify agent-safe settings.
 - Only user-facing keys can be modified: user_display_name, user_timezone,
-  web_search settings, approval modes, AGENTS.md budgets, sandbox_provider.
+  web_search settings, search_provider, approval modes (including approval_new_entity),
+  task_max_concurrency, AGENTS.md budgets (token budget, max versions,
+  max_per_category, max_entities), sandbox_provider.
 - Infrastructure keys (LLM provider, model, etc.) cannot be modified by agents.
 
 ## Sandbox Execution

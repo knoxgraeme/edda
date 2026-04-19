@@ -34,36 +34,8 @@ import {
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { computeSessionToken, COOKIE_NAME, THIRTY_DAYS } from "@/lib/auth";
-
-const isValidIanaTimezone = (value: string): boolean => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-// Mirrors UpdateSettingsSchema from /api/v1/settings/route.ts — keep in sync
-const UpdateSettingsSchema = z
-  .object({
-    user_display_name: z.string().max(200).nullable().optional(),
-    user_timezone: z
-      .string()
-      .max(100)
-      .optional()
-      .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
-    llm_provider: z
-      .enum([...LLM_PROVIDERS])
-      .optional(),
-    default_model: z.string().max(100).optional(),
-    embedding_provider: z.enum(["voyage", "openai", "google"]).optional(),
-    embedding_model: z.string().max(100).optional(),
-    default_agent: z.string().min(1).max(200).optional(),
-  })
-  .strip();
+import { UpdateSettingsSchema } from "@/lib/settings-schema";
 
 const CRON_FIELD_RE = /^(\*|(\d+(-\d+)?(,\d+(-\d+)?)*)(\/\d+)?|\*\/\d+)$/;
 function isValidCron(expr: string): boolean {
@@ -165,7 +137,7 @@ export async function updateItemStatusAction(
 export async function saveSettingsAction(updates: Partial<Settings>) {
   try {
     const validated = UpdateSettingsSchema.parse(updates);
-    const saved = await updateSettings(validated);
+    const saved = await updateSettings(validated as Partial<Settings>);
     revalidatePath("/settings");
     return saved;
   } catch (err: unknown) {

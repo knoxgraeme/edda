@@ -25,12 +25,19 @@ export const updateSettingsSchema = z.object({
         .optional()
         .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
       web_search_enabled: z.boolean().optional(),
-      web_search_max_results: z.number().int().min(1).max(20).optional(),
+      web_search_max_results: z.number().int().min(1).max(50).optional(),
+      search_provider: z
+        .enum(["brave", "tavily", "duckduckgo", "serper", "serpapi"])
+        .optional(),
+      approval_new_entity: z.enum(["auto", "confirm"]).optional(),
       approval_new_type: z.enum(["auto", "confirm"]).optional(),
       approval_archive_stale: z.enum(["auto", "confirm"]).optional(),
       approval_merge_entity: z.enum(["auto", "confirm"]).optional(),
-      agents_md_token_budget: z.number().int().min(100).max(10000).optional(),
-      agents_md_max_versions: z.number().int().min(1).max(50).optional(),
+      task_max_concurrency: z.number().int().min(1).max(10).optional(),
+      agents_md_token_budget: z.number().int().min(100).max(32000).optional(),
+      agents_md_max_versions: z.number().int().min(1).max(500).optional(),
+      agents_md_max_per_category: z.number().int().positive().max(500).optional(),
+      agents_md_max_entities: z.number().int().positive().max(1000).optional(),
       sandbox_provider: z
         .enum(["none", "node-vfs"])
         .optional()
