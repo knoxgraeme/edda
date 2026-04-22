@@ -7,11 +7,23 @@ import { z } from "zod";
 import { getAgentByName, updateAgent, modifyAgentTools, LLM_PROVIDERS } from "@edda/db";
 import { invalidateAgent } from "../agent-cache.js";
 
+// Accept either an array of strings or a JSON-stringified array (LLMs sometimes
+// serialize array arguments as a string). Rejects all other input shapes.
+const stringArrayFromMaybeJson = z.preprocess((val) => {
+  if (typeof val !== "string") return val;
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : val;
+  } catch {
+    return val;
+  }
+}, z.array(z.string()));
+
 export const updateAgentSchema = z.object({
-  agent_name: z.string().describe("Name of the agent to update"),
+  name: z.string().describe("Name of the agent to update"),
   description: z.string().optional().describe("New description"),
   system_prompt: z.string().optional().describe("New system prompt"),
-  skills: z.array(z.string()).optional().describe("New skill list"),
+  skills: stringArrayFromMaybeJson.optional().describe("New skill list"),
   enabled: z.boolean().optional().describe("Enable or disable the agent"),
   thread_lifetime: z
     .enum(["ephemeral", "daily", "persistent"])
@@ -28,10 +40,7 @@ export const updateAgentSchema = z.object({
     .nullable()
     .optional()
     .describe("Model name override (null to use default from settings)"),
-  memory_capture: z
-    .boolean()
-    .optional()
-    .describe("Extract implicit knowledge from conversations"),
+  memory_capture: z.boolean().optional().describe("Extract implicit knowledge from conversations"),
   memory_self_reflect: z
     .boolean()
     .optional()
@@ -44,26 +53,24 @@ export const updateAgentSchema = z.object({
       "Cannot set privileged metadata keys (stores, hooks) via tool",
     )
     .describe("Arbitrary metadata for the agent"),
-  subagents: z
-    .array(z.string())
+  subagents: stringArrayFromMaybeJson
     .optional()
     .describe(
       "Agent names this agent may delegate to via the task tool. Pass a full list to replace the current set.",
     ),
-  add_tools: z
-    .array(z.string())
+  tools: stringArrayFromMaybeJson
     .optional()
-    .describe("Tool names to add"),
-  remove_tools: z
-    .array(z.string())
-    .optional()
-    .describe("Tool names to remove"),
+    .describe(
+      "Full replacement tool list. Replaces the agent's current tools[] array. Use add_tools/remove_tools for incremental changes.",
+    ),
+  add_tools: stringArrayFromMaybeJson.optional().describe("Tool names to add"),
+  remove_tools: stringArrayFromMaybeJson.optional().describe("Tool names to remove"),
 });
 
 export const updateAgentTool = tool(
-  async ({ agent_name, add_tools, remove_tools, ...updates }) => {
-    const definition = await getAgentByName(agent_name);
-    if (!definition) throw new Error(`Agent '${agent_name}' not found`);
+  async ({ name, add_tools, remove_tools, ...updates }) => {
+    const definition = await getAgentByName(name);
+    if (!definition) throw new Error(`Agent '${name}' not found`);
 
     // Handle add/remove tools atomically if provided
     let updated = definition;
@@ -95,7 +102,7 @@ export const updateAgentTool = tool(
   {
     name: "update_agent",
     description:
-      "Update an existing agent definition. Can change description, enabled status, skills, subagents, and more. Use add_tools/remove_tools to grant or revoke tool access (e.g. MCP tools).",
+      "Update an existing agent definition. Can change description, enabled status, skills, subagents, and more. Use `tools` to replace the full tool list, or `add_tools`/`remove_tools` for incremental changes (e.g. granting MCP tools).",
     schema: updateAgentSchema,
   },
 );
