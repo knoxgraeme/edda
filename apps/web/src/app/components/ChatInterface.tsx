@@ -20,7 +20,19 @@ function ThinkingIndicator() {
   );
 }
 
-export const ChatInterface = React.memo(function ChatInterface() {
+interface ChatInterfaceProps {
+  /**
+   * When true, suppresses the big "Edda / Your AI second brain" welcome
+   * block shown in the empty state. Set this when embedding ChatInterface
+   * inside a page that already has its own header (e.g. `/agents/[name]`
+   * Mission Control), so the composer sits at the top of the pane.
+   */
+  hideWelcome?: boolean;
+}
+
+export const ChatInterface = React.memo(function ChatInterface({
+  hideWelcome = false,
+}: ChatInterfaceProps = {}) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [input, setInput] = useState("");
   const { scrollRef, contentRef } = useStickToBottom();
@@ -161,26 +173,44 @@ export const ChatInterface = React.memo(function ChatInterface() {
       >
         <div className="mx-auto w-full max-w-[1024px] px-6 pb-6 pt-4" ref={contentRef}>
           {!hasMessages ? (
-            <div className="flex min-h-[60vh] flex-col items-center justify-center pb-12">
-              <h1 className="text-3xl font-semibold tracking-tight text-primary">Edda</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Your AI second brain</p>
-              <p className="mt-4 max-w-sm text-center text-sm text-muted-foreground/80">
-                Capture thoughts, recall memories, and let agents work for you.
-              </p>
-              <div className="mt-8 flex flex-wrap justify-center gap-2">
+            hideWelcome ? (
+              // Embedded mode: just a compact prompt-suggestion row.
+              // The page host (e.g. Mission Control) owns the heading.
+              <div className="flex flex-wrap gap-1.5 pt-2">
                 {suggestedPrompts.map((prompt) => (
                   <button
                     key={prompt.text}
                     type="button"
                     onClick={() => handlePromptClick(prompt.text)}
-                    className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted hover:text-primary"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-muted hover:text-foreground"
                   >
-                    <prompt.icon className="h-3.5 w-3.5 flex-shrink-0" />
+                    <prompt.icon className="h-3 w-3 flex-shrink-0" />
                     {prompt.text}
                   </button>
                 ))}
               </div>
-            </div>
+            ) : (
+              <div className="flex min-h-[60vh] flex-col items-center justify-center pb-12">
+                <h1 className="text-3xl font-semibold tracking-tight text-primary">Edda</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Your AI second brain</p>
+                <p className="mt-4 max-w-sm text-center text-sm text-muted-foreground/80">
+                  Capture thoughts, recall memories, and let agents work for you.
+                </p>
+                <div className="mt-8 flex flex-wrap justify-center gap-2">
+                  {suggestedPrompts.map((prompt) => (
+                    <button
+                      key={prompt.text}
+                      type="button"
+                      onClick={() => handlePromptClick(prompt.text)}
+                      className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted hover:text-primary"
+                    >
+                      <prompt.icon className="h-3.5 w-3.5 flex-shrink-0" />
+                      {prompt.text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
           ) : (
             processedMessages.map((data) => (
               <ChatMessage

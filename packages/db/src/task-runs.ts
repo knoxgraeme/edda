@@ -135,3 +135,42 @@ export async function getRunningTaskCount(): Promise<number> {
   );
   return rows[0].count;
 }
+
+/**
+ * Returns a 7-element array per agent: run counts for each of the last 7
+ * calendar days (UTC), oldest first. Days with no runs are 0.
+ *
+ * Both the SQL bucketing and the JS bucket index are pinned to UTC so the
+ * date keys match regardless of the Postgres session timezone or the Node
+ * process timezone.
+ */
+export async function getRunsLast7DaysPerAgent(): Promise<Record<string, number[]>> {
+  const pool = getPool();
+  const { rows } = await pool.query<{ agent_name: string; day: string; runs: number }>(
+    `SELECT agent_name,
+            to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+            COUNT(*)::int AS runs
+     FROM task_runs
+     WHERE created_at >= (now() AT TIME ZONE 'UTC')::date - INTERVAL '6 days'
+     GROUP BY agent_name, day`,
+  );
+
+  const buckets: string[] = [];
+  const todayUtc = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.UTC(
+      todayUtc.getUTCFullYear(),
+      todayUtc.getUTCMonth(),
+      todayUtc.getUTCDate() - i,
+    ));
+    buckets.push(d.toISOString().slice(0, 10));
+  }
+
+  const result: Record<string, number[]> = {};
+  for (const row of rows) {
+    if (!result[row.agent_name]) result[row.agent_name] = new Array(7).fill(0);
+    const idx = buckets.indexOf(row.day);
+    if (idx >= 0) result[row.agent_name][idx] = row.runs;
+  }
+  return result;
+}

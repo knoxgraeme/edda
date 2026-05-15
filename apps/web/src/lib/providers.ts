@@ -8,26 +8,34 @@
 
 import type { LlmProvider } from "@/app/types/db";
 
-export const LLM_PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "google", label: "Google" },
-  { value: "groq", label: "Groq" },
-  { value: "ollama", label: "Ollama" },
-  { value: "mistral", label: "Mistral" },
-  { value: "bedrock", label: "Bedrock" },
-  { value: "xai", label: "xAI (Grok)" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "cerebras", label: "Cerebras" },
-  { value: "fireworks", label: "Fireworks" },
-  { value: "together", label: "Together" },
-  { value: "azure_openai", label: "Azure OpenAI" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "minimax", label: "Minimax" },
-  { value: "moonshot", label: "Moonshot" },
-  { value: "zhipuai", label: "ZhipuAI (ChatGLM)" },
+export const LLM_PROVIDER_OPTIONS: {
+  value: LlmProvider;
+  label: string;
+  envVar: string;
+}[] = [
+  { value: "anthropic", label: "Anthropic", envVar: "ANTHROPIC_API_KEY" },
+  { value: "openai", label: "OpenAI", envVar: "OPENAI_API_KEY" },
+  { value: "google", label: "Google", envVar: "GOOGLE_API_KEY" },
+  { value: "groq", label: "Groq", envVar: "GROQ_API_KEY" },
+  { value: "ollama", label: "Ollama", envVar: "OLLAMA_HOST" },
+  { value: "mistral", label: "Mistral", envVar: "MISTRAL_API_KEY" },
+  { value: "bedrock", label: "Bedrock", envVar: "AWS_ACCESS_KEY_ID" },
+  { value: "xai", label: "xAI (Grok)", envVar: "XAI_API_KEY" },
+  { value: "deepseek", label: "DeepSeek", envVar: "DEEPSEEK_API_KEY" },
+  { value: "cerebras", label: "Cerebras", envVar: "CEREBRAS_API_KEY" },
+  { value: "fireworks", label: "Fireworks", envVar: "FIREWORKS_API_KEY" },
+  { value: "together", label: "Together", envVar: "TOGETHER_API_KEY" },
+  { value: "azure_openai", label: "Azure OpenAI", envVar: "AZURE_OPENAI_API_KEY" },
+  { value: "openrouter", label: "OpenRouter", envVar: "OPENROUTER_API_KEY" },
+  { value: "minimax", label: "Minimax", envVar: "MINIMAX_API_KEY" },
+  { value: "moonshot", label: "Moonshot", envVar: "MOONSHOT_API_KEY" },
+  { value: "zhipuai", label: "ZhipuAI (ChatGLM)", envVar: "ZHIPUAI_API_KEY" },
 ];
 
 export const VALID_LLM_PROVIDERS = new Set<LlmProvider>(
   LLM_PROVIDER_OPTIONS.map((p) => p.value),
 );
+
+export function envVarForProvider(provider: LlmProvider): string {
+  return LLM_PROVIDER_OPTIONS.find((p) => p.value === provider)?.envVar ?? "API_KEY";
+}

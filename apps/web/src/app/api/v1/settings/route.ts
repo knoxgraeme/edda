@@ -1,36 +1,8 @@
-import { getSettings, updateSettings, getAgentByName, LLM_PROVIDERS } from "@edda/db";
-import type { EmbeddingProvider, SandboxProvider, Settings } from "@edda/db";
+import { getSettings, updateSettings, getAgentByName } from "@edda/db";
+import type { Settings } from "@edda/db";
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { UpdateSettingsSchema } from "@/lib/settings-schema";
 import { parseBody, badRequest } from "../_lib/helpers";
-
-const EMBEDDING_PROVIDERS: EmbeddingProvider[] = ["voyage", "openai", "google"];
-const SANDBOX_PROVIDERS: SandboxProvider[] = ["none", "node-vfs"];
-const isValidIanaTimezone = (value: string): boolean => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const UpdateSettingsSchema = z
-  .object({
-    user_display_name: z.string().max(200).optional(),
-    user_timezone: z
-      .string()
-      .max(100)
-      .optional()
-      .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
-    llm_provider: z.enum([...LLM_PROVIDERS]).optional(),
-    default_model: z.string().max(100).optional(),
-    embedding_provider: z.enum(EMBEDDING_PROVIDERS as [string, ...string[]]).optional(),
-    embedding_model: z.string().max(100).optional(),
-    default_agent: z.string().min(1).max(200).optional(),
-    sandbox_provider: z.enum(SANDBOX_PROVIDERS as [string, ...string[]]).optional(),
-  })
-  .strip();
 
 export async function GET() {
   const settings = await getSettings();

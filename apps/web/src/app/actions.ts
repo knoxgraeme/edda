@@ -7,6 +7,8 @@ import {
   updateItem,
   updateEntity,
   getEntityItems,
+  getEntityConnections,
+  type EntityConnection,
   updateSettings,
   getSettings,
   getAgentByName,
@@ -32,36 +34,8 @@ import {
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { computeSessionToken, COOKIE_NAME, THIRTY_DAYS } from "@/lib/auth";
-
-const isValidIanaTimezone = (value: string): boolean => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-// Mirrors UpdateSettingsSchema from /api/v1/settings/route.ts — keep in sync
-const UpdateSettingsSchema = z
-  .object({
-    user_display_name: z.string().max(200).nullable().optional(),
-    user_timezone: z
-      .string()
-      .max(100)
-      .optional()
-      .refine((value) => value === undefined || isValidIanaTimezone(value), "Invalid IANA timezone"),
-    llm_provider: z
-      .enum([...LLM_PROVIDERS])
-      .optional(),
-    default_model: z.string().max(100).optional(),
-    embedding_provider: z.enum(["voyage", "openai", "google"]).optional(),
-    embedding_model: z.string().max(100).optional(),
-    default_agent: z.string().min(1).max(200).optional(),
-  })
-  .strip();
+import { UpdateSettingsSchema } from "@/lib/settings-schema";
 
 const CRON_FIELD_RE = /^(\*|(\d+(-\d+)?(,\d+(-\d+)?)*)(\/\d+)?|\*\/\d+)$/;
 function isValidCron(expr: string): boolean {
@@ -163,7 +137,7 @@ export async function updateItemStatusAction(
 export async function saveSettingsAction(updates: Partial<Settings>) {
   try {
     const validated = UpdateSettingsSchema.parse(updates);
-    const saved = await updateSettings(validated);
+    const saved = await updateSettings(validated as Partial<Settings>);
     revalidatePath("/settings");
     return saved;
   } catch (err: unknown) {
@@ -191,6 +165,13 @@ export async function updateEntityAction(
 export async function getEntityItemsAction(entityId: string): Promise<Item[]> {
   if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
   return getEntityItems(entityId);
+}
+
+export async function getEntityConnectionsAction(
+  entityId: string,
+): Promise<EntityConnection[]> {
+  if (!UUID_RE.test(entityId)) throw new Error("Invalid id");
+  return getEntityConnections(entityId, 8);
 }
 
 // ─── Agents ─────────────────────────────────────────────────────────
@@ -278,6 +259,17 @@ export async function createAgentAction(data: {
   model_provider?: string | null;
   model?: string | null;
   metadata?: Record<string, unknown>;
+  /**
+   * Optional initial schedule, created immediately after the agent.
+   * Use when trigger = "schedule" so new agents don't land in the
+   * broken "scheduled trigger with zero schedules" state.
+   */
+  schedule?: {
+    name: string;
+    cron: string;
+    prompt: string;
+    notify?: string[];
+  };
 }) {
   validateAgentName(data.name);
 
@@ -302,6 +294,24 @@ export async function createAgentAction(data: {
     throw new Error("Model must be a string (max 100 chars)");
   }
 
+  // Validate the optional schedule up-front so we don't create an agent
+  // with no schedule when the schedule payload is bad.
+  if (data.schedule) {
+    const s = data.schedule;
+    if (!s.name || s.name.length > 100) {
+      throw new Error("Schedule name is required (max 100 chars)");
+    }
+    if (!s.cron || !isValidCron(s.cron)) {
+      throw new Error(
+        "Invalid cron expression — expected 5 fields: minute hour day month weekday",
+      );
+    }
+    if (!s.prompt || s.prompt.length > 5000) {
+      throw new Error("Schedule prompt is required (max 5000 chars)");
+    }
+    if (s.notify) validateNotifyTargets(s.notify);
+  }
+
   try {
     const agent = await createAgent({
       name: data.name,
@@ -316,6 +326,21 @@ export async function createAgentAction(data: {
       model: data.model || null,
       metadata: data.metadata,
     });
+    if (data.schedule) {
+      try {
+        await createScheduleDb({
+          agent_id: agent.id,
+          name: data.schedule.name,
+          cron: data.schedule.cron,
+          prompt: data.schedule.prompt,
+          notify: data.schedule.notify ?? [],
+        });
+      } catch (scheduleErr) {
+        // Roll back the orphaned agent row so a retry won't hit "already exists"
+        await deleteAgent(agent.name);
+        throw new Error("Failed to create agent schedule. Please try again.");
+      }
+    }
     revalidatePath("/agents");
     redirect(`/agents/${agent.name}`);
   } catch (err: unknown) {

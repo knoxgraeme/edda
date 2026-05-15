@@ -5,7 +5,20 @@
 import { getPool } from "./connection.js";
 import { DECAY_HALF_LIFE_DAYS, LN2, RERANK_MULTIPLIER } from "./items.js";
 
-import type { Entity, EntitySearchResult, EntityType, Item } from "./types.js";
+import type {
+  Entity,
+  EntitySearchResult,
+  EntityType,
+  GraphData,
+  GraphLink,
+  GraphNode,
+  Item,
+} from "./types.js";
+
+/** Escape SQL ILIKE metacharacters so they match literally. */
+function escapeLike(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 
 /** All entity columns except embedding */
 export const ENTITY_COLS = `id, name, type, aliases, description, mention_count,
@@ -90,7 +103,7 @@ export async function getEntitiesByName(name: string): Promise<Entity[]> {
   const pool = getPool();
   const { rows } = await pool.query(
     `SELECT ${ENTITY_COLS} FROM entities WHERE name ILIKE $1 OR $1 = ANY(aliases)`,
-    [`%${name}%`],
+    [`%${escapeLike(name)}%`],
   );
   return rows as Entity[];
 }
@@ -204,7 +217,7 @@ export async function listEntities(
   }
   if (options.search) {
     conditions.push(`(name ILIKE $${idx} OR $${idx} ILIKE ANY(aliases))`);
-    params.push(`%${options.search}%`);
+    params.push(`%${escapeLike(options.search)}%`);
     idx++;
   }
 
@@ -262,4 +275,200 @@ export async function getTopEntities(limit: number = 15): Promise<Entity[]> {
     [limit],
   );
   return rows as Entity[];
+}
+
+// ── Graph data (knowledge-graph visualization) ────────────────────
+
+/** Shape of the entity row fetched for graph rendering. Query-internal. */
+interface GraphEntityRow {
+  id: string;
+  name: string;
+  type: EntityType;
+  aliases: string[] | null;
+  description: string | null;
+  mention_count: number;
+  last_seen_at: Date | null;
+  created_at: Date;
+}
+
+/** Shape of the item/link row fetched for graph rendering. Query-internal. */
+interface GraphItemLinkRow {
+  item_id: string;
+  entity_id: string;
+  relationship: string | null;
+  item_type: string;
+  item_content: string | null;
+  item_summary: string | null;
+  item_created_at: Date | null;
+  item_last_reinforced_at: Date | null;
+}
+
+/**
+ * Returns a bipartite graph of the top-N entities (by mention_count) and the
+ * items linked to them. Used by the /graph visualization page.
+ *
+ * Item `weight` is the item's *true* total link count across the entire DB
+ * (not just links within the returned view), so the UI can accurately say
+ * "Linked to N entities".
+ */
+export async function getGraphData(
+  options: {
+    entityLimit?: number;
+    itemsPerEntity?: number;
+    types?: EntityType[];
+    search?: string;
+    /**
+     * Drop item nodes whose *true* total link count is below this threshold.
+     * Defaults to 1 (no culling). Setting to 2+ hides leaf items that only
+     * connect to a single entity — useful for de-noising dense graphs.
+     */
+    minItemLinks?: number;
+  } = {},
+): Promise<GraphData> {
+  const pool = getPool();
+  const entityLimit = options.entityLimit ?? 60;
+  const itemsPerEntity = options.itemsPerEntity ?? 8;
+  const minItemLinks = Math.max(1, options.minItemLinks ?? 1);
+
+  // ── Build WHERE dynamically so filters compose with the base limit query.
+  // Parameter order: $1 = entityLimit (always), $2+ = dynamic filters.
+  const conditions: string[] = ["confirmed = true"];
+  const params: unknown[] = [entityLimit];
+  let idx = 2;
+
+  if (options.types && options.types.length > 0) {
+    conditions.push(`type = ANY($${idx++}::text[])`);
+    params.push(options.types);
+  }
+
+  const trimmedSearch = options.search?.trim();
+  if (trimmedSearch) {
+    conditions.push(`(name ILIKE $${idx} OR $${idx} ILIKE ANY(aliases))`);
+    params.push(`%${escapeLike(trimmedSearch)}%`);
+    idx++;
+  }
+
+  const { rows: entityRows } = await pool.query<GraphEntityRow>(
+    `SELECT id, name, type, aliases, description, mention_count, last_seen_at, created_at
+     FROM entities
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY mention_count DESC
+     LIMIT $1`,
+    params,
+  );
+
+  if (entityRows.length === 0) {
+    return { nodes: [], links: [], stats: { items_considered: 0, items_hidden_by_min_links: 0 } };
+  }
+
+  const entityNodes: GraphNode[] = entityRows.map((r) => ({
+    id: r.id,
+    label: r.name,
+    kind: "entity" as const,
+    group: r.type,
+    weight: Math.max(1, Number(r.mention_count) || 1),
+    description: r.description,
+    aliases: r.aliases ?? [],
+    created_at: r.created_at?.toISOString() ?? undefined,
+    last_seen_at: r.last_seen_at?.toISOString() ?? null,
+  }));
+
+  // Short-circuit: when the caller asks for zero items per entity, there's
+  // nothing to join and no reason to hit the DB again.
+  if (itemsPerEntity === 0) {
+    return { nodes: entityNodes, links: [], stats: { items_considered: 0, items_hidden_by_min_links: 0 } };
+  }
+
+  const entityIds = entityRows.map((r) => r.id);
+
+  const { rows: linkRows } = await pool.query<GraphItemLinkRow>(
+    `WITH ranked AS (
+       SELECT ie.item_id, ie.entity_id, ie.relationship,
+              i.type AS item_type,
+              i.content AS item_content,
+              i.summary AS item_summary,
+              i.created_at AS item_created_at,
+              i.last_reinforced_at AS item_last_reinforced_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY ie.entity_id
+                ORDER BY i.last_reinforced_at DESC NULLS LAST, i.created_at DESC
+              ) AS rn
+       FROM item_entities ie
+       JOIN items i ON i.id = ie.item_id
+       WHERE ie.entity_id = ANY($1::uuid[])
+         AND i.confirmed = true
+         AND i.superseded_by IS NULL
+     )
+     SELECT item_id, entity_id, relationship, item_type,
+            item_content, item_summary, item_created_at, item_last_reinforced_at
+     FROM ranked
+     WHERE rn <= $2`,
+    [entityIds, itemsPerEntity],
+  );
+
+  // Compute the *true* total link count per item across the entire DB, so
+  // item weight reflects real connectivity and not just in-view links.
+  const itemIds = Array.from(new Set(linkRows.map((r) => r.item_id)));
+  const totalLinksByItem = new Map<string, number>();
+  if (itemIds.length > 0) {
+    const { rows: totalRows } = await pool.query<{ item_id: string; total_links: number }>(
+      `SELECT item_id, COUNT(*)::int AS total_links
+       FROM item_entities
+       WHERE item_id = ANY($1::uuid[])
+       GROUP BY item_id`,
+      [itemIds],
+    );
+    for (const row of totalRows) {
+      totalLinksByItem.set(row.item_id, row.total_links);
+    }
+  }
+
+  const itemMap = new Map<string, GraphNode>();
+  const links: GraphLink[] = [];
+  const consideredItems = new Set<string>();
+  const hiddenItems = new Set<string>();
+
+  for (const row of linkRows) {
+    const itemId = row.item_id;
+    consideredItems.add(itemId);
+    // Degree-based culling: drop items whose true total link count is below
+    // the threshold. Also drops their links so we don't leave orphan edges.
+    const totalLinks = totalLinksByItem.get(itemId) ?? 1;
+    if (totalLinks < minItemLinks) {
+      hiddenItems.add(itemId);
+      continue;
+    }
+
+    if (!itemMap.has(itemId)) {
+      const summary = row.item_summary ?? "";
+      const content = row.item_content ?? "";
+      const label = summary || content;
+      itemMap.set(itemId, {
+        id: itemId,
+        label: label.length > 80 ? label.slice(0, 77) + "..." : label,
+        kind: "item",
+        group: row.item_type,
+        weight: totalLinks,
+        content,
+        created_at: row.item_created_at?.toISOString() ?? null,
+        last_reinforced_at: row.item_last_reinforced_at?.toISOString() ?? null,
+      });
+    }
+    links.push({
+      source: row.entity_id,
+      target: itemId,
+      relationship: row.relationship ?? undefined,
+    });
+  }
+
+  const nodes: GraphNode[] = [...entityNodes, ...itemMap.values()];
+
+  return {
+    nodes,
+    links,
+    stats: {
+      items_considered: consideredItems.size,
+      items_hidden_by_min_links: hiddenItems.size,
+    },
+  };
 }

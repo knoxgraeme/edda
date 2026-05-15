@@ -1,8 +1,8 @@
 /**
  * Entity browser — people, projects, companies, topics, places
  *
- * Server component that fetches confirmed entities from @edda/db.
- * Client component handles filtering, search, and inline editing.
+ * Server component fetches confirmed entities. The client renders a two-pane
+ * list + detail view matching the Entities redesign handoff.
  */
 
 import { listEntities } from "@edda/db";
@@ -15,8 +15,8 @@ export default async function EntitiesPage() {
   } catch (err) {
     console.error("Failed to load entities:", err);
     return (
-      <main className="max-w-4xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-6">Entities</h1>
+      <main className="p-6">
+        <h1 className="mb-4 text-2xl font-bold">Entities</h1>
         <p className="text-muted-foreground">
           Unable to load entities. Make sure the database is running and
           migrations have been applied.
